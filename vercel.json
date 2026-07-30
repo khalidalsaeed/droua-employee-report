@@ -1,0 +1,10 @@
+{
+  "crons": [
+    { "path": "/api/cron/check-expirations", "schedule": "0 3 * * *" }
+  ],
+  "functions": {
+    "api/cron/check-expirations.js": {
+      "includeFiles": "index.html"
+    }
+  }
+}
