@@ -222,10 +222,12 @@ select.in{appearance:none;cursor:pointer;background-image:url("data:image/svg+xm
 .chip.pending{background:var(--pend-bg);color:var(--pend)} .chip.pending .d{background:var(--pend-line)}
 .chip.today{background:var(--today-bg);color:var(--today)} .chip.today .d{background:var(--today-line)}
 .chip.na{background:var(--na-bg);color:var(--na)} .chip.na .d{background:var(--na-line)}
+.chip.warn2{background:var(--today-bg);color:var(--today)} .chip.warn2 .d{background:var(--today-line)}
 .bar{height:6px;border-radius:999px;background:var(--hair);overflow:hidden;position:relative}
 .bar span{position:absolute;inset-inline-start:0;top:0;bottom:0;border-radius:999px;transition:width 1.1s cubic-bezier(.16,.8,.3,1)}
 .bar.ok span{background:var(--ok-line)} .bar.warn span{background:var(--warn-line)} .bar.bad span{background:var(--bad-line)}
 .bar.today span{background:var(--today-line)} .bar.na span{background:var(--na-line)}
+.bar.warn2 span{background:var(--today-line)}
 .bar.pending span{background:linear-gradient(90deg,var(--pend-line),var(--pend))}
 .dr-alert .a.pending{background:var(--pend-bg);border-color:#C7DAE7} .dr-alert .a.pending .m{color:var(--pend)}
 .dr-alert .a.today{background:var(--today-bg);border-color:#E9C9A9} .dr-alert .a.today .m{color:var(--today)}
@@ -240,6 +242,22 @@ select.in{appearance:none;cursor:pointer;background-image:url("data:image/svg+xm
 .spill.today{background:var(--today-bg);color:var(--today)} .spill.today .d{background:var(--today-line)}
 .spill.pending{background:var(--pend-bg);color:var(--pend)} .spill.pending .d{background:var(--pend-line)}
 .spill.na{background:var(--na-bg);color:var(--na)} .spill.na .d{background:var(--na-line)}
+.spill.warn2{background:var(--today-bg);color:var(--today)} .spill.warn2 .d{background:var(--today-line)}
+.ajeer-status{margin:14px 0 12px}
+.ajeer-status .achip{margin-bottom:7px}
+.ajeer-status .adays{font-size:12.5px;color:var(--ink-soft)}
+.qr-thumb{width:52px;height:52px;flex:none;border-radius:10px;border:1px solid var(--hair);
+  background:#fff;padding:3px;cursor:pointer;transition:.25s;overflow:hidden}
+.qr-thumb:hover{border-color:var(--slate);transform:scale(1.06)}
+.qr-thumb:focus-visible{outline:2px solid var(--brass);outline-offset:2px}
+.qr-thumb img{width:100%;height:100%;object-fit:contain;display:block}
+.qr-row{display:flex;align-items:center;gap:12px;margin-top:14px;padding:10px 12px;
+  background:var(--paper);border:1px solid var(--hair);border-radius:12px}
+.qr-row .qr-hint{font-size:12px;line-height:1.55;color:var(--ink-soft)}
+.qr-thumb-inline{width:34px;height:34px;flex:none;border-radius:8px;border:1px solid var(--hair);
+  background:#fff;padding:2px;cursor:pointer;transition:.25s;overflow:hidden;display:inline-block;vertical-align:middle;margin-inline-start:8px}
+.qr-thumb-inline:hover{border-color:var(--slate);transform:scale(1.06)}
+.qr-thumb-inline img{width:100%;height:100%;object-fit:contain;display:block}
 
 /* ---------- Hover card ---------- */
 .hovercard{position:fixed;z-index:90;width:300px;background:var(--paper-2);border:1px solid var(--hair);
@@ -284,6 +302,23 @@ select.in{appearance:none;cursor:pointer;background-image:url("data:image/svg+xm
 /* ---------- Drawer ---------- */
 .scrim{position:fixed;inset:0;background:rgba(22,40,59,.34);backdrop-filter:blur(3px);z-index:100;opacity:0;visibility:hidden;transition:.35s}
 .scrim.show{opacity:1;visibility:visible}
+.menu-btn{background:var(--paper-2);border:1px solid var(--hair);border-radius:10px;width:38px;height:38px;
+  flex:none;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;color:var(--ink);transition:.25s}
+.menu-btn:hover{border-color:var(--slate);color:var(--slate)}
+.menu-btn:focus-visible{outline:2px solid var(--brass);outline-offset:2px}
+.navscrim{position:fixed;inset:0;background:rgba(22,40,59,.34);backdrop-filter:blur(3px);z-index:100;opacity:0;visibility:hidden;transition:.35s}
+.navscrim.show{opacity:1;visibility:visible}
+.sidenav{position:fixed;top:0;bottom:0;inset-inline-start:0;width:min(300px,86vw);background:var(--paper);z-index:101;
+  box-shadow:var(--shadow-lg);transform:translateX(-102%);transition:transform .45s cubic-bezier(.16,.8,.3,1);
+  display:flex;flex-direction:column;padding:24px 20px;border-inline-end:1px solid var(--hair)}
+html[dir=rtl] .sidenav{transform:translateX(102%)}
+.sidenav.show{transform:none !important}
+.sn-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:22px}
+.sn-close{background:none;border:none;font-size:17px;cursor:pointer;color:var(--ink-soft);line-height:1}
+.sn-link{display:flex;align-items:center;gap:10px;padding:12px 14px;border-radius:10px;font-size:14.5px;
+  color:var(--ink);transition:.2s;margin-bottom:4px}
+.sn-link:hover{background:var(--brass-soft);color:var(--slate)}
+.sn-link svg{opacity:.7;flex:none}
 .drawer{position:fixed;top:0;bottom:0;inset-inline-start:0;width:min(560px,92vw);background:var(--paper);z-index:101;
   box-shadow:var(--shadow-lg);transform:translateX(-102%);transition:transform .48s cubic-bezier(.16,.8,.3,1);
   display:flex;flex-direction:column;overflow:hidden}
@@ -342,6 +377,9 @@ footer.site{border-top:1px solid var(--hair);margin-top:30px}
 
 <header class="site">
   <div class="site-in">
+    <button class="menu-btn" id="menuBtn" aria-label="القائمة">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+    </button>
     <div class="brand">
       <div class="name"><b>ذروة الصعود</b><span class="amp">&amp;</span><b>ضمان الأعمال</b></div>
       <div class="sub">تقرير صادر من إدارة الموارد البشرية — شركة ذروة الصعود للتجارة</div>
@@ -374,7 +412,7 @@ footer.site{border-top:1px solid var(--hair);margin-top:30px}
   </div>
 </div>
 
-<section class="block wrap">
+<section class="block wrap" id="kpiSec">
   <div class="sec-head"><h2>المؤشرات التنفيذية</h2><span class="idx">لمحة عامة</span></div>
   <div class="kpi-row" id="kpiRow"></div>
   <div class="panels">
@@ -462,6 +500,30 @@ footer.site{border-top:1px solid var(--hair);margin-top:30px}
   <div class="grid" id="grid"></div>
 </section>
 
+<section class="block wrap" id="ajeerSec">
+  <div class="sec-head"><h2>تصاريح أجير</h2><span class="idx" id="ajeerIdx">—</span></div>
+  <div class="controls">
+    <div class="ctrl-grid" style="grid-template-columns:1.6fr 1fr">
+      <div class="field">
+        <label for="ajeerQ">بحث مباشر</label>
+        <div class="search-wrap">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+          <input id="ajeerQ" class="in" type="search" placeholder="اسم الموظف، رقم التصريح…" autocomplete="off">
+        </div>
+      </div>
+      <div class="field"><label for="ajeerStatus">الحالة</label><select id="ajeerStatus" class="in"></select></div>
+    </div>
+  </div>
+  <div class="grid" id="ajeerGrid"></div>
+  <div id="ajeerUnlinkedWrap" style="display:none;margin-top:34px">
+    <div class="sec-head" style="border-bottom:none;margin-bottom:16px;padding-bottom:0">
+      <h3 style="font-family:var(--serif);font-size:19px">تصاريح غير مرتبطة</h3>
+      <span class="idx">بانتظار الربط اليدوي</span>
+    </div>
+    <div class="grid" id="ajeerUnlinkedGrid"></div>
+  </div>
+</section>
+
 <section class="block wrap" id="contactSec">
   <div class="sec-head"><h2>التواصل مع قسم الموارد البشرية</h2><span class="idx">تواصل مباشر</span></div>
   <div class="contact-card">
@@ -502,9 +564,33 @@ footer.site{border-top:1px solid var(--hair);margin-top:30px}
 <div class="scrim" id="scrim"></div>
 <aside class="drawer" id="drawer" role="dialog" aria-modal="true" aria-labelledby="drName"></aside>
 
+<div class="navscrim" id="navScrim"></div>
+<aside class="sidenav" id="sidenav" role="dialog" aria-modal="true" aria-label="القائمة">
+  <div class="sn-head">
+    <span class="eyebrow">التنقّل</span>
+    <button class="sn-close" id="snClose" aria-label="إغلاق">✕</button>
+  </div>
+  <a class="sn-link" href="#kpiSec"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>المؤشرات التنفيذية</a>
+  <a class="sn-link" href="#finSec"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/></svg>التحليل المالي</a>
+  <a class="sn-link" href="#peopleSec"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="8" r="4"/><path d="M2 21c0-4 3-6 7-6s7 2 7 6"/><path d="M17 11c1.7 0 3-1.3 3-3s-1.3-3-3-3"/><path d="M22 21c0-3-1.7-5-4-5.7"/></svg>سجل الموظفين</a>
+  <a class="sn-link" href="#ajeerSec"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18"/><path d="M8 2v4M16 2v4"/></svg>تصاريح أجير</a>
+  <a class="sn-link" href="#contactSec"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></svg>التواصل مع الموارد البشرية</a>
+</aside>
+
+<div class="mscrim" id="qrScrim"><div class="modal" id="qrModalBox" style="max-width:380px" role="dialog" aria-modal="true" aria-labelledby="qrTitle"></div></div>
+
 <script>
 const DATA = [{"م":1,"الرقم الوظيفي":"500","اسم العامل":"شميم","رقم الإقامة":2597006564,"الجنسية":"بنجلاديشي","المهنة":"عامل تحميل وتنزيل","تاريخ الميلاد":"1992-03-05","تاريخ انتهاء الإقامة":"2026-10-27","بداية العقد":"2026-06-17","نهاية العقد":"2027-06-16","الراتب الأساسي":1000,"البدلات":827.5,"إجمالي الراتب":1827.5,"جوال العامل":564553917,"البريد الإلكتروني":"tahsinahmedmail@gmail.com","حالة النقل":"ساري","حالة الإقامة":"ساري","حالة رخصة العمل ":"ساري","حالة التأمين الطبي ":"ساري","رقم الحساب":"991102099485682","IBAN":"SA8530100991102099485682","اسم البنك":"البنك العربي الوطني","اسم المستفيد (كما في البنك)":"SAMIM HOSSAIN","تاريخ انتهاء رخصة العمل":"2026-10-29","التكلفة الحكومية الإجمالية":6537,"_cost":{"iqamaRenew":2014,"licenseRenew":2425,"medical":98,"sponsor":2000},"رقم الجواز":"EK0318705","تاريخ انتهاء الجواز":"2027-03-14","الجنس":"ذكر","تاريخ اصدار الاقامة":"2025-02-11","تاريخ انتهاء الاقامة بالهجري":"1446-11-13","رقم صاحب العمل":"7003895187","تاريخ المباشرة":"06/18/2026","الاجازة السنوية":"","_licPending":false,"اسم شركة التأمين":"ملاذ للتأمين","تكلفة التأمين الطبي":98},{"م":2,"الرقم الوظيفي":"501","اسم العامل":"مد طيف ال رحمن شهاب","رقم الإقامة":2593650357,"الجنسية":"بنجلاديشي","المهنة":"عامل تحميل وتنزيل","تاريخ الميلاد":"1992-12-06","تاريخ انتهاء الإقامة":"2026-12-22","بداية العقد":"2026-06-17","نهاية العقد":"2027-06-16","الراتب الأساسي":1000,"البدلات":397.5,"إجمالي الراتب":1397.5,"جوال العامل":548818229,"البريد الإلكتروني":"mdshihab17186740@gmail.com","حالة النقل":"ساري","حالة الإقامة":"ساري","حالة رخصة العمل ":"ساري","حالة التأمين الطبي ":"ساري","رقم الحساب":"991105064766944","IBAN":"SA1030100991105064766944","اسم البنك":"البنك العربي الوطني","اسم المستفيد (كما في البنك)":"MOHAMMED TAIFUR RAHMAN SHIHAB","تاريخ انتهاء رخصة العمل":"2026-09-20","التكلفة الحكومية الإجمالية":8962,"_cost":{"iqamaRenew":2014,"licenseRenew":4850,"medical":98,"sponsor":2000},"رقم الجواز":"A14941059","تاريخ انتهاء الجواز":"2034-07-09","الجنس":"ذكر","تاريخ اصدار الاقامة":"2025-01-06","تاريخ انتهاء الاقامة بالهجري":"1446-10-08","رقم صاحب العمل":"7003895187","تاريخ المباشرة":"06/18/2026","الاجازة السنوية":"","_licPending":false,"اسم شركة التأمين":"ملاذ للتأمين","تكلفة التأمين الطبي":98},{"م":3,"الرقم الوظيفي":"502","اسم العامل":"مد تفيق مد حسن","رقم الإقامة":2579586799,"الجنسية":"بنجلاديشي","المهنة":"عامل تنظيف مكاتب ومنشآت","تاريخ الميلاد":"2002-04-15","تاريخ انتهاء الإقامة":"2026-12-30","بداية العقد":"2026-06-19","نهاية العقد":"2027-06-18","الراتب الأساسي":1000,"البدلات":397.5,"إجمالي الراتب":1397.5,"جوال العامل":547026286,"البريد الإلكتروني":"toufiq82300@gmail.com","حالة النقل":"ساري","حالة الإقامة":"ساري","حالة رخصة العمل ":"ساري","حالة التأمين الطبي ":"ساري","رقم الحساب":991105018940859,"IBAN":"SA4730100991105018940859","اسم البنك":"البنك العربي الوطني","اسم المستفيد (كما في البنك)":" MOHAMMED TOFIQ MOHAMMED HASAN","تاريخ انتهاء رخصة العمل":"2026-10-02","التكلفة الحكومية الإجمالية":9544,"_cost":{"iqamaRenew":2626,"licenseRenew":4850,"medical":68,"sponsor":2000},"رقم الجواز":"A01535080","تاريخ انتهاء الجواز":"2033-02-25","الجنس":"ذكر","تاريخ اصدار الاقامة":"2024-07-27","تاريخ انتهاء الاقامة بالهجري":"1446-04-20","رقم صاحب العمل":"7003895187","تاريخ المباشرة":"06/21/2026","الاجازة السنوية":"","_licPending":false,"اسم شركة التأمين":"ملاذ للتأمين","تكلفة التأمين الطبي":68},{"م":4,"الرقم الوظيفي":"504","اسم العامل":"لامين مولا","رقم الإقامة":2591092685,"الجنسية":"بنجلاديشي","المهنة":"عامل تحميل وتنزيل","تاريخ الميلاد":"2002-04-01","تاريخ انتهاء الإقامة":"2026-08-17","بداية العقد":"2026-06-21","نهاية العقد":"2027-06-20","الراتب الأساسي":1000,"البدلات":397.5,"إجمالي الراتب":1397.5,"جوال العامل":568058602,"البريد الإلكتروني":"mama202vvhn@gmail.com","حالة النقل":"ساري","حالة الإقامة":"ساري","حالة رخصة العمل ":"ساري","حالة التأمين الطبي ":"ساري","رقم الحساب":"991103483994362","IBAN":"SA1330100991103483994362","اسم البنك":"البنك العربي الوطني","اسم المستفيد (كما في البنك)":"ALAMIN MOALA MOALA MOULA","تاريخ انتهاء رخصة العمل":"2026-08-15","التكلفة الحكومية الإجمالية":6794,"_cost":{"iqamaRenew":2301,"licenseRenew":2425,"medical":68,"sponsor":2000},"رقم الجواز":"A15081289","تاريخ انتهاء الجواز":"2034-07-28","الجنس":"ذكر","تاريخ اصدار الاقامة":"2024-12-10","تاريخ انتهاء الاقامة بالهجري":"1446-09-01","رقم صاحب العمل":"7003895187","تاريخ المباشرة":"06/23/2026","الاجازة السنوية":"","_licPending":false,"اسم شركة التأمين":"ملاذ للتأمين","تكلفة التأمين الطبي":68},{"م":5,"الرقم الوظيفي":"503","اسم العامل":"راسل ديوان","رقم الإقامة":2581088131,"الجنسية":"بنجلاديشي","المهنة":"عامل تنظيف مكاتب ومنشآت","تاريخ الميلاد":"1999-04-28","تاريخ انتهاء الإقامة":"2027-01-16","بداية العقد":"2026-06-19","نهاية العقد":"2027-06-18","الراتب الأساسي":1000,"البدلات":397.5,"إجمالي الراتب":1397.5,"جوال العامل":507490876,"البريد الإلكتروني":"dewanrasel999@gmail.com","حالة النقل":"ساري","حالة الإقامة":"ساري","حالة رخصة العمل ":"ساري","حالة التأمين الطبي ":"ساري","رقم الحساب":"991104599988030","IBAN":"SA3830100991104599988030","اسم البنك":"البنك العربي الوطني","اسم المستفيد (كما في البنك)":"RASEL DIOAN RASEL DEWAN","تاريخ انتهاء رخصة العمل":"2026-10-19","التكلفة الحكومية الإجمالية":9392,"_cost":{"iqamaRenew":2464,"licenseRenew":4850,"medical":78,"sponsor":2000},"رقم الجواز":"A06413423","تاريخ انتهاء الجواز":"2033-01-04","الجنس":"ذكر","تاريخ اصدار الاقامة":"2024-08-15","تاريخ انتهاء الاقامة بالهجري":"1446-05-07","رقم صاحب العمل":"7003895187","تاريخ المباشرة":"06/21/2026","الاجازة السنوية":"","_licPending":false,"اسم شركة التأمين":"ملاذ للتأمين","تكلفة التأمين الطبي":78},{"م":6,"الرقم الوظيفي":"505","اسم العامل":"محمد شيدال اسلام","رقم الإقامة":2595376282,"الجنسية":"بنجلاديشي","المهنة":"عامل تحميل وتنزيل","تاريخ الميلاد":"1988-08-24","تاريخ انتهاء الإقامة":"2027-01-06","بداية العقد":"2026-06-21","نهاية العقد":"2027-06-20","الراتب الأساسي":1000,"البدلات":397.5,"إجمالي الراتب":1397.5,"جوال العامل":556221826,"البريد الإلكتروني":"mdshohidul15727@gmail.com","حالة النقل":"ساري","حالة الإقامة":"ساري","حالة رخصة العمل ":"ساري","حالة التأمين الطبي ":"ساري","رقم الحساب":"68207612272000","IBAN":"SA9805000068207612272000","اسم البنك":"مصرف الإنماء","اسم المستفيد (كما في البنك)":"MD SHAHIDUL ISLAM","تاريخ انتهاء رخصة العمل":"2026-10-05","التكلفة الحكومية الإجمالية":9032,"_cost":{"iqamaRenew":2014,"licenseRenew":4850,"medical":168,"sponsor":2000},"رقم الجواز":"A15781405","تاريخ انتهاء الجواز":"2034-05-13","الجنس":"ذكر","تاريخ اصدار الاقامة":"2025-01-26","تاريخ انتهاء الاقامة بالهجري":"1446-10-23","رقم صاحب العمل":"7003895187","تاريخ المباشرة":"06/23/2026","الاجازة السنوية":"","_licPending":false,"اسم شركة التأمين":"ملاذ للتأمين","تكلفة التأمين الطبي":168},{"م":7,"الرقم الوظيفي":"506","اسم العامل":"شكيب ميا","رقم الإقامة":2555126552,"الجنسية":"بنجلاديشي","المهنة":"عامل تحميل وتنزيل","تاريخ الميلاد":"1999-07-01","تاريخ انتهاء الإقامة":"2026-08-21","بداية العقد":"2026-06-23","نهاية العقد":"2027-06-22","الراتب الأساسي":1000,"البدلات":935,"إجمالي الراتب":1935,"جوال العامل":575941208,"البريد الإلكتروني":"shakibcuteshakib@gmail.com","حالة النقل":"ساري","حالة الإقامة":"ساري","حالة رخصة العمل ":"ساري","حالة التأمين الطبي ":"ساري","رقم الحساب":68207618169000,"IBAN":"SA0205000068207618169000","اسم البنك":"مصرف الإنماء","اسم المستفيد (كما في البنك)":"SHAKIB MIA","تاريخ انتهاء رخصة العمل":"2026-08-17","التكلفة الحكومية الإجمالية":7292,"_cost":{"iqamaRenew":2789,"licenseRenew":2425,"medical":78,"sponsor":2000},"رقم الجواز":"A01454082","تاريخ انتهاء الجواز":"2033-02-26","الجنس":"ذكر","تاريخ اصدار الاقامة":"2023-09-21","تاريخ انتهاء الاقامة بالهجري":"1445-06-03","رقم صاحب العمل":"7003895187","تاريخ المباشرة":"06/23/2026","الاجازة السنوية":"","_licPending":false,"اسم شركة التأمين":"ملاذ للتأمين","تكلفة التأمين الطبي":78},{"م":8,"الرقم الوظيفي":"507","اسم العامل":"مد فرهاد علي شاركر","رقم الإقامة":2584358168,"الجنسية":"بنجلاديشي","المهنة":"عامل تحميل وتنزيل","تاريخ الميلاد":"1985-08-17","تاريخ انتهاء الإقامة":"2026-09-02","بداية العقد":"2026-06-23","نهاية العقد":"2027-06-22","الراتب الأساسي":1000,"البدلات":827.5,"إجمالي الراتب":1827.5,"جوال العامل":574354765,"البريد الإلكتروني":"sforhad188@gmail.com","حالة النقل":"ساري","حالة الإقامة":"ساري","حالة رخصة العمل ":"ساري","حالة التأمين الطبي ":"ساري","رقم الحساب":"991103267662131","IBAN":"SA1430100991103267662131","اسم البنك":"البنك العربي الوطني","اسم المستفيد (كما في البنك)":"MOHAMMED FARHAD ALI SHARKER","تاريخ انتهاء رخصة العمل":"2026-08-31","التكلفة الحكومية الإجمالية":5744,"_cost":{"iqamaRenew":1151,"licenseRenew":2425,"medical":168,"sponsor":2000},"رقم الجواز":"A15710633","تاريخ انتهاء الجواز":"2034-05-04","الجنس":"ذكر","تاريخ اصدار الاقامة":"2024-09-26","تاريخ انتهاء الاقامة بالهجري":"1447-06-15","رقم صاحب العمل":"7003895187","تاريخ المباشرة":"06/23/2026","الاجازة السنوية":"","_licPending":false,"اسم شركة التأمين":"ملاذ للتأمين","تكلفة التأمين الطبي":168},{"م":9,"الرقم الوظيفي":"508","اسم العامل":"ساجر","رقم الإقامة":2613722731,"الجنسية":"بنجلاديشي","المهنة":"عامل تحميل وتنزيل","تاريخ الميلاد":"2004-04-03","تاريخ انتهاء الإقامة":"2026-08-21","بداية العقد":"2026-06-25","نهاية العقد":"2027-06-24","الراتب الأساسي":1000,"البدلات":300,"إجمالي الراتب":1300,"جوال العامل":571570480,"البريد الإلكتروني":"sagorkhan000h@gmail.com","حالة النقل":"ساري","حالة الإقامة":"ساري","حالة رخصة العمل ":"ساري","حالة التأمين الطبي ":"ساري","رقم الحساب":"991101291126140","IBAN":"SA0730100991101291126140","اسم البنك":"البنك العربي الوطني","اسم المستفيد (كما في البنك)":"MOHAMMED SAGAR AHMED","تاريخ انتهاء رخصة العمل":"2026-08-18","التكلفة الحكومية الإجمالية":5643,"_cost":{"iqamaRenew":1150,"licenseRenew":2425,"medical":68,"sponsor":2000},"رقم الجواز":null,"تاريخ انتهاء الجواز":null,"الجنس":null,"تاريخ اصدار الاقامة":null,"تاريخ انتهاء الاقامة بالهجري":null,"رقم صاحب العمل":null,"تاريخ المباشرة":"06/25/2026","الاجازة السنوية":"","_licPending":false,"اسم شركة التأمين":"ملاذ للتأمين","تكلفة التأمين الطبي":68},{"م":10,"الرقم الوظيفي":"509","اسم العامل":"مد هلال مد الدين","رقم الإقامة":2589611132,"الجنسية":"بنجلاديشي","المهنة":"عامل تحميل وتنزيل","تاريخ الميلاد":"2001-07-01","تاريخ انتهاء الإقامة":"2026-11-03","بداية العقد":"2026-06-25","نهاية العقد":"2027-06-24","الراتب الأساسي":1000,"البدلات":300,"إجمالي الراتب":1300,"جوال العامل":"لايوجد","البريد الإلكتروني":"sagorkhan000h@gmail.com","حالة النقل":"ساري","حالة الإقامة":"ساري","حالة رخصة العمل ":"ساري","حالة التأمين الطبي ":"ساري","رقم الحساب":null,"IBAN":null,"اسم البنك":null,"اسم المستفيد (كما في البنك)":null,"تاريخ انتهاء رخصة العمل":"2026-08-03","التكلفة الحكومية الإجمالية":6425,"_cost":{"iqamaRenew":1926,"licenseRenew":2425,"medical":74,"sponsor":2000},"رقم الجواز":null,"تاريخ انتهاء الجواز":null,"الجنس":null,"تاريخ اصدار الاقامة":null,"تاريخ انتهاء الاقامة بالهجري":null,"رقم صاحب العمل":null,"تاريخ المباشرة":"06/25/2026","الاجازة السنوية":"","_licPending":true,"اسم شركة التأمين":"ملاذ للتأمين","تكلفة التأمين الطبي":74}];
 const FIN = {"grandTotal":75365,"iqamaRenew":20449,"licenseRenew":33950,"medical":966,"sponsor":20000,"payrollMonthly":15177.5,"count":10,"perEmployee":[{"name":"شميم","eid":"500","total":6537},{"name":"مد طيف ال رحمن شهاب","eid":"501","total":8962},{"name":"مد تفيق مد حسن","eid":"502","total":9544},{"name":"لامين مولا","eid":"504","total":6794},{"name":"راسل ديوان","eid":"503","total":9392},{"name":"محمد شيدال اسلام","eid":"505","total":9032},{"name":"شكيب ميا","eid":"506","total":7292},{"name":"مد فرهاد علي شاركر","eid":"507","total":5744},{"name":"ساجر","eid":"508","total":5643},{"name":"مد هلال مد الدين","eid":"509","total":6425}],"avg":7536.5};
+/* Ajeer staffing-contract permits — matched to employees by iqama number.
+   A new permit for the same iqama supersedes the older one (see dedupeAjeer). */
+const AJEER = [
+  {"permit":"TQ6211784","iqama":"2595376282","nameOnPermit":"MD SHAHIDUL ISLAM","issueDate":"2026-08-02","expiryDate":"2026-09-02","file":"permits/TQ6211784.pdf","qr":"permits/qr/TQ6211784.png"},
+  {"permit":"TQ6211786","iqama":"2613722731","nameOnPermit":"MD SAGAR AHMED","issueDate":"2026-08-02","expiryDate":"2026-09-02","file":"permits/TQ6211786.pdf","qr":"permits/qr/TQ6211786.png"},
+  {"permit":"TQ6211705","iqama":"2555126552","nameOnPermit":"SHAKIB MIA","issueDate":"2026-08-02","expiryDate":"2026-09-02","file":"permits/TQ6211705.pdf","qr":"permits/qr/TQ6211705.png"},
+  {"permit":"TQ6211709","iqama":"2584358168","nameOnPermit":"MD FARHAD ALI SHARKER","issueDate":"2026-08-02","expiryDate":"2026-09-02","file":"permits/TQ6211709.pdf","qr":"permits/qr/TQ6211709.png"},
+  {"permit":"TQ6211782","iqama":"2593650357","nameOnPermit":"MD TAIFUR RAHMAN SHIHAB","issueDate":"2026-08-02","expiryDate":"2026-09-02","file":"permits/TQ6211782.pdf","qr":"permits/qr/TQ6211782.png"}
+];
 const SOON = 90; // days threshold for "expiring soon"
 const NOW = new Date(); NOW.setHours(0,0,0,0);
 const arMonths=["يناير","فبراير","مارس","أبريل","مايو","يونيو","يوليو","أغسطس","سبتمبر","أكتوبر","نوفمبر","ديسمبر"];
@@ -538,6 +624,33 @@ function statusLabel(st){
     case "bad":     return `منتهية · منذ ${Math.abs(st.n)} يوم`;
     case "today":   return "تنتهي اليوم";
     default:        return `سارية · متبقٍّ ${st.n} يوم`;  /* ok & warn */
+  }
+}
+/* Card-facing urgency tiers for iqama/license specifically (10 / 6-10 / 1-5 / 0 / overdue) —
+   deliberately separate from statusOf()'s 90-day SOON window, which still drives the
+   executive KPI/charts/"expiring soon" modal and stays unchanged for that purpose. */
+function docStatusOf(expDateStr){
+  const n=daysLeft(expDateStr);
+  if(n===null) return {key:"na",cls:"na",n:null};
+  if(n<0)      return {key:"expired",cls:"bad",n};
+  if(n===0)    return {key:"today",cls:"bad",n};
+  if(n<=5)     return {key:"red",cls:"bad",n};
+  if(n<=10)    return {key:"gold",cls:"warn",n};
+  return {key:"green",cls:"ok",n};
+}
+function docLicStatus(e){
+  if(e && e._licPending) return {key:"pending",cls:"pending",n:daysLeft(e[F.licExp])};
+  return docStatusOf(e[F.licExp]);
+}
+function docStatusLabel(st){
+  switch(st.key){
+    case "pending": return "جاري السداد";
+    case "na":      return "غير مسجّل";
+    case "expired": return `🔴 منتهية منذ ${Math.abs(st.n)} يوم`;
+    case "today":   return "🔴 تنتهي اليوم";
+    case "red":     return `🔴 سارية · متبقي ${st.n} يوم`;
+    case "gold":    return `🟡 سارية · متبقي ${st.n} يوم`;
+    default:        return `🟢 سارية · متبقي ${st.n} يوم`;
   }
 }
 function isExpired(st){return st.key==="bad";}
@@ -580,6 +693,7 @@ fillSelect(fNat,uniq(F.nat),"كل الجنسيات");
 fIq.innerHTML=`<option value="">كل الحالات</option><option value="ok">سارية</option><option value="warn">قريبة الانتهاء</option><option value="bad">منتهية</option>`;
 fLic.innerHTML=`<option value="">كل الحالات</option><option value="ok">سارية</option><option value="warn">قريبة الانتهاء</option><option value="bad">منتهية</option><option value="pending">جاري السداد</option>`;
 sort.innerHTML=`<option value="eid">الرقم الوظيفي</option><option value="name">الاسم (أ-ي)</option><option value="iq">انتهاء الإقامة (الأقرب)</option><option value="lic">انتهاء رخصة العمل (الأقرب)</option><option value="salary">إجمالي الراتب (الأعلى)</option>`;
+ajeerStatus.innerHTML=`<option value="">كل الحالات</option><option value="ok">ساري</option><option value="warn">ينتهي قريبًا</option><option value="today">ينتهي اليوم</option><option value="bad">منتهي</option>`;
 
 /* ---------- KPIs + charts ---------- */
 const C={ok:"#2E8C64",warn:"#C7962F",bad:"#C24A3B",pending:"#3A6E92",today:"#D2691E",slate:"#16283B",brass:"#A98544"};
@@ -699,7 +813,7 @@ function sortList(list){
 }
 function barPct(st){if(st.n===null)return 8;if(st.n<0)return 100;const p=100-(st.n/365*100);return Math.max(8,Math.min(100,p));}
 function card(e,i){
-  const iq=statusOf(e[F.iqExp]), lic=licStatus(e);
+  const iq=docStatusOf(e[F.iqExp]), lic=docLicStatus(e);
   return `<article class="card" tabindex="0" data-i="${i}" style="animation-delay:${Math.min(i*45,360)}ms">
     <div class="top">
       <div class="who">
@@ -724,7 +838,7 @@ function card(e,i){
 function tlRow(name,st){
   return `<div class="row">
     <div class="rh"><span class="name">${name}</span>
-      <span class="chip ${st.cls}"><span class="d"></span>${statusLabel(st)}</span></div>
+      <span class="chip ${st.cls}"><span class="d"></span>${docStatusLabel(st)}</span></div>
     <div class="bar ${st.cls}"><span style="width:0" data-w="${barPct(st)}"></span></div>
   </div>`;
 }
@@ -752,8 +866,8 @@ const hc=document.getElementById("hovercard");
 function icon(p){return `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${p}</svg>`;}
 const IC={mail:'<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/>',phone:'<path d="M5 4h4l2 5-3 2a12 12 0 0 0 5 5l2-3 5 2v4a2 2 0 0 1-2 2A17 17 0 0 1 3 6a2 2 0 0 1 2-2"/>',money:'<circle cx="12" cy="12" r="9"/><path d="M12 7v10M9 10h4a1.5 1.5 0 0 1 0 3H9m0 0h5"/>',id:'<rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="8.5" cy="12" r="2"/><path d="M14 10h4M14 14h3"/>'};
 function showHover(i,ev){
-  const e=DATA[i];const iq=statusOf(e[F.iqExp]),lic=licStatus(e);
-  const short=st=>st.key==="ok"?"سارية":st.key==="bad"?"منتهية":st.key==="today"?"تنتهي اليوم":st.key==="na"?"—":st.key==="pending"?"جاري السداد":"سارية · قريبة";
+  const e=DATA[i];const iq=docStatusOf(e[F.iqExp]),lic=docLicStatus(e);
+  const short=st=>st.key==="green"?"🟢 سارية":st.key==="gold"?"🟡 سارية":st.key==="red"?"🔴 سارية":st.key==="expired"?"🔴 منتهية":st.key==="today"?"🔴 تنتهي اليوم":st.key==="na"?"—":st.key==="pending"?"جاري السداد":"سارية";
   hc.innerHTML=`<div class="hc-name">${esc(e[F.name])}</div>
     <div class="hc-row"><span class="ico">${icon(IC.mail)}</span><div><div class="lb">البريد الإلكتروني</div></div><span class="vl">${esc(clean(e[F.email]))}</span></div>
     <div class="hc-row"><span class="ico">${icon(IC.phone)}</span><div><div class="lb">رقم الجوال</div></div><span class="vl">${esc(clean(e[F.phone]))}</span></div>
@@ -775,6 +889,172 @@ function moveHover(ev){
 }
 function hideHover(){hc.classList.remove("show");}
 
+/* ---------- ajeer permits ---------- */
+/* newest issueDate per iqama wins — a re-uploaded permit supersedes the old one instead of stacking */
+function dedupeAjeer(list){
+  const byIqama=new Map();
+  list.forEach(p=>{
+    const cur=byIqama.get(p.iqama);
+    if(!cur||new Date(p.issueDate)>new Date(cur.issueDate))byIqama.set(p.iqama,p);
+  });
+  return [...byIqama.values()];
+}
+const AJEER_LATEST=dedupeAjeer(AJEER);
+function findEmployeeByIqama(iqama){return DATA.find(e=>String(e[F.iqama])===String(iqama));}
+function permitFor(e){return AJEER_LATEST.find(p=>String(p.iqama)===String(e[F.iqama]));}
+let ajeerState={q:"",status:""};
+function ajeerLinked(){return AJEER_LATEST.filter(p=>findEmployeeByIqama(p.iqama));}
+function ajeerUnlinked(){return AJEER_LATEST.filter(p=>!findEmployeeByIqama(p.iqama));}
+/* Ajeer permits use their own tier scheme (5 / 2 / 0 days) instead of the
+   generic 90-day SOON window used for iqama/license — a permit only runs
+   ~1 month, so "31 days left" must read as fully valid (green), not a warning. */
+function ajeerStatusOf(expiryDate){
+  const n=daysLeft(expiryDate); // always computed against `NOW` (fresh each page load) — never a stored value
+  if(n===null)return{key:"na",cls:"na",n:null};
+  if(n<0)return{key:"expired",cls:"bad",n};
+  if(n===0)return{key:"today",cls:"bad",n};
+  if(n<=2)return{key:"warn2",cls:"warn2",n};
+  if(n<=5)return{key:"warn5",cls:"warn",n};
+  return{key:"ok",cls:"ok",n};
+}
+function ajeerStatusLabel(st){
+  switch(st.key){
+    case "na":return "غير محدد";
+    case "expired":return "منتهية";
+    case "today":return "تنتهي اليوم";
+    case "warn2":return "وشيكة الانتهاء";
+    case "warn5":return "تنتهي قريبًا";
+    default:return "سارية";
+  }
+}
+function ajeerDaysLine(st){
+  if(st.n==null)return "—";
+  if(st.key==="expired")return `منتهية منذ ${Math.abs(st.n)} يوم`;
+  if(st.key==="today")return "الأيام المتبقية: اليوم";
+  return `الأيام المتبقية: ${st.n} يومًا`;
+}
+function ajeerChip(st){
+  const icon=st.key==="ok"?"✔ ":"";
+  return `<span class="chip ${st.cls} achip"><span class="d"></span>${icon}${ajeerStatusLabel(st)}</span>`;
+}
+/* bar fill relative to the permit's own issue→expiry window (~1 month), not the
+   365-day assumption the generic barPct() uses for annual iqama/license documents */
+function ajeerBarPct(p,st){
+  if(st.n===null)return 8;
+  if(st.n<0)return 100;
+  const issue=parseDate(p.issueDate),expiry=parseDate(p.expiryDate);
+  const total=(issue&&expiry)?Math.max(1,Math.round((expiry-issue)/86400000)):30;
+  return Math.max(8,Math.min(100,100-(st.n/total*100)));
+}
+function ajeerMatches(p){
+  const emp=findEmployeeByIqama(p.iqama);
+  const name=emp?emp[F.name]:p.nameOnPermit;
+  const q=ajeerState.q.trim().toLowerCase();
+  if(q&&!(String(name).toLowerCase().includes(q)||p.permit.toLowerCase().includes(q)))return false;
+  if(ajeerState.status&&ajeerStatusOf(p.expiryDate).key!==ajeerState.status)return false;
+  return true;
+}
+function ajeerCard(p,i){
+  const emp=findEmployeeByIqama(p.iqama);
+  const st=ajeerStatusOf(p.expiryDate);
+  const name=emp?emp[F.name]:p.nameOnPermit;
+  return `<article class="card" tabindex="0" style="animation-delay:${Math.min(i*45,360)}ms">
+    <div class="top">
+      <div class="who">
+        <div class="avatar">${esc(initials(name))}</div>
+        <div style="min-width:0">
+          <div class="nm">${esc(name)}</div>
+          <div class="role">${esc(p.permit)}${emp?` · #${esc(emp[F.eid])}`:""}</div>
+        </div>
+      </div>
+    </div>
+    <div class="qr-row">
+      <button class="qr-thumb" type="button" data-qr="${esc(p.qr)}" data-permit="${esc(p.permit)}" aria-label="عرض رمز QR للتصريح ${esc(p.permit)}" title="عرض رمز QR">
+        <img src="${esc(p.qr)}" alt="QR ${esc(p.permit)}" loading="lazy">
+      </button>
+      <div class="qr-hint">📱 امسح رمز QR للاطلاع على التصريح</div>
+    </div>
+    <div class="meta">
+      <span class="mi">إصدار <span class="num">${fmtDate(p.issueDate)}</span></span>
+      <span class="mi">انتهاء <span class="num">${fmtDate(p.expiryDate)}</span></span>
+    </div>
+    <div class="ajeer-status">
+      ${ajeerChip(st)}
+      <div class="adays">${ajeerDaysLine(st)}</div>
+    </div>
+    <div class="tl">
+      <div class="row">
+        <div class="bar ${st.cls}"><span style="width:0" data-w="${ajeerBarPct(p,st)}"></span></div>
+      </div>
+    </div>
+    <div class="actions" style="margin-top:14px">
+      <a class="reset" href="${esc(p.file)}" target="_blank" rel="noopener">فتح الملف</a>
+      <a class="reset" href="${esc(p.file)}" download>تحميل</a>
+    </div>
+  </article>`;
+}
+function renderAjeer(){
+  const linked=ajeerLinked(), unlinked=ajeerUnlinked();
+  const shown=linked.filter(ajeerMatches);
+  ajeerIdx.textContent=`${shown.length} من ${linked.length}`;
+  ajeerGrid.innerHTML=shown.length?shown.map((p,i)=>ajeerCard(p,i)).join(""):
+    `<div style="grid-column:1/-1;text-align:center;padding:60px 0;color:var(--ink-soft)">لا توجد تصاريح مطابقة</div>`;
+  const uw=document.getElementById("ajeerUnlinkedWrap");
+  if(unlinked.length){
+    uw.style.display="";
+    document.getElementById("ajeerUnlinkedGrid").innerHTML=unlinked.map((p,i)=>ajeerCard(p,i)).join("");
+  }else{
+    uw.style.display="none";
+  }
+  requestAnimationFrame(()=>document.querySelectorAll("#ajeerGrid .bar span,#ajeerUnlinkedGrid .bar span").forEach(s=>s.style.width=s.dataset.w+"%"));
+  document.querySelectorAll("#ajeerGrid .qr-thumb,#ajeerUnlinkedGrid .qr-thumb").forEach(btn=>{
+    btn.addEventListener("click",ev=>{ev.stopPropagation();openQrModal(btn.dataset.permit,btn.dataset.qr);});
+  });
+}
+ajeerQ.addEventListener("input",e=>{ajeerState.q=e.target.value;renderAjeer();});
+ajeerStatus.addEventListener("change",e=>{ajeerState.status=e.target.value;renderAjeer();});
+
+/* ---------- QR modal (shared by ajeer cards + employee drawer) ---------- */
+function openQrModal(permitNumber,qrSrc){
+  const box=document.getElementById("qrModalBox");
+  box.innerHTML=`
+    <div class="mhead" style="background:var(--paper-2);border-bottom-color:var(--hair)">
+      <button class="mclose" id="qrClose" aria-label="إغلاق">✕</button>
+      <span class="eyebrow" style="color:var(--brass)">تصريح أجير</span>
+      <h3 id="qrTitle">رمز التحقق (QR)</h3>
+    </div>
+    <div class="mbody" style="padding:28px;text-align:center">
+      <img src="${esc(qrSrc)}" alt="QR ${esc(permitNumber)}" style="width:220px;height:220px;border:1px solid var(--hair);border-radius:12px;padding:10px;background:#fff">
+      <div class="num" style="margin-top:16px;font-size:15px;font-weight:600">${esc(permitNumber)}</div>
+      <div style="display:flex;gap:10px;justify-content:center;margin-top:18px;flex-wrap:wrap">
+        <a class="export" href="${esc(qrSrc)}" download="${esc(permitNumber)}-QR.png">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 12 5 5 5-5"/><path d="M5 21h14"/></svg>
+          تحميل الصورة
+        </a>
+        <button class="reset" id="qrCopyBtn" type="button">نسخ رقم التصريح</button>
+      </div>
+    </div>`;
+  document.getElementById("qrScrim").classList.add("show");
+  document.body.style.overflow="hidden";
+  document.getElementById("qrClose").onclick=closeQrModal;
+  document.getElementById("qrCopyBtn").onclick=()=>{
+    const b=document.getElementById("qrCopyBtn");
+    (navigator.clipboard?navigator.clipboard.writeText(permitNumber):Promise.reject()).then(()=>{
+      b.textContent="تم النسخ ✓";setTimeout(()=>b.textContent="نسخ رقم التصريح",1500);
+    }).catch(()=>{b.textContent="تعذر النسخ";setTimeout(()=>b.textContent="نسخ رقم التصريح",1500);});
+  };
+}
+function closeQrModal(){document.getElementById("qrScrim").classList.remove("show");if(!drawer.classList.contains("show")&&!sidenav.classList.contains("show"))document.body.style.overflow="";}
+document.getElementById("qrScrim").addEventListener("click",e=>{if(e.target.id==="qrScrim")closeQrModal();});
+
+/* ---------- side navigation ---------- */
+function openSidenav(){navScrim.classList.add("show");sidenav.classList.add("show");document.body.style.overflow="hidden";}
+function closeSidenav(){navScrim.classList.remove("show");sidenav.classList.remove("show");document.body.style.overflow="";}
+menuBtn.addEventListener("click",openSidenav);
+snClose.addEventListener("click",closeSidenav);
+navScrim.addEventListener("click",closeSidenav);
+sidenav.querySelectorAll(".sn-link").forEach(a=>a.addEventListener("click",closeSidenav));
+
 /* ---------- drawer ---------- */
 const scrim=document.getElementById("scrim"),drawer=document.getElementById("drawer");
 function drRow(k,v,ltr){return `<div class="dr-row"><span class="dk">${k}</span><span class="dv ${ltr?'ltr':''}">${v}</span></div>`;}
@@ -783,17 +1063,23 @@ function dcell(dateStr,st){
   if(st.key==="na"||!dateStr) return "—";
   return `${fmtDate(dateStr)}<span class="spill ${st.cls}"><span class="d"></span>${statusLabel(st)}</span>`;
 }
+/* iqama/license-specific variant of dcell(), using the new day-tiered labels */
+function docDcell(dateStr,st){
+  if(st.key==="na"||!dateStr) return "—";
+  return `${fmtDate(dateStr)}<span class="spill ${st.cls}"><span class="d"></span>${docStatusLabel(st)}</span>`;
+}
 function alertBox(name,st){
   const msg = st.key==="pending"?`◷ ${name}: جاري السداد — قيد التجديد`:
     st.key==="na"?"غير مسجّل":
-    st.key==="bad"?`⚠️ ${name} منتهية منذ ${Math.abs(st.n)} يومًا`:
-    st.key==="today"?`⏳ ${name} تنتهي اليوم`:
-    st.key==="warn"?`⚠️ ${name} سارية · متبقٍّ ${st.n} يومًا`:
-    `✓ ${name} سارية · متبقٍّ ${st.n} يومًا`;
+    st.key==="expired"?`🔴 ${name} منتهية منذ ${Math.abs(st.n)} يومًا`:
+    st.key==="today"?`🔴 ${name} تنتهي اليوم`:
+    st.key==="red"?`🔴 ${name} سارية · متبقٍّ ${st.n} يومًا`:
+    st.key==="gold"?`🟡 ${name} سارية · متبقٍّ ${st.n} يومًا`:
+    `🟢 ${name} سارية · متبقٍّ ${st.n} يومًا`;
   return `<div class="a ${st.cls}"><div class="t">${name}</div><div class="m">${msg}</div></div>`;
 }
 function openDrawer(i){
-  const e=DATA[i];const iq=statusOf(e[F.iqExp]),lic=licStatus(e);
+  const e=DATA[i];const iq=docStatusOf(e[F.iqExp]),lic=docLicStatus(e);
   drawer.innerHTML=`
     <div class="dr-head">
       <button class="dr-close" id="drClose" aria-label="إغلاق">✕</button>
@@ -808,7 +1094,7 @@ function openDrawer(i){
         ${drRow("الرقم الوظيفي",esc(e[F.eid]),1)}
         ${drRow("رقم الإقامة",esc(e[F.iqama]),1)}
         ${drRow("تاريخ إصدار الإقامة",fmtDate(e[F.iqIssue]))}
-        ${drRow("تاريخ انتهاء الإقامة",dcell(e[F.iqExp],iq))}
+        ${drRow("تاريخ انتهاء الإقامة",docDcell(e[F.iqExp],iq))}
         ${drRow("انتهاء الإقامة (هجري)",clean(e[F.iqHijri]),1)}
         ${drRow("حالة الإقامة (بالملف)",clean(e[F.iqState]))}
         ${drRow("الجنسية",esc(e[F.nat]))}
@@ -821,7 +1107,7 @@ function openDrawer(i){
 
       <div class="dr-group"><div class="gt">العمل والتوثيق</div><div class="dl">
         ${drRow("المهنة",esc(e[F.job]))}
-        ${drRow("تاريخ انتهاء رخصة العمل",dcell(e[F.licExp],lic))}
+        ${drRow("تاريخ انتهاء رخصة العمل",docDcell(e[F.licExp],lic))}
         ${drRow("حالة رخصة العمل (بالملف)",e._licPending?"جاري السداد":clean(e[F.licState]))}
         ${drRow("حالة النقل",clean(e[F.transfer]))}
         ${drRow("حالة التأمين الطبي",clean(e[F.insState]))}
@@ -831,6 +1117,19 @@ function openDrawer(i){
         ${drRow("نهاية العقد",fmtDate(e[F.cEnd]))}
         ${drRow("تاريخ المباشرة",fmtDate(e[F.joinDate]))}
         ${drRow("رصيد الإجازة السنوية",clean(e[F.annualLeave])+(e[F.annualLeave]?" يومًا":""))}
+      </div></div>
+
+      <div class="dr-group"><div class="gt">تصريح أجير</div><div class="dl">
+        ${(()=>{const p=permitFor(e);
+          if(!p)return drRow("الحالة","لا يوجد تصريح أجير مرتبط");
+          const st=ajeerStatusOf(p.expiryDate);
+          return drRow("رقم التصريح",esc(p.permit),1)
+            +drRow("تاريخ الإصدار",fmtDate(p.issueDate))
+            +drRow("تاريخ الانتهاء",`${fmtDate(p.expiryDate)}${ajeerChip(st)}`)
+            +drRow("المدة المتبقية",ajeerDaysLine(st))
+            +`<div class="dr-row"><span class="dk">رمز QR</span><span class="dv"><button class="qr-thumb-inline" type="button" data-qr="${esc(p.qr)}" data-permit="${esc(p.permit)}" aria-label="عرض رمز QR"><img src="${esc(p.qr)}" alt="QR ${esc(p.permit)}" loading="lazy"></button></span></div>`
+            +`<div class="dr-row"><span class="dk">الملف</span><span class="dv"><a class="reset" href="${esc(p.file)}" target="_blank" rel="noopener" style="margin-inline-end:6px">فتح الملف</a><a class="reset" href="${esc(p.file)}" download>تحميل</a></span></div>`;
+        })()}
       </div></div>
 
       <div class="dr-group"><div class="gt">الراتب والتكاليف</div><div class="dl">
@@ -849,11 +1148,13 @@ function openDrawer(i){
     </div>`;
   scrim.classList.add("show");drawer.classList.add("show");document.body.style.overflow="hidden";
   document.getElementById("drClose").onclick=closeDrawer;
+  const qrBtn=drawer.querySelector(".qr-thumb-inline");
+  if(qrBtn)qrBtn.addEventListener("click",()=>openQrModal(qrBtn.dataset.permit,qrBtn.dataset.qr));
   drawer.querySelector(".dr-close").focus();
 }
 function closeDrawer(){scrim.classList.remove("show");drawer.classList.remove("show");document.body.style.overflow="";}
 scrim.addEventListener("click",closeDrawer);
-document.addEventListener("keydown",e=>{if(e.key==="Escape"){closeDrawer();closeSoonModal();}});
+document.addEventListener("keydown",e=>{if(e.key==="Escape"){closeDrawer();closeSoonModal();closeSidenav();closeQrModal();}});
 
 /* ---------- expiring-soon modal ---------- */
 const mscrim=document.getElementById("mscrim"),soonModal=document.getElementById("soonModal");
@@ -940,6 +1241,7 @@ document.getElementById("exportBtn").onclick=exportExcel;
 document.getElementById("issueDate").textContent=`${NOW.getDate()} ${arMonths[NOW.getMonth()]} ${NOW.getFullYear()}`;
 document.getElementById("year").textContent=NOW.getFullYear();
 render();
+renderAjeer();
 </script>
 </body>
 </html>

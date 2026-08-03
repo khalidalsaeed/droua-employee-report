@@ -1,10 +1,9 @@
 const { loadEmployees } = require("../../lib/notifications/employees");
+const { loadPermitExpiryByIqama } = require("../../lib/notifications/permits");
 const { scanExpirations } = require("../../lib/notifications/scan");
 const RECIPIENTS = require("../../lib/notifications/recipients");
 const { buildEmail } = require("../../lib/notifications/templates");
 const { sendMail } = require("../../lib/notifications/mailer");
-
-const DEFAULT_THRESHOLD_DAYS = 5;
 
 module.exports = async function handler(req, res) {
   if (process.env.CRON_SECRET) {
@@ -15,9 +14,10 @@ module.exports = async function handler(req, res) {
     }
   }
   try {
-    const thresholdDays = Number(process.env.REMINDER_DAYS_BEFORE) || DEFAULT_THRESHOLD_DAYS;
     const employees = await loadEmployees();
-    const alerts = scanExpirations(employees, thresholdDays);
+    const permitExpiryByIqama = await loadPermitExpiryByIqama();
+    for (const emp of employees) emp.ajeerExp = permitExpiryByIqama.get(String(emp.iqama)) || null;
+    const alerts = scanExpirations(employees);
 
     if (!alerts.length) {
       res.status(200).json({ ok: true, sent: 0, alerts: 0 });
