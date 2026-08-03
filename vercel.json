@@ -4,13 +4,13 @@
   ],
   "functions": {
     "api/cron/check-expirations.js": {
-      "includeFiles": "index.html"
+      "includeFiles": "app-shell.html"
     },
     "api/pages/home.js": {
-      "includeFiles": "index.html"
+      "includeFiles": "app-shell.html"
     },
     "api/pages/users.js": {
-      "includeFiles": "users.html"
+      "includeFiles": "users-shell.html"
     }
   },
   "rewrites": [
