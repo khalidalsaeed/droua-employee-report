@@ -5,6 +5,16 @@
   "functions": {
     "api/cron/check-expirations.js": {
       "includeFiles": "index.html"
+    },
+    "api/pages/home.js": {
+      "includeFiles": "index.html"
+    },
+    "api/pages/users.js": {
+      "includeFiles": "users.html"
     }
-  }
+  },
+  "rewrites": [
+    { "source": "/", "destination": "/api/pages/home" },
+    { "source": "/users.html", "destination": "/api/pages/users" }
+  ]
 }
