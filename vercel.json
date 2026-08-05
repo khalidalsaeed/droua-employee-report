@@ -13,16 +13,13 @@
       "includeFiles": "users-shell.html"
     },
     "api/pages/payroll.js": {
-      "includeFiles": "payroll-shell.html"
-    },
-    "api/pages/payroll-detail.js": {
-      "includeFiles": "payroll-detail-shell.html"
+      "includeFiles": "payroll{-detail,}-shell.html"
     }
   },
   "rewrites": [
     { "source": "/", "destination": "/api/pages/home" },
     { "source": "/users.html", "destination": "/api/pages/users" },
     { "source": "/payroll.html", "destination": "/api/pages/payroll" },
-    { "source": "/payroll/:id", "destination": "/api/pages/payroll-detail?id=:id" }
+    { "source": "/payroll/:id", "destination": "/api/pages/payroll?id=:id" }
   ]
 }

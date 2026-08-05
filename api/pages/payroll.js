@@ -3,11 +3,18 @@ const path = require("path");
 const { requireUser } = require("../../lib/auth/requireAuth");
 const { can } = require("../../lib/auth/roles");
 
-/* Serves the payroll-shell.html page only for sessions whose role has the
-   existing "finance" permission (owner/admin/finance/viewer — matches the
+/* Serves the payroll pages only for sessions whose role has the existing
+   "finance" permission (owner/admin/finance/viewer — matches the
    financial-analysis section's existing access rule; HR does not get it).
-   Anyone else typing "/payroll.html" directly is redirected server-side.
-   Never cached at the edge — same reasoning as api/pages/home.js. */
+   Anyone else typing "/payroll.html" or "/payroll/:id" directly is
+   redirected server-side. Never cached at the edge — same reasoning as
+   api/pages/home.js.
+
+   This single function serves BOTH the payroll index page and every
+   per-month detail page (distinguished by the ?id= query param set via
+   vercel.json's "/payroll/:id" rewrite) so that adding the detail page
+   didn't require a second Serverless Function — the Hobby plan caps a
+   deployment at 12 functions. */
 const NO_CACHE = { "Cache-Control": "no-store, must-revalidate" };
 
 module.exports = async function handler(req, res) {
@@ -22,7 +29,9 @@ module.exports = async function handler(req, res) {
     res.end();
     return;
   }
-  const html = fs.readFileSync(path.join(process.cwd(), "payroll-shell.html"), "utf8");
+  const { id } = req.query || {};
+  const shellFile = id ? "payroll-detail-shell.html" : "payroll-shell.html";
+  const html = fs.readFileSync(path.join(process.cwd(), shellFile), "utf8");
   res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", ...NO_CACHE });
   res.end(html);
 };
