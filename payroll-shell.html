@@ -128,7 +128,7 @@ document.getElementById("logoutBtn").addEventListener("click", async ()=>{
 async function loadPayrollRuns(){
   const r = await fetch("/api/data/payroll-runs");
   const j = await r.json();
-  if(r.ok && j.ok){ RUNS = j.runs; renderPayrollList(); }
+  if(r.ok && j.ok){ RUNS = j.items; renderPayrollList(); }
 }
 
 function renderPayrollList(){
