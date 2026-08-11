@@ -3,23 +3,18 @@
     { "path": "/api/cron/check-expirations", "schedule": "0 3 * * *" }
   ],
   "functions": {
-    "api/cron/check-expirations.js": {
-      "includeFiles": "app-shell.html"
-    },
-    "api/pages/home.js": {
-      "includeFiles": "app-shell.html"
-    },
-    "api/pages/users.js": {
-      "includeFiles": "users-shell.html"
-    },
-    "api/pages/payroll.js": {
-      "includeFiles": "payroll{-detail,}-shell.html"
+    "api/cron/check-expirations.js": {},
+    "api/app.js": {
+      "includeFiles": "{app,users,payroll,payroll-detail}-shell.html"
     }
   },
   "rewrites": [
-    { "source": "/", "destination": "/api/pages/home" },
-    { "source": "/users.html", "destination": "/api/pages/users" },
-    { "source": "/payroll.html", "destination": "/api/pages/payroll" },
-    { "source": "/payroll/:id", "destination": "/api/pages/payroll?id=:id" }
+    { "source": "/", "destination": "/api/app?kind=page&page=home" },
+    { "source": "/users.html", "destination": "/api/app?kind=page&page=users" },
+    { "source": "/payroll.html", "destination": "/api/app?kind=page&page=payroll" },
+    { "source": "/payroll/:id", "destination": "/api/app?kind=page&page=payroll-detail&id=:id" },
+    { "source": "/api/auth/:path*", "destination": "/api/app?kind=api&apiPath=auth/:path*" },
+    { "source": "/api/data/:path*", "destination": "/api/app?kind=api&apiPath=data/:path*" },
+    { "source": "/api/files/:path*", "destination": "/api/app?kind=api&apiPath=files/:path*" }
   ]
 }

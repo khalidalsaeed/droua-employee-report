@@ -194,7 +194,7 @@ function renderUsers(){
 }
 
 async function loadUsers(){
-  const r = await fetch("/api/users/list");
+  const r = await fetch("/api/data/users");
   const j = await r.json();
   if(r.ok && j.ok){ USERS = j.users; renderUsers(); }
 }
@@ -228,7 +228,7 @@ function openAddModal(){
     const err=document.getElementById("mError");
     err.classList.remove("show");
     if(!name || !email){ err.textContent="الاسم والبريد الإلكتروني مطلوبان"; err.classList.add("show"); return; }
-    const r=await fetch("/api/users/create",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name,email,role,password:password||undefined})});
+    const r=await fetch("/api/data/users",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name,email,role,password:password||undefined})});
     const j=await r.json();
     if(!r.ok || !j.ok){ err.textContent=j.error||"تعذّر إنشاء المستخدم"; err.classList.add("show"); return; }
     await loadUsers();
@@ -280,7 +280,7 @@ function openEditModal(id){
     const password=document.getElementById("fPassword").value.trim();
     const err=document.getElementById("mError");
     err.classList.remove("show");
-    const r=await fetch("/api/users/update",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id:u.id,name,email,role,status,password:password||undefined})});
+    const r=await fetch("/api/data/users",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({id:u.id,name,email,role,status,password:password||undefined})});
     const j=await r.json();
     if(!r.ok || !j.ok){ err.textContent=j.error||"تعذّر تحديث المستخدم"; err.classList.add("show"); return; }
     await loadUsers();
@@ -298,7 +298,7 @@ async function confirmDelete(id){
   const u = USERS.find(x=>x.id===id);
   if(!u) return;
   if(!confirm(`هل أنت متأكد من حذف المستخدم "${u.name}"؟ لا يمكن التراجع عن هذا الإجراء.`)) return;
-  const r=await fetch("/api/users/delete",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id})});
+  const r=await fetch("/api/data/users",{method:"DELETE",headers:{"Content-Type":"application/json"},body:JSON.stringify({id})});
   const j=await r.json();
   if(!r.ok || !j.ok){ alert(j.error||"تعذّر حذف المستخدم"); return; }
   await loadUsers();

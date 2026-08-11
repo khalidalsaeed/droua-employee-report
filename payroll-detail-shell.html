@@ -203,7 +203,7 @@ function attachmentCard(att, monthLabel){
 }
 
 async function loadRun(){
-  const r = await fetch(`/api/payroll/list?id=${encodeURIComponent(RUN_ID)}`);
+  const r = await fetch(`/api/data/payroll-runs?id=${encodeURIComponent(RUN_ID)}`);
   const j = await r.json();
   if(!r.ok || !j.ok){
     document.getElementById("detailContent").innerHTML = `<div class="empty-note">لم يتم العثور على مسير الرواتب المطلوب</div>`;

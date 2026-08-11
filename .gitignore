@@ -5,5 +5,15 @@ node_modules/
 
 .vercel
 
-# local-only user/session store (sensitive; not the final production backend)
-data/
+# legacy local-only user/session store (superseded by Neon — see lib/data/,
+# lib/auth/users.js, lib/auth/audit.js). Anchored to repo root so it doesn't
+# also match lib/data/.
+/data/
+
+# one-time Neon migration script — contains the real owner password hash and
+# employee PII (bank/IBAN/passport numbers) baked in as seed INSERTs. Keep
+# local-only; already applied to the live database (see lib/data/, db/schema.sql
+# on disk if you need to re-run or audit it).
+/db/
+
+.env*
