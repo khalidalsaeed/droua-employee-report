@@ -3,7 +3,6 @@
     { "path": "/api/cron/check-expirations", "schedule": "0 3 * * *" }
   ],
   "functions": {
-    "api/cron/check-expirations.js": {},
     "api/app.js": {
       "includeFiles": "{app,users,payroll,payroll-detail}-shell.html"
     }
