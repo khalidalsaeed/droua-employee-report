@@ -53,6 +53,7 @@ main.block{padding:40px 0}
 .payroll-card-link:hover .payroll-card{border-color:var(--brass);box-shadow:var(--shadow-lg)}
 .pc-month{font-family:var(--serif);font-size:19px}
 </style>
+<link rel="stylesheet" href="/admin-ui.css">
 </head>
 <body>
 <header class="site">
@@ -75,12 +76,19 @@ main.block{padding:40px 0}
   <main class="block wrap">
     <div class="sec-head">
       <h1>مسير الرواتب</h1>
-      <span style="font-size:12.5px;color:var(--ink-soft)">أرشيف المسيرات الشهرية</span>
+      <div style="display:flex;align-items:center;gap:14px">
+        <span style="font-size:12.5px;color:var(--ink-soft)">أرشيف المسيرات الشهرية</span>
+        <button class="admin-add-btn" id="addRunBtn" type="button" style="display:none">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+          إضافة شهر جديد
+        </button>
+      </div>
     </div>
     <div class="payroll-list" id="payrollList"></div>
   </main>
 </div>
 
+<script src="/admin-ui.js"></script>
 <script>
 function esc(s){return String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
 
@@ -131,22 +139,101 @@ async function loadPayrollRuns(){
   if(r.ok && j.ok){ RUNS = j.items; renderPayrollList(); }
 }
 
+function isAdminUser(){ return CURRENT_USER && (CURRENT_USER.role==="owner"||CURRENT_USER.role==="admin"); }
+
 function renderPayrollList(){
   const list = document.getElementById("payrollList");
   if(!RUNS.length){ list.innerHTML = `<div class="empty-note">لا توجد مسيرات رواتب بعد</div>`; return; }
+  const admin=isAdminUser();
   list.innerHTML = RUNS.map(run => `
-    <a class="payroll-card-link" href="/payroll/${encodeURIComponent(run.id)}">
-      <div class="payroll-card">
-        <div class="pc-month">📁 ${esc(run.monthLabel)}</div>
-        <div>الحالة: ${statusBadge(run.statusKey)}</div>
-      </div>
-    </a>
+    <div class="payroll-item">
+      <a class="payroll-card-link" href="/payroll/${encodeURIComponent(run.id)}">
+        <div class="payroll-card">
+          <div class="pc-month">📁 ${esc(run.monthLabel)}</div>
+          <div>الحالة: ${statusBadge(run.statusKey)}</div>
+        </div>
+      </a>
+      ${admin?`<div class="admin-row-actions" style="margin-top:8px">
+        <button class="admin-mini-btn" data-act="edit-run" data-id="${esc(run.id)}">تعديل</button>
+        <button class="admin-mini-btn danger" data-act="delete-run" data-id="${esc(run.id)}">حذف</button>
+      </div>`:""}
+    </div>
   `).join("");
+  if(admin){
+    list.querySelectorAll('[data-act="edit-run"]').forEach(b=>b.addEventListener("click", ()=>openRunForm(RUNS.find(r=>r.id===b.dataset.id))));
+    list.querySelectorAll('[data-act="delete-run"]').forEach(b=>b.addEventListener("click", ()=>deleteRun(b.dataset.id)));
+  }
 }
+
+const arMonths=["يناير","فبراير","مارس","أبريل","مايو","يونيو","يوليو","أغسطس","سبتمبر","أكتوبر","نوفمبر","ديسمبر"];
+const RUN_STATUS_OPTIONS=Object.keys(STATUS_CONFIG);
+
+function openRunForm(existing){
+  const isEdit=!!existing;
+  const monthValue = isEdit ? existing.id : "";
+  const modal=AdminUI.openModal(`
+    <div class="admin-mhead"><button class="admin-mclose" data-admin-close>✕</button><h3>${isEdit?"تعديل مسير الرواتب":"إضافة شهر جديد"}</h3></div>
+    <div class="admin-mbody">
+      <div class="admin-error-msg" data-admin-error></div>
+      <div class="admin-field">
+        <label for="rfMonth">الشهر</label>
+        <input class="in" id="rfMonth" type="month" value="${esc(monthValue)}" ${isEdit?"disabled":""}>
+        ${isEdit?`<div class="hint">لا يمكن تغيير الشهر بعد إنشاء السجل</div>`:""}
+      </div>
+      <div class="admin-field">
+        <label for="rfUploadedAt">تاريخ الرفع</label>
+        <input class="in" id="rfUploadedAt" type="date" value="${esc(existing?existing.uploadedAt:"")}">
+      </div>
+      <div class="admin-field">
+        <label for="rfStatus">الحالة</label>
+        <select class="in" id="rfStatus">
+          ${RUN_STATUS_OPTIONS.map(k=>`<option value="${k}" ${existing&&existing.statusKey===k?"selected":""}>${esc(STATUS_CONFIG[k].label)}</option>`).join("")}
+        </select>
+      </div>
+    </div>
+    <div class="admin-mfoot"><button class="admin-btn-ghost" data-admin-close>إلغاء</button><button class="admin-btn-primary" id="rfSave">${isEdit?"حفظ التغييرات":"إضافة"}</button></div>
+  `);
+  modal.querySelector("#rfSave").addEventListener("click", async ()=>{
+    AdminUI.clearError(modal);
+    const uploadedAt=document.getElementById("rfUploadedAt").value||null;
+    const statusKey=document.getElementById("rfStatus").value;
+    try{
+      if(isEdit){
+        await AdminUI.api("PUT","/api/data/payroll-runs",{id:existing.id, monthLabel:existing.monthLabel, uploadedAt, statusKey, fileUrl:existing.fileUrl});
+      }else{
+        const monthVal=document.getElementById("rfMonth").value; // "YYYY-MM"
+        if(!monthVal){ AdminUI.showError(modal,"الشهر مطلوب"); return; }
+        const [y,m]=monthVal.split("-").map(Number);
+        const monthLabel=`${arMonths[m-1]} ${y}`;
+        await AdminUI.api("POST","/api/data/payroll-runs",{id:monthVal, monthLabel, uploadedAt, statusKey, attachments:[
+          {key:"payroll_sheet",label:"مسير الرواتب",statusKey:"pending_upload",fileUrl:null,uploadedAt:null,note:null},
+          {key:"damanah_invoice",label:"فاتورة شركة ضمان",statusKey:"pending_upload",fileUrl:null,uploadedAt:null,note:"لم يتم رفع الفاتورة بعد."},
+          {key:"payment_receipt",label:"إيصال السداد",statusKey:"pending_payment",fileUrl:null,uploadedAt:null,note:"لم يتم إرفاق إيصال السداد بعد."},
+        ]});
+      }
+      await loadPayrollRuns();
+      AdminUI.closeModal();
+    }catch(err){
+      AdminUI.showError(modal, err.message);
+    }
+  });
+}
+async function deleteRun(id){
+  const run=RUNS.find(r=>r.id===id);
+  if(!AdminUI.confirmDanger(`هل أنت متأكد من حذف مسير رواتب "${run?run.monthLabel:id}"؟ سيتم حذف كل مرفقاته أيضًا. لا يمكن التراجع عن هذا الإجراء.`)) return;
+  try{
+    await AdminUI.api("DELETE","/api/data/payroll-runs",{id});
+    await loadPayrollRuns();
+  }catch(err){
+    alert(err.message);
+  }
+}
+document.getElementById("addRunBtn").addEventListener("click", ()=>openRunForm(null));
 
 (async function init(){
   const ok = await initAuthGate();
   if(!ok) return;
+  if(isAdminUser()) document.getElementById("addRunBtn").style.display="";
   await loadPayrollRuns();
 })();
 </script>

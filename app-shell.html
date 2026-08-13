@@ -376,6 +376,7 @@ footer.site{border-top:1px solid var(--hair);margin-top:30px}
 @media(prefers-reduced-motion:reduce){*{animation:none !important;transition:none !important;scroll-behavior:auto}}
 
 </style>
+<link rel="stylesheet" href="/admin-ui.css">
 </head>
 <body>
 
@@ -474,7 +475,15 @@ footer.site{border-top:1px solid var(--hair);margin-top:30px}
 </section>
 
 <section class="block wrap" id="peopleSec">
-  <div class="sec-head"><h2>سجل الموظفين</h2><span class="idx">بحث · تصفية · ترتيب</span></div>
+  <div class="sec-head"><h2>سجل الموظفين</h2>
+    <div style="display:flex;align-items:center;gap:14px">
+      <span class="idx">بحث · تصفية · ترتيب</span>
+      <button class="admin-add-btn" id="addEmployeeBtn" type="button" style="display:none">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+        إضافة موظف
+      </button>
+    </div>
+  </div>
   <div class="controls">
     <div class="ctrl-grid">
       <div class="field">
@@ -505,7 +514,15 @@ footer.site{border-top:1px solid var(--hair);margin-top:30px}
 </section>
 
 <section class="block wrap" id="ajeerSec">
-  <div class="sec-head"><h2>تصاريح أجير</h2><span class="idx" id="ajeerIdx">—</span></div>
+  <div class="sec-head"><h2>تصاريح أجير</h2>
+    <div style="display:flex;align-items:center;gap:14px">
+      <span class="idx" id="ajeerIdx">—</span>
+      <button class="admin-add-btn" id="addPermitBtn" type="button" style="display:none">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+        إضافة تصريح
+      </button>
+    </div>
+  </div>
   <div class="controls">
     <div class="ctrl-grid" style="grid-template-columns:1.6fr 1fr">
       <div class="field">
@@ -595,6 +612,7 @@ footer.site{border-top:1px solid var(--hair);margin-top:30px}
 
 <div class="mscrim" id="qrScrim"><div class="modal" id="qrModalBox" style="max-width:380px" role="dialog" aria-modal="true" aria-labelledby="qrTitle"></div></div>
 
+<script src="/admin-ui.js"></script>
 <script>
 let DATA = [];
 let FIN = {};
@@ -647,6 +665,7 @@ async function initAuthGate(){
     const j=await r.json();
     CURRENT_USER=j.user;
     applyRoleVisibility(CURRENT_USER.role);
+    applyAdminVisibility();
     return true;
   }catch(err){
     location.href="/login.html";
@@ -739,7 +758,7 @@ const F={
   licExp:"تاريخ انتهاء رخصة العمل", govCost:"التكلفة الحكومية الإجمالية", passport:"رقم الجواز",
   passExp:"تاريخ انتهاء الجواز", sex:"الجنس", iqIssue:"تاريخ اصدار الاقامة", iqHijri:"تاريخ انتهاء الاقامة بالهجري",
   employer:"رقم صاحب العمل", joinDate:"تاريخ المباشرة", annualLeave:"الاجازة السنوية",
-  insCompany:"اسم شركة التأمين", insCost:"تكلفة التأمين الطبي"
+  insCompany:"اسم شركة التأمين", insCost:"تكلفة التأمين الطبي", note:"ملاحظة"
 };
 
 /* ---------- state ---------- */
@@ -1055,6 +1074,10 @@ function ajeerCard(p,i){
       <a class="reset" href="${esc(p.file)}" target="_blank" rel="noopener">فتح الملف</a>
       <a class="reset" href="${esc(p.file)}" download>تحميل</a>
     </div>
+    ${isAdminUser()?`<div class="admin-row-actions" style="margin-top:10px" data-permit-actions="${esc(p.permit)}">
+      <button class="admin-mini-btn" data-act="edit-permit" data-permit="${esc(p.permit)}">تعديل</button>
+      <button class="admin-mini-btn danger" data-act="delete-permit" data-permit="${esc(p.permit)}">حذف</button>
+    </div>`:""}
   </article>`;
 }
 function renderAjeer(){
@@ -1074,6 +1097,10 @@ function renderAjeer(){
   document.querySelectorAll("#ajeerGrid .qr-thumb,#ajeerUnlinkedGrid .qr-thumb").forEach(btn=>{
     btn.addEventListener("click",ev=>{ev.stopPropagation();openQrModal(btn.dataset.permit,btn.dataset.qr);});
   });
+  if(isAdminUser()){
+    document.querySelectorAll('[data-act="edit-permit"]').forEach(b=>b.addEventListener("click",ev=>{ev.stopPropagation();openPermitForm(AJEER_LATEST.find(p=>p.permit===b.dataset.permit));}));
+    document.querySelectorAll('[data-act="delete-permit"]').forEach(b=>b.addEventListener("click",ev=>{ev.stopPropagation();deletePermit(b.dataset.permit);}));
+  }
 }
 ajeerQ.addEventListener("input",e=>{ajeerState.q=e.target.value;renderAjeer();});
 ajeerStatus.addEventListener("change",e=>{ajeerState.status=e.target.value;renderAjeer();});
@@ -1152,6 +1179,10 @@ function openDrawer(i){
       <div class="drole">${esc(e[F.job])} · ${esc(e[F.nat])}</div>
     </div>
     <div class="dr-body">
+      <div class="admin-row-actions" id="drAdminActions" style="display:none;margin-bottom:16px">
+        <button class="admin-mini-btn" id="drEditBtn" type="button">تعديل بيانات الموظف</button>
+        <button class="admin-mini-btn danger" id="drDeleteBtn" type="button">حذف الموظف</button>
+      </div>
       <div class="dr-alert">${alertBox("الإقامة",iq)}${alertBox("رخصة العمل",lic)}</div>
 
       <div class="dr-group"><div class="gt">الهوية والإقامة</div><div class="dl">
@@ -1209,16 +1240,264 @@ function openDrawer(i){
         ${drRow("الآيبان (IBAN)",clean(e[F.iban]),1)}
         ${drRow("اسم المستفيد (كما في البنك)",clean(e[F.benef]),1)}
       </div></div>
+
+      ${e[F.note]?`<div class="dr-group"><div class="gt">ملاحظات</div><div class="dl">${drRow("ملاحظة",AdminUI.esc(e[F.note]))}</div></div>`:""}
     </div>`;
   scrim.classList.add("show");drawer.classList.add("show");document.body.style.overflow="hidden";
   document.getElementById("drClose").onclick=closeDrawer;
   const qrBtn=drawer.querySelector(".qr-thumb-inline");
   if(qrBtn)qrBtn.addEventListener("click",()=>openQrModal(qrBtn.dataset.permit,qrBtn.dataset.qr));
   drawer.querySelector(".dr-close").focus();
+
+  if(isAdminUser()){
+    document.getElementById("drAdminActions").style.display="";
+    document.getElementById("drEditBtn").addEventListener("click",()=>openEmployeeForm(e));
+    document.getElementById("drDeleteBtn").addEventListener("click",()=>deleteEmployee(e));
+  }
 }
 function closeDrawer(){scrim.classList.remove("show");drawer.classList.remove("show");document.body.style.overflow="";}
 scrim.addEventListener("click",closeDrawer);
 document.addEventListener("keydown",e=>{if(e.key==="Escape"){closeDrawer();closeSoonModal();closeSidenav();closeQrModal();}});
+
+/* ---------- employee management (add/edit/delete) ---------- */
+function isAdminUser(){ return CURRENT_USER && (CURRENT_USER.role==="owner"||CURRENT_USER.role==="admin"); }
+function applyAdminVisibility(){
+  const show=isAdminUser()?"":"none";
+  const addEmpBtn=document.getElementById("addEmployeeBtn");
+  if(addEmpBtn) addEmpBtn.style.display=show;
+  const addPermitBtn=document.getElementById("addPermitBtn");
+  if(addPermitBtn) addPermitBtn.style.display=show;
+}
+
+/* Field specs per tab — spec.key looks up F[key] for the JSONB field name,
+   unless spec.raw is set (fields with no F.* mapping, like _licPending). */
+const EMP_TABS=[
+  {key:"general",label:"عام"},
+  {key:"iqama",label:"الإقامة"},
+  {key:"license",label:"رخصة العمل والتأمين"},
+  {key:"salary",label:"الراتب والبنك"},
+  {key:"notes",label:"ملاحظات"},
+];
+const EMP_FIELD_SPECS={
+  general:[
+    {key:"eid",label:"الرقم الوظيفي",type:"text",required:true},
+    {key:"name",label:"اسم العامل",type:"text",required:true},
+    {key:"nat",label:"الجنسية",type:"text"},
+    {key:"job",label:"المهنة",type:"text"},
+    {key:"sex",label:"الجنس",type:"text"},
+    {key:"dob",label:"تاريخ الميلاد",type:"date"},
+    {key:"phone",label:"رقم الجوال",type:"text"},
+    {key:"email",label:"البريد الإلكتروني",type:"text"},
+    {key:"passport",label:"رقم الجواز",type:"text"},
+    {key:"passExp",label:"تاريخ انتهاء الجواز",type:"date"},
+    {key:"employer",label:"رقم صاحب العمل",type:"text"},
+    {key:"cStart",label:"بداية العقد",type:"date"},
+    {key:"cEnd",label:"نهاية العقد",type:"date"},
+    {key:"transfer",label:"حالة النقل",type:"text"},
+  ],
+  iqama:[
+    {key:"iqama",label:"رقم الإقامة",type:"text",required:true},
+    {key:"iqIssue",label:"تاريخ إصدار الإقامة",type:"date"},
+    {key:"iqExp",label:"تاريخ انتهاء الإقامة",type:"date"},
+    {key:"iqState",label:"حالة الإقامة (بالملف)",type:"text"},
+  ],
+  license:[
+    {key:"licExp",label:"تاريخ انتهاء رخصة العمل",type:"date"},
+    {key:"licState",label:"حالة رخصة العمل (بالملف)",type:"text"},
+    {key:"_licPending",label:"جاري السداد (تجاوز حالة الرخصة)",type:"checkbox",raw:true},
+    {key:"insState",label:"حالة التأمين الطبي",type:"text"},
+    {key:"insCompany",label:"اسم شركة التأمين",type:"text"},
+    {key:"insCost",label:"تكلفة التأمين الطبي",type:"number"},
+  ],
+  salary:[
+    {key:"base",label:"الراتب الأساسي",type:"number"},
+    {key:"allow",label:"البدلات",type:"number"},
+    {key:"total",label:"إجمالي الراتب",type:"number"},
+    {key:"govCost",label:"التكلفة الحكومية الإجمالية",type:"number"},
+    {key:"bank",label:"اسم البنك",type:"text"},
+    {key:"acc",label:"رقم الحساب",type:"text"},
+    {key:"iban",label:"الآيبان (IBAN)",type:"text"},
+    {key:"benef",label:"اسم المستفيد (كما في البنك)",type:"text"},
+  ],
+  notes:[
+    {key:"note",label:"ملاحظات",type:"textarea"},
+  ],
+};
+function fieldKey(spec){ return spec.raw?spec.key:F[spec.key]; }
+function fieldInputHtml(spec,value,disabled){
+  const id=`ef_${spec.key}`;
+  if(spec.type==="checkbox"){
+    return `<div class="admin-field"><label style="flex-direction:row;align-items:center;gap:8px;display:flex"><input type="checkbox" id="${id}" ${value?"checked":""}> ${AdminUI.esc(spec.label)}</label></div>`;
+  }
+  if(spec.type==="textarea"){
+    return `<div class="admin-field"><label for="${id}">${AdminUI.esc(spec.label)}</label><textarea class="in" id="${id}" rows="4">${AdminUI.esc(value==null?"":value)}</textarea></div>`;
+  }
+  const inputType=spec.type==="date"?"date":(spec.type==="number"?"number":"text");
+  return `<div class="admin-field"><label for="${id}">${AdminUI.esc(spec.label)}${spec.required?" *":""}</label><input class="in" id="${id}" type="${inputType}" value="${AdminUI.esc(value==null?"":value)}" ${disabled?"disabled":""}></div>`;
+}
+function readFieldValue(spec){
+  const el=document.getElementById(`ef_${spec.key}`);
+  if(spec.type==="checkbox") return el.checked;
+  if(spec.type==="number") return el.value===""?null:Number(el.value);
+  return el.value.trim()===""?null:el.value.trim();
+}
+function openEmployeeForm(existing){
+  const isEdit=!!existing;
+  const data=existing?{...existing}:{};
+  const tabsHtml=EMP_TABS.map((t,i)=>`<button class="admin-tab ${i===0?"active":""}" type="button" data-tab="${t.key}">${AdminUI.esc(t.label)}</button>`).join("");
+  const panelsHtml=EMP_TABS.map((t,i)=>`<div data-tab-panel="${t.key}" style="${i===0?"":"display:none"}">
+      ${EMP_FIELD_SPECS[t.key].map(spec=>fieldInputHtml(spec,data[fieldKey(spec)],isEdit&&spec.key==="eid")).join("")}
+    </div>`).join("");
+  const modal=AdminUI.openModal(`
+    <div class="admin-mhead"><button class="admin-mclose" data-admin-close>✕</button><h3>${isEdit?"تعديل بيانات الموظف":"إضافة موظف جديد"}</h3></div>
+    <div class="admin-tabs">${tabsHtml}</div>
+    <div class="admin-mbody">
+      <div class="admin-error-msg" data-admin-error></div>
+      ${panelsHtml}
+    </div>
+    <div class="admin-mfoot"><button class="admin-btn-ghost" data-admin-close>إلغاء</button><button class="admin-btn-primary" id="empSaveBtn">${isEdit?"حفظ التغييرات":"إضافة الموظف"}</button></div>
+  `);
+  AdminUI.wireTabs(modal);
+  modal.querySelector("#empSaveBtn").addEventListener("click", async ()=>{
+    AdminUI.clearError(modal);
+    const patch={};
+    for(const t of EMP_TABS){
+      for(const spec of EMP_FIELD_SPECS[t.key]){
+        if(isEdit && spec.key==="eid") continue; // eid never changes after creation
+        const key=fieldKey(spec);
+        const val=readFieldValue(spec);
+        if(spec.required && (val==null||val==="")){
+          AdminUI.showError(modal, `${spec.label} مطلوب`);
+          return;
+        }
+        patch[key]=val;
+      }
+    }
+    try{
+      if(isEdit){
+        await AdminUI.api("PUT","/api/data/employees",{id:existing[F.eid], ...patch});
+      }else{
+        patch[F.eid]=document.getElementById("ef_eid").value.trim();
+        await AdminUI.api("POST","/api/data/employees",patch);
+      }
+      await refreshEmployees();
+      AdminUI.closeModal();
+      closeDrawer();
+    }catch(err){
+      AdminUI.showError(modal, err.message);
+    }
+  });
+}
+async function deleteEmployee(e){
+  if(!AdminUI.confirmDanger(`هل أنت متأكد من حذف الموظف "${e[F.name]}"؟ لا يمكن التراجع عن هذا الإجراء.`)) return;
+  try{
+    await AdminUI.api("DELETE","/api/data/employees",{id:e[F.eid]});
+    await refreshEmployees();
+    closeDrawer();
+  }catch(err){
+    alert(err.message);
+  }
+}
+async function refreshEmployees(){
+  const j=await AdminUI.api("GET","/api/data/employees");
+  DATA=j.items;
+  renderDashboardTop();
+  render();
+}
+document.getElementById("addEmployeeBtn").addEventListener("click", ()=>openEmployeeForm(null));
+
+/* ---------- ajeer permit management (add/edit/delete + PDF/QR upload) ---------- */
+function permitFileRow(label,url,onUpload,onDelete){
+  return `<div class="admin-field"><label>${AdminUI.esc(label)}</label>
+    <div class="admin-file-row">
+      ${url?`<span class="name">${AdminUI.esc(url.split("/").pop())}</span>`:`<span class="name">لا يوجد ملف بعد</span>`}
+      <label class="admin-mini-btn" style="cursor:pointer">${url?"استبدال":"رفع"}<input type="file" accept="${label.includes('QR')?'image/png,image/jpeg':'application/pdf'}" style="display:none" data-upload-for="${onUpload}"></label>
+      ${url?`<button class="admin-mini-btn danger" type="button" data-delete-for="${onDelete}">حذف</button>`:""}
+    </div>
+  </div>`;
+}
+function openPermitForm(existing){
+  const isEdit=!!existing;
+  const p=existing||{permit:"",iqama:"",nameOnPermit:"",issueDate:"",expiryDate:"",file:null,qr:null};
+  const modal=AdminUI.openModal(`
+    <div class="admin-mhead"><button class="admin-mclose" data-admin-close>✕</button><h3>${isEdit?"تعديل تصريح أجير":"إضافة تصريح أجير"}</h3></div>
+    <div class="admin-mbody">
+      <div class="admin-error-msg" data-admin-error></div>
+      <div class="admin-field"><label for="pfPermit">رقم التصريح *</label><input class="in" id="pfPermit" type="text" value="${AdminUI.esc(p.permit)}" ${isEdit?"disabled":""}></div>
+      <div class="admin-field"><label for="pfIqama">رقم الإقامة *</label><input class="in" id="pfIqama" type="text" value="${AdminUI.esc(p.iqama)}"></div>
+      <div class="admin-field"><label for="pfName">الاسم على التصريح</label><input class="in" id="pfName" type="text" value="${AdminUI.esc(p.nameOnPermit)}"></div>
+      <div class="admin-field-row">
+        <div class="admin-field"><label for="pfIssue">تاريخ الإصدار</label><input class="in" id="pfIssue" type="date" value="${AdminUI.esc(p.issueDate)}"></div>
+        <div class="admin-field"><label for="pfExpiry">تاريخ الانتهاء</label><input class="in" id="pfExpiry" type="date" value="${AdminUI.esc(p.expiryDate)}"></div>
+      </div>
+      ${isEdit?permitFileRow("ملف التصريح (PDF)",p.file,"file","file"):""}
+      ${isEdit?permitFileRow("رمز QR",p.qr,"qr","qr"):""}
+      ${!isEdit?`<div class="hint" style="margin-bottom:10px">يمكن رفع ملف التصريح ورمز QR بعد إنشاء السجل، من خلال زر "تعديل".</div>`:""}
+    </div>
+    <div class="admin-mfoot"><button class="admin-btn-ghost" data-admin-close>إلغاء</button><button class="admin-btn-primary" id="pfSave">${isEdit?"حفظ التغييرات":"إضافة التصريح"}</button></div>
+  `);
+  if(isEdit){
+    modal.querySelectorAll("[data-upload-for]").forEach(inp=>inp.addEventListener("change",async(e)=>{
+      const file=e.target.files[0]; if(!file) return;
+      const field=inp.dataset.uploadFor; // "file" | "qr"
+      try{
+        const url=await AdminUI.uploadFile(file, `ajeer-permits/${p.permit}`);
+        await AdminUI.api("PUT","/api/data/permits",{id:p.permit, [field]:url});
+        await refreshPermits();
+        AdminUI.closeModal();
+      }catch(err){ AdminUI.showError(modal, err.message); }
+    }));
+    modal.querySelectorAll("[data-delete-for]").forEach(btn=>btn.addEventListener("click",async()=>{
+      if(!AdminUI.confirmDanger("هل أنت متأكد من حذف هذا الملف؟")) return;
+      const field=btn.dataset.deleteFor;
+      try{
+        await AdminUI.api("PUT","/api/data/permits",{id:p.permit, [field]:null});
+        await refreshPermits();
+        AdminUI.closeModal();
+      }catch(err){ alert(err.message); }
+    }));
+  }
+  modal.querySelector("#pfSave").addEventListener("click", async ()=>{
+    AdminUI.clearError(modal);
+    const iqama=document.getElementById("pfIqama").value.trim();
+    if(!iqama){ AdminUI.showError(modal,"رقم الإقامة مطلوب"); return; }
+    const patch={
+      iqama,
+      nameOnPermit:document.getElementById("pfName").value.trim()||null,
+      issueDate:document.getElementById("pfIssue").value||null,
+      expiryDate:document.getElementById("pfExpiry").value||null,
+    };
+    try{
+      if(isEdit){
+        await AdminUI.api("PUT","/api/data/permits",{id:p.permit, ...patch});
+      }else{
+        const permitNo=document.getElementById("pfPermit").value.trim();
+        if(!permitNo){ AdminUI.showError(modal,"رقم التصريح مطلوب"); return; }
+        await AdminUI.api("POST","/api/data/permits",{permit:permitNo, ...patch});
+      }
+      await refreshPermits();
+      AdminUI.closeModal();
+    }catch(err){
+      AdminUI.showError(modal, err.message);
+    }
+  });
+}
+async function deletePermit(permitNo){
+  if(!AdminUI.confirmDanger(`هل أنت متأكد من حذف التصريح "${permitNo}"؟ سيتم حذف ملفاته أيضًا. لا يمكن التراجع عن هذا الإجراء.`)) return;
+  try{
+    await AdminUI.api("DELETE","/api/data/permits",{id:permitNo});
+    await refreshPermits();
+  }catch(err){
+    alert(err.message);
+  }
+}
+async function refreshPermits(){
+  const j=await AdminUI.api("GET","/api/data/permits");
+  AJEER=j.items;
+  AJEER_LATEST=dedupeAjeer(AJEER);
+  renderAjeer();
+}
+document.getElementById("addPermitBtn").addEventListener("click", ()=>openPermitForm(null));
 
 /* ---------- expiring-soon modal ---------- */
 const mscrim=document.getElementById("mscrim"),soonModal=document.getElementById("soonModal");

@@ -10,7 +10,7 @@ const { getCookie, sessionCookie, clearSessionCookie } = require("../lib/auth/co
 const { logEvent } = require("../lib/auth/audit");
 const { parseBody } = require("../lib/auth/parseBody");
 const { getResource } = require("../lib/data/registry");
-const { handleBlobUpload } = require("../lib/blob");
+const { uploadFile, deleteFile } = require("../lib/blob");
 
 /* Single Serverless Function for the entire app (pages + auth + generic
    data CRUD + file uploads) — only api/cron/check-expirations.js is
@@ -36,17 +36,13 @@ const PAGE_AUTH = {
   "payroll-detail": (role) => can(role, "finance"),
 };
 
-/* Per-resource authorization for /api/data/:resource. "users" is handled
-   separately below (its business rules — self-delete guard, Owner-only
-   Owner management, generated passwords — don't fit a generic CRUD shape). */
-const RESOURCE_AUTH = {
-  employees: { read: () => true, write: isAdminLike },
-  permits: { read: () => true, write: isAdminLike },
-  "payroll-runs": { read: (role) => can(role, "finance"), write: isAdminLike },
-  "document-types": { read: isAdminLike, write: isAdminLike },
-  recipients: { read: isAdminLike, write: isAdminLike },
-  settings: { read: () => true, write: isAdminLike },
-};
+/* Per-resource authorization for /api/data/:resource now lives on each
+   lib/data/<resource>.js module itself (module.auth = {read, write}) — see
+   lib/data/registry.js. Adding a new section is then just a new module
+   file + one registry line; this file never needs to change. "users" is
+   handled separately below (its business rules — self-delete guard,
+   Owner-only Owner management, generated passwords — don't fit a generic
+   CRUD shape). */
 
 module.exports = async function handler(req, res) {
   const { kind } = req.query || {};
@@ -157,7 +153,7 @@ async function handleData(req, res, resource) {
   if (resource === "users") return handleUsers(req, res, actor);
 
   const mod = getResource(resource);
-  const authRule = RESOURCE_AUTH[resource];
+  const authRule = mod && mod.auth;
   if (!mod || !authRule) return res.status(404).json({ ok: false, error: "قسم بيانات غير معروف" });
 
   if (resource === "settings") return handleSettings(req, res, actor, mod, authRule);
@@ -180,10 +176,10 @@ async function handleData(req, res, resource) {
       return res.status(200).json({ ok: true, item });
     }
     if (req.method === "PUT") {
-      const body = parseBody(req);
-      const targetId = body.id || id;
+      const { id: bodyId, ...patch } = parseBody(req);
+      const targetId = bodyId || id;
       if (!targetId) return res.status(400).json({ ok: false, error: "المعرّف مطلوب" });
-      const item = await mod.update(targetId, body);
+      const item = await mod.update(targetId, patch);
       logEvent({ type: `${resource}_updated`, actorEmail: actor.email, actorId: actor.id, targetId });
       return res.status(200).json({ ok: true, item });
     }
@@ -290,23 +286,46 @@ async function handleUsers(req, res, actor) {
   res.status(405).json({ ok: false, error: "Method not allowed" });
 }
 
-/* ---------------- file uploads (Vercel Blob) ---------------- */
+/* ---------------- file uploads (Vercel Blob) ----------------
+   Server-proxied: the browser POSTs raw file bytes here (same-origin,
+   plain fetch — no client-side Blob SDK needed), we pipe them straight
+   into Vercel Blob. Reused by every section that uploads a file (permits,
+   payroll attachments, future document types) — the caller picks the
+   `prefix` (a folder-ish label) so files stay organized in the store. */
 async function handleFiles(req, res, action) {
-  if (action !== "upload-token") return res.status(404).json({ ok: false, error: "Not found" });
-  if (req.method !== "POST") return res.status(405).json({ ok: false, error: "Method not allowed" });
   const actor = await requireUser(req);
   if (!actor) return res.status(401).json({ ok: false, error: "غير مسجّل الدخول" });
   if (!isAdminLike(actor.role)) return res.status(403).json({ ok: false, error: "صلاحيات غير كافية" });
 
-  await handleBlobUpload(req, res, {
-    body: parseBody(req),
-    onBeforeGenerateToken: async () => ({
-      allowedContentTypes: ["application/pdf", "image/png", "image/jpeg"],
-      addRandomSuffix: true,
-      tokenPayload: JSON.stringify({ actorId: actor.id }),
-    }),
-    onUploadCompleted: async ({ blob }) => {
-      logEvent({ type: "file_uploaded", actorEmail: actor.email, actorId: actor.id, meta: { url: blob.url } });
-    },
-  });
+  if (action === "upload") return filesUpload(req, res, actor);
+  if (action === "delete") return filesDelete(req, res, actor);
+  res.status(404).json({ ok: false, error: "Not found" });
+}
+
+async function filesUpload(req, res, actor) {
+  if (req.method !== "POST") return res.status(405).json({ ok: false, error: "Method not allowed" });
+  const prefix = String((req.query || {}).prefix || "uploads").replace(/[^\w\-\/]/g, "");
+  const filename = decodeURIComponent(req.headers["x-filename"] || "file");
+  const safeName = filename.replace(/[^\w.\-؀-ۿ]/g, "_");
+  const contentType = req.headers["content-type"] || "application/octet-stream";
+  // Vercel's Node runtime buffers small bodies into req.body regardless of
+  // content-type on some versions; fall back to the raw request stream
+  // (req itself) when that hasn't happened, so the file is never dropped.
+  const body = req.body && (Buffer.isBuffer(req.body) || typeof req.body === "string") ? req.body : req;
+  try {
+    const url = await uploadFile(`${prefix}/${Date.now()}-${safeName}`, body, contentType);
+    logEvent({ type: "file_uploaded", actorEmail: actor.email, actorId: actor.id, meta: { url, prefix } });
+    res.status(200).json({ ok: true, url });
+  } catch (err) {
+    res.status(400).json({ ok: false, error: (err && err.message) || "تعذّر رفع الملف" });
+  }
+}
+
+async function filesDelete(req, res, actor) {
+  if (req.method !== "POST") return res.status(405).json({ ok: false, error: "Method not allowed" });
+  const { url } = parseBody(req);
+  if (!url) return res.status(400).json({ ok: false, error: "رابط الملف مطلوب" });
+  await deleteFile(url);
+  logEvent({ type: "file_deleted", actorEmail: actor.email, actorId: actor.id, meta: { url } });
+  res.status(200).json({ ok: true });
 }

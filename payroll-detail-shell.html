@@ -91,6 +91,7 @@ main.block{padding:40px 0}
 .loading-text{font-size:13.5px;color:var(--ink-soft)}
 @media(prefers-reduced-motion:reduce){.loading-spinner{animation:none}}
 </style>
+<link rel="stylesheet" href="/admin-ui.css">
 </head>
 <body>
 <header class="site">
@@ -119,7 +120,10 @@ main.block{padding:40px 0}
         </a>
         <h1 id="pageTitle">مسير الرواتب</h1>
       </div>
-      <span id="pageStatus"></span>
+      <div style="display:flex;align-items:center;gap:10px">
+        <span id="pageStatus"></span>
+        <button class="admin-mini-btn danger" id="deleteRunBtn" type="button" style="display:none">حذف مسير الرواتب</button>
+      </div>
     </div>
     <div id="detailContent"></div>
   </main>
@@ -135,6 +139,7 @@ main.block{padding:40px 0}
   </div>
 </div>
 
+<script src="/admin-ui.js"></script>
 <script>
 const arMonths=["يناير","فبراير","مارس","أبريل","مايو","يونيو","يوليو","أغسطس","سبتمبر","أكتوبر","نوفمبر","ديسمبر"];
 function fmtDate(s){ if(!s) return "—"; const d=new Date(s); if(isNaN(d)) return "—"; return `${d.getDate()} ${arMonths[d.getMonth()]} ${d.getFullYear()}`; }
@@ -181,8 +186,15 @@ document.getElementById("logoutBtn").addEventListener("click", async ()=>{
   try{ await fetch("/api/auth/logout",{method:"POST"}); } finally { location.href="/login.html"; }
 });
 
+function isAdminUser(){ return CURRENT_USER && (CURRENT_USER.role==="owner"||CURRENT_USER.role==="admin"); }
+
+/* Default status to fall back to when a file is removed from an
+   attachment — matches each attachment's original seed-data status. */
+const ATTACHMENT_REVERT_STATUS={ damanah_invoice:"pending_upload", payment_receipt:"pending_payment", payroll_sheet:"pending_upload" };
+
 function attachmentCard(att, monthLabel){
   const hasFile=!!att.fileUrl;
+  const admin=isAdminUser();
   return `<div class="attachment-card">
     <div class="attachment-top">
       <div class="attachment-label">${esc(att.label)}</div>
@@ -199,7 +211,62 @@ function attachmentCard(att, monthLabel){
         تحميل PDF
       </a>
     </div>`:`<div class="attachment-note">${esc(att.note||"")}</div>`}
+    ${admin?`
+    <div class="admin-row-actions" style="margin-top:12px">
+      <label class="admin-mini-btn" style="cursor:pointer">
+        ${hasFile?"استبدال الملف":"رفع ملف"}
+        <input type="file" accept="application/pdf,image/png,image/jpeg" style="display:none" data-act="att-upload" data-key="${esc(att.key)}">
+      </label>
+      ${hasFile?`<button class="admin-mini-btn danger" data-act="att-delete-file" data-key="${esc(att.key)}">حذف الملف</button>`:""}
+      <button class="admin-mini-btn" data-act="att-edit-note" data-key="${esc(att.key)}">تعديل الملاحظة</button>
+    </div>`:""}
   </div>`;
+}
+
+async function uploadAttachmentFile(key, file){
+  try{
+    const url=await AdminUI.uploadFile(file, `payroll/${RUN_ID}`);
+    await AdminUI.api("PUT","/api/data/payroll-runs",{id:RUN_ID, attachments:[{key, fileUrl:url, statusKey:"attached", uploadedAt:new Date().toISOString().slice(0,10)}]});
+    await loadRun();
+  }catch(err){ alert(err.message); }
+}
+async function deleteAttachmentFile(key){
+  if(!AdminUI.confirmDanger("هل أنت متأكد من حذف هذا الملف؟ لا يمكن التراجع عن هذا الإجراء.")) return;
+  try{
+    await AdminUI.api("PUT","/api/data/payroll-runs",{id:RUN_ID, attachments:[{key, fileUrl:null, statusKey:ATTACHMENT_REVERT_STATUS[key]||"pending_upload"}]});
+    await loadRun();
+  }catch(err){ alert(err.message); }
+}
+function editAttachmentNote(key, currentNote){
+  const modal=AdminUI.openModal(`
+    <div class="admin-mhead"><button class="admin-mclose" data-admin-close>✕</button><h3>تعديل الملاحظة</h3></div>
+    <div class="admin-mbody">
+      <div class="admin-error-msg" data-admin-error></div>
+      <div class="admin-field"><label for="noteTa">الملاحظة</label><textarea class="in" id="noteTa" rows="4">${esc(currentNote||"")}</textarea></div>
+    </div>
+    <div class="admin-mfoot"><button class="admin-btn-ghost" data-admin-close>إلغاء</button><button class="admin-btn-primary" id="noteSave">حفظ</button></div>
+  `);
+  modal.querySelector("#noteSave").addEventListener("click", async ()=>{
+    try{
+      await AdminUI.api("PUT","/api/data/payroll-runs",{id:RUN_ID, attachments:[{key, note:document.getElementById("noteTa").value.trim()||null}]});
+      await loadRun();
+      AdminUI.closeModal();
+    }catch(err){ AdminUI.showError(modal, err.message); }
+  });
+}
+async function uploadMainFile(file){
+  try{
+    const url=await AdminUI.uploadFile(file, `payroll/${RUN_ID}`);
+    await AdminUI.api("PUT","/api/data/payroll-runs",{id:RUN_ID, fileUrl:url, attachments:[{key:"payroll_sheet", fileUrl:url, statusKey:"attached", uploadedAt:new Date().toISOString().slice(0,10)}]});
+    await loadRun();
+  }catch(err){ alert(err.message); }
+}
+async function deleteRun(){
+  if(!AdminUI.confirmDanger("هل أنت متأكد من حذف مسير الرواتب هذا بالكامل مع جميع مرفقاته؟ لا يمكن التراجع عن هذا الإجراء.")) return;
+  try{
+    await AdminUI.api("DELETE","/api/data/payroll-runs",{id:RUN_ID});
+    location.href="/payroll.html";
+  }catch(err){ alert(err.message); }
 }
 
 async function loadRun(){
@@ -236,6 +303,7 @@ function renderRun(run){
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 12 5 5 5-5"/><path d="M5 21h14"/></svg>
           تحميل PDF
         </a>
+        ${isAdminUser()?`<label class="admin-mini-btn" style="cursor:pointer">استبدال ملف المسير<input type="file" accept="application/pdf" style="display:none" id="mainFileInput"></label>`:""}
       </div>
       <div class="pc-feedback">
         <span>هل يوجد ملاحظة على هذا المسير؟</span>
@@ -258,6 +326,21 @@ function renderRun(run){
   content.querySelectorAll('[data-act="att-preview"]').forEach(b=>b.addEventListener("click", ()=>openPreview(b.dataset.file, b.dataset.label)));
   content.querySelectorAll('[data-act="fb-yes"]').forEach(b=>b.addEventListener("click", ()=>submitFeedback(b.dataset.month)));
   /* fb-no: intentionally no listener */
+
+  if(isAdminUser()){
+    document.getElementById("deleteRunBtn").style.display="";
+    document.getElementById("deleteRunBtn").onclick=deleteRun; // onclick, not addEventListener — avoids stacking a new handler each reload
+    const mainInput=document.getElementById("mainFileInput");
+    if(mainInput) mainInput.addEventListener("change", (e)=>{ if(e.target.files[0]) uploadMainFile(e.target.files[0]); });
+    content.querySelectorAll('[data-act="att-upload"]').forEach(inp=>inp.addEventListener("change",(e)=>{ if(e.target.files[0]) uploadAttachmentFile(inp.dataset.key, e.target.files[0]); }));
+    content.querySelectorAll('[data-act="att-delete-file"]').forEach(b=>b.addEventListener("click", ()=>deleteAttachmentFile(b.dataset.key)));
+    content.querySelectorAll('[data-act="att-edit-note"]').forEach(b=>{
+      b.addEventListener("click", ()=>{
+        const att=(run.attachments||[]).find(a=>a.key===b.dataset.key);
+        editAttachmentNote(b.dataset.key, att?att.note:"");
+      });
+    });
+  }
 }
 
 const pdfScrim=document.getElementById("pdfScrim");
