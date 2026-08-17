@@ -25,9 +25,11 @@ const AdminUI = (function () {
   }
 
   /* html: the modal's inner markup. Include an element with
-     [data-admin-close] (e.g. the ✕ button) to wire the close click. */
-  function openModal(html) {
+     [data-admin-close] (e.g. the ✕ button) to wire the close click.
+     opts.wide widens it for grid-ish content (the permissions manager). */
+  function openModal(html, opts) {
     ensureDom();
+    modalEl.className = "admin-modal" + (opts && opts.wide ? " wide" : "");
     modalEl.innerHTML = html;
     scrimEl.classList.add("show");
     modalEl.classList.add("show");
@@ -79,10 +81,34 @@ const AdminUI = (function () {
     return j;
   }
 
+  /* ---- current user + permissions ----
+     Every page calls setUser() with what /api/auth/me returned, then gates UI
+     with can(). The resolved permission list comes from the server (role
+     defaults or the user's custom set, Owner always full), so no page
+     reimplements the resolution rules. Hiding a control with can() is a
+     convenience only — the API re-checks the same permission on every
+     request, so a user who forges a call still gets a 403. */
+  let currentUser = null;
+  function setUser(user) {
+    currentUser = user || null;
+    return currentUser;
+  }
+  function can(section, action) {
+    if (!currentUser) return false;
+    if (currentUser.role === "owner") return true;
+    return (currentUser.permissions || []).includes(`${section}:${action}`);
+  }
+  /* True if the user holds any of the section's listed actions — for deciding
+     whether to render a whole action row at all. */
+  function canAny(section, actions) {
+    return actions.some((a) => can(section, a));
+  }
+
   /* Uploads a File via the server-proxy endpoint (no client Blob SDK
-     needed); prefix groups files in the store (e.g. "ajeer-permits"). */
-  async function uploadFile(file, prefix) {
-    const r = await fetch(`/api/files/upload?prefix=${encodeURIComponent(prefix)}`, {
+     needed); prefix groups files in the store (e.g. "ajeer-permits") and
+     section names the permission the server checks (<section>:upload_files). */
+  async function uploadFile(file, prefix, section) {
+    const r = await fetch(`/api/files/upload?prefix=${encodeURIComponent(prefix)}&section=${encodeURIComponent(section)}`, {
       method: "POST",
       headers: { "Content-Type": file.type || "application/octet-stream", "X-Filename": encodeURIComponent(file.name) },
       body: file,
@@ -96,8 +122,8 @@ const AdminUI = (function () {
     if (!r.ok || !j.ok) throw new Error(j.error || "فشل رفع الملف");
     return j.url;
   }
-  async function deleteFile(url) {
-    await api("POST", "/api/files/delete", { url });
+  async function deleteFile(url, section) {
+    await api("POST", `/api/files/delete?section=${encodeURIComponent(section)}`, { url });
   }
 
   /* Small helper for tabbed modal forms (عام / الإقامة / الرخصة ...). Wires
@@ -115,5 +141,5 @@ const AdminUI = (function () {
     });
   }
 
-  return { esc, openModal, closeModal, confirmDanger, showError, clearError, api, uploadFile, deleteFile, wireTabs };
+  return { esc, openModal, closeModal, confirmDanger, showError, clearError, api, setUser, can, canAny, uploadFile, deleteFile, wireTabs };
 })();

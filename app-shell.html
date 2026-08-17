@@ -623,14 +623,10 @@ let SOON = 90; // days threshold for "expiring soon"
 const NOW = new Date(); NOW.setHours(0,0,0,0);
 const arMonths=["يناير","فبراير","مارس","أبريل","مايو","يونيو","يوليو","أغسطس","سبتمبر","أكتوبر","نوفمبر","ديسمبر"];
 
-/* ---------- auth gate (mirrors lib/auth/roles.js — keep in sync) ---------- */
-const PAGE_PERMISSIONS_CLIENT={
-  owner:["kpi","finance","employees","ajeer","contact","users"],
-  admin:["kpi","finance","employees","ajeer","contact","users"],
-  hr:["kpi","employees","ajeer","contact"],
-  finance:["finance"],
-  viewer:["kpi","finance","employees","ajeer","contact"],
-};
+/* ---------- auth gate ----------
+   Section visibility is driven by the permission list /api/auth/me returns
+   (resolved server-side from role defaults or the user's custom set), so this
+   page no longer keeps its own copy of the role→pages table. */
 const ROLE_LABELS_CLIENT={owner:"المالك",admin:"مدير النظام",hr:"الموارد البشرية",finance:"المالية",viewer:"قراءة فقط"};
 /* Sidebar-only role label — Owner keeps the existing combined "Owner - المالك"
    wording; every other role falls back to ROLE_LABELS_CLIENT's plain Arabic label. */
@@ -647,26 +643,28 @@ function renderSidebarUserCard(card){
   if(nameEl) nameEl.textContent=card.name;
   if(titleEl) titleEl.textContent=card.title;
 }
-function applyRoleVisibility(role){
-  const allowed=PAGE_PERMISSIONS_CLIENT[role]||[];
-  Object.entries(SECTION_TO_PAGE).forEach(([sectionId,pageKey])=>{
+/* A section (and its sidebar link) is shown only if the user holds
+   "<section>:view". The nav links to other pages follow the same rule. */
+function applyPermissionVisibility(){
+  Object.entries(SECTION_TO_PAGE).forEach(([sectionId,sectionKey])=>{
+    const visible=AdminUI.can(sectionKey,"view");
     const el=document.getElementById(sectionId);
-    if(el) el.style.display=allowed.includes(pageKey)?"":"none";
+    if(el) el.style.display=visible?"":"none";
     const link=document.querySelector(`.sn-link[href="#${sectionId}"]`);
-    if(link) link.style.display=allowed.includes(pageKey)?"":"none";
+    if(link) link.style.display=visible?"":"none";
   });
   const payrollLink=document.getElementById("snPayrollLink");
-  if(payrollLink) payrollLink.style.display=allowed.includes("finance")?"":"none";
+  if(payrollLink) payrollLink.style.display=AdminUI.can("payroll","view")?"":"none";
   const usersLink=document.getElementById("snUsersLink");
-  if(usersLink) usersLink.style.display=allowed.includes("users")?"":"none";
+  if(usersLink) usersLink.style.display=AdminUI.can("users","view")?"":"none";
 }
 async function initAuthGate(){
   try{
     const r=await fetch("/api/auth/me");
     if(!r.ok){ location.href="/login.html"; return false; }
     const j=await r.json();
-    CURRENT_USER=j.user;
-    applyRoleVisibility(CURRENT_USER.role);
+    CURRENT_USER=AdminUI.setUser(j.user);
+    applyPermissionVisibility();
     applyAdminVisibility();
     renderSidebarUserCard({role:SIDEBAR_ROLE_LABELS[CURRENT_USER.role]||CURRENT_USER.role,name:CURRENT_USER.name,title:CURRENT_USER.jobTitle||""});
     return true;
@@ -1077,9 +1075,9 @@ function ajeerCard(p,i){
       <a class="reset" href="${esc(p.file)}" target="_blank" rel="noopener">فتح الملف</a>
       <a class="reset" href="${esc(p.file)}" download>تحميل</a>
     </div>
-    ${isAdminUser()?`<div class="admin-row-actions" style="margin-top:10px" data-permit-actions="${esc(p.permit)}">
-      <button class="admin-mini-btn" data-act="edit-permit" data-permit="${esc(p.permit)}">تعديل</button>
-      <button class="admin-mini-btn danger" data-act="delete-permit" data-permit="${esc(p.permit)}">حذف</button>
+    ${AdminUI.canAny("ajeer",["edit","delete"])?`<div class="admin-row-actions" style="margin-top:10px" data-permit-actions="${esc(p.permit)}">
+      ${AdminUI.can("ajeer","edit")?`<button class="admin-mini-btn" data-act="edit-permit" data-permit="${esc(p.permit)}">تعديل</button>`:""}
+      ${AdminUI.can("ajeer","delete")?`<button class="admin-mini-btn danger" data-act="delete-permit" data-permit="${esc(p.permit)}">حذف</button>`:""}
     </div>`:""}
   </article>`;
 }
@@ -1100,10 +1098,8 @@ function renderAjeer(){
   document.querySelectorAll("#ajeerGrid .qr-thumb,#ajeerUnlinkedGrid .qr-thumb").forEach(btn=>{
     btn.addEventListener("click",ev=>{ev.stopPropagation();openQrModal(btn.dataset.permit,btn.dataset.qr);});
   });
-  if(isAdminUser()){
-    document.querySelectorAll('[data-act="edit-permit"]').forEach(b=>b.addEventListener("click",ev=>{ev.stopPropagation();openPermitForm(AJEER_LATEST.find(p=>p.permit===b.dataset.permit));}));
-    document.querySelectorAll('[data-act="delete-permit"]').forEach(b=>b.addEventListener("click",ev=>{ev.stopPropagation();deletePermit(b.dataset.permit);}));
-  }
+  document.querySelectorAll('[data-act="edit-permit"]').forEach(b=>b.addEventListener("click",ev=>{ev.stopPropagation();openPermitForm(AJEER_LATEST.find(p=>p.permit===b.dataset.permit));}));
+  document.querySelectorAll('[data-act="delete-permit"]').forEach(b=>b.addEventListener("click",ev=>{ev.stopPropagation();deletePermit(b.dataset.permit);}));
 }
 ajeerQ.addEventListener("input",e=>{ajeerState.q=e.target.value;renderAjeer();});
 ajeerStatus.addEventListener("change",e=>{ajeerState.status=e.target.value;renderAjeer();});
@@ -1252,24 +1248,26 @@ function openDrawer(i){
   if(qrBtn)qrBtn.addEventListener("click",()=>openQrModal(qrBtn.dataset.permit,qrBtn.dataset.qr));
   drawer.querySelector(".dr-close").focus();
 
-  if(isAdminUser()){
+  const canEditEmp=AdminUI.can("employees","edit"), canDeleteEmp=AdminUI.can("employees","delete");
+  if(canEditEmp||canDeleteEmp){
     document.getElementById("drAdminActions").style.display="";
-    document.getElementById("drEditBtn").addEventListener("click",()=>openEmployeeForm(e));
-    document.getElementById("drDeleteBtn").addEventListener("click",()=>deleteEmployee(e));
+    const editBtn=document.getElementById("drEditBtn"), delBtn=document.getElementById("drDeleteBtn");
+    if(canEditEmp) editBtn.addEventListener("click",()=>openEmployeeForm(e)); else editBtn.style.display="none";
+    if(canDeleteEmp) delBtn.addEventListener("click",()=>deleteEmployee(e)); else delBtn.style.display="none";
   }
 }
 function closeDrawer(){scrim.classList.remove("show");drawer.classList.remove("show");document.body.style.overflow="";}
 scrim.addEventListener("click",closeDrawer);
 document.addEventListener("keydown",e=>{if(e.key==="Escape"){closeDrawer();closeSoonModal();closeSidenav();closeQrModal();}});
 
-/* ---------- employee management (add/edit/delete) ---------- */
-function isAdminUser(){ return CURRENT_USER && (CURRENT_USER.role==="owner"||CURRENT_USER.role==="admin"); }
+/* ---------- employee management (add/edit/delete) ----------
+   Every control below is shown only when the user holds the matching
+   permission; the API enforces the same check on each request. */
 function applyAdminVisibility(){
-  const show=isAdminUser()?"":"none";
   const addEmpBtn=document.getElementById("addEmployeeBtn");
-  if(addEmpBtn) addEmpBtn.style.display=show;
+  if(addEmpBtn) addEmpBtn.style.display=AdminUI.can("employees","create")?"":"none";
   const addPermitBtn=document.getElementById("addPermitBtn");
-  if(addPermitBtn) addPermitBtn.style.display=show;
+  if(addPermitBtn) addPermitBtn.style.display=AdminUI.can("ajeer","create")?"":"none";
 }
 
 /* Field specs per tab — spec.key looks up F[key] for the JSONB field name,
@@ -1410,12 +1408,15 @@ async function refreshEmployees(){
 document.getElementById("addEmployeeBtn").addEventListener("click", ()=>openEmployeeForm(null));
 
 /* ---------- ajeer permit management (add/edit/delete + PDF/QR upload) ---------- */
+/* Upload/replace needs ajeer:upload_files, removing needs ajeer:delete_files —
+   each button appears only with its own permission. */
 function permitFileRow(label,url,onUpload,onDelete){
+  const mayUpload=AdminUI.can("ajeer","upload_files"), mayDelete=AdminUI.can("ajeer","delete_files");
   return `<div class="admin-field"><label>${AdminUI.esc(label)}</label>
     <div class="admin-file-row">
       ${url?`<span class="name">${AdminUI.esc(url.split("/").pop())}</span>`:`<span class="name">لا يوجد ملف بعد</span>`}
-      <label class="admin-mini-btn" style="cursor:pointer">${url?"استبدال":"رفع"}<input type="file" accept="${label.includes('QR')?'image/png,image/jpeg':'application/pdf'}" style="display:none" data-upload-for="${onUpload}"></label>
-      ${url?`<button class="admin-mini-btn danger" type="button" data-delete-for="${onDelete}">حذف</button>`:""}
+      ${mayUpload?`<label class="admin-mini-btn" style="cursor:pointer">${url?"استبدال":"رفع"}<input type="file" accept="${label.includes('QR')?'image/png,image/jpeg':'application/pdf'}" style="display:none" data-upload-for="${onUpload}"></label>`:""}
+      ${url&&mayDelete?`<button class="admin-mini-btn danger" type="button" data-delete-for="${onDelete}">حذف</button>`:""}
     </div>
   </div>`;
 }
@@ -1444,7 +1445,7 @@ function openPermitForm(existing){
       const file=e.target.files[0]; if(!file) return;
       const field=inp.dataset.uploadFor; // "file" | "qr"
       try{
-        const url=await AdminUI.uploadFile(file, `ajeer-permits/${p.permit}`);
+        const url=await AdminUI.uploadFile(file, `ajeer-permits/${p.permit}`, "ajeer");
         await AdminUI.api("PUT","/api/data/permits",{id:p.permit, [field]:url});
         await refreshPermits();
         AdminUI.closeModal();

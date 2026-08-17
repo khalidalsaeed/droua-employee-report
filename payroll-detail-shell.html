@@ -169,9 +169,8 @@ async function initAuthGate(){
     const r=await fetch("/api/auth/me");
     if(!r.ok){ location.href="/login.html"; return false; }
     const j=await r.json();
-    CURRENT_USER=j.user;
-    const allowedRoles=["owner","admin","finance","viewer"];
-    if(!allowedRoles.includes(CURRENT_USER.role)){
+    CURRENT_USER=AdminUI.setUser(j.user);
+    if(!AdminUI.can("payroll","view")){
       document.getElementById("appRoot").innerHTML = `<div class="access-denied"><h2>غير مصرّح</h2><p>لا تملك صلاحية الوصول إلى مسير الرواتب.</p><a class="back-link" href="/">الرجوع للرئيسية</a></div>`;
       return false;
     }
@@ -186,15 +185,15 @@ document.getElementById("logoutBtn").addEventListener("click", async ()=>{
   try{ await fetch("/api/auth/logout",{method:"POST"}); } finally { location.href="/login.html"; }
 });
 
-function isAdminUser(){ return CURRENT_USER && (CURRENT_USER.role==="owner"||CURRENT_USER.role==="admin"); }
-
 /* Default status to fall back to when a file is removed from an
    attachment — matches each attachment's original seed-data status. */
 const ATTACHMENT_REVERT_STATUS={ damanah_invoice:"pending_upload", payment_receipt:"pending_payment", payroll_sheet:"pending_upload" };
 
 function attachmentCard(att, monthLabel){
   const hasFile=!!att.fileUrl;
-  const admin=isAdminUser();
+  const mayUpload=AdminUI.can("payroll","upload_files");
+  const mayDeleteFile=AdminUI.can("payroll","delete_files");
+  const mayEdit=AdminUI.can("payroll","edit");
   return `<div class="attachment-card">
     <div class="attachment-top">
       <div class="attachment-label">${esc(att.label)}</div>
@@ -211,21 +210,21 @@ function attachmentCard(att, monthLabel){
         تحميل PDF
       </a>
     </div>`:`<div class="attachment-note">${esc(att.note||"")}</div>`}
-    ${admin?`
+    ${(mayUpload||mayDeleteFile||mayEdit)?`
     <div class="admin-row-actions" style="margin-top:12px">
-      <label class="admin-mini-btn" style="cursor:pointer">
+      ${mayUpload?`<label class="admin-mini-btn" style="cursor:pointer">
         ${hasFile?"استبدال الملف":"رفع ملف"}
         <input type="file" accept="application/pdf,image/png,image/jpeg" style="display:none" data-act="att-upload" data-key="${esc(att.key)}">
-      </label>
-      ${hasFile?`<button class="admin-mini-btn danger" data-act="att-delete-file" data-key="${esc(att.key)}">حذف الملف</button>`:""}
-      <button class="admin-mini-btn" data-act="att-edit-note" data-key="${esc(att.key)}">تعديل الملاحظة</button>
+      </label>`:""}
+      ${hasFile&&mayDeleteFile?`<button class="admin-mini-btn danger" data-act="att-delete-file" data-key="${esc(att.key)}">حذف الملف</button>`:""}
+      ${mayEdit?`<button class="admin-mini-btn" data-act="att-edit-note" data-key="${esc(att.key)}">تعديل الملاحظة</button>`:""}
     </div>`:""}
   </div>`;
 }
 
 async function uploadAttachmentFile(key, file){
   try{
-    const url=await AdminUI.uploadFile(file, `payroll/${RUN_ID}`);
+    const url=await AdminUI.uploadFile(file, `payroll/${RUN_ID}`, "payroll");
     await AdminUI.api("PUT","/api/data/payroll-runs",{id:RUN_ID, attachments:[{key, fileUrl:url, statusKey:"attached", uploadedAt:new Date().toISOString().slice(0,10)}]});
     await loadRun();
   }catch(err){ alert(err.message); }
@@ -256,7 +255,7 @@ function editAttachmentNote(key, currentNote){
 }
 async function uploadMainFile(file){
   try{
-    const url=await AdminUI.uploadFile(file, `payroll/${RUN_ID}`);
+    const url=await AdminUI.uploadFile(file, `payroll/${RUN_ID}`, "payroll");
     await AdminUI.api("PUT","/api/data/payroll-runs",{id:RUN_ID, fileUrl:url, attachments:[{key:"payroll_sheet", fileUrl:url, statusKey:"attached", uploadedAt:new Date().toISOString().slice(0,10)}]});
     await loadRun();
   }catch(err){ alert(err.message); }
@@ -303,7 +302,7 @@ function renderRun(run){
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 12 5 5 5-5"/><path d="M5 21h14"/></svg>
           تحميل PDF
         </a>
-        ${isAdminUser()?`<label class="admin-mini-btn" style="cursor:pointer">استبدال ملف المسير<input type="file" accept="application/pdf" style="display:none" id="mainFileInput"></label>`:""}
+        ${AdminUI.can("payroll","upload_files")?`<label class="admin-mini-btn" style="cursor:pointer">استبدال ملف المسير<input type="file" accept="application/pdf" style="display:none" id="mainFileInput"></label>`:""}
       </div>
       <div class="pc-feedback">
         <span>هل يوجد ملاحظة على هذا المسير؟</span>
@@ -327,20 +326,22 @@ function renderRun(run){
   content.querySelectorAll('[data-act="fb-yes"]').forEach(b=>b.addEventListener("click", ()=>submitFeedback(b.dataset.month)));
   /* fb-no: intentionally no listener */
 
-  if(isAdminUser()){
+  if(AdminUI.can("payroll","delete")){
     document.getElementById("deleteRunBtn").style.display="";
     document.getElementById("deleteRunBtn").onclick=deleteRun; // onclick, not addEventListener — avoids stacking a new handler each reload
-    const mainInput=document.getElementById("mainFileInput");
-    if(mainInput) mainInput.addEventListener("change", (e)=>{ if(e.target.files[0]) uploadMainFile(e.target.files[0]); });
-    content.querySelectorAll('[data-act="att-upload"]').forEach(inp=>inp.addEventListener("change",(e)=>{ if(e.target.files[0]) uploadAttachmentFile(inp.dataset.key, e.target.files[0]); }));
-    content.querySelectorAll('[data-act="att-delete-file"]').forEach(b=>b.addEventListener("click", ()=>deleteAttachmentFile(b.dataset.key)));
-    content.querySelectorAll('[data-act="att-edit-note"]').forEach(b=>{
-      b.addEventListener("click", ()=>{
-        const att=(run.attachments||[]).find(a=>a.key===b.dataset.key);
-        editAttachmentNote(b.dataset.key, att?att.note:"");
-      });
-    });
   }
+  /* Listeners are attached unconditionally: attachmentCard() only renders a
+     control when the permission is held, so there's nothing to bind otherwise. */
+  const mainInput=document.getElementById("mainFileInput");
+  if(mainInput) mainInput.addEventListener("change", (e)=>{ if(e.target.files[0]) uploadMainFile(e.target.files[0]); });
+  content.querySelectorAll('[data-act="att-upload"]').forEach(inp=>inp.addEventListener("change",(e)=>{ if(e.target.files[0]) uploadAttachmentFile(inp.dataset.key, e.target.files[0]); }));
+  content.querySelectorAll('[data-act="att-delete-file"]').forEach(b=>b.addEventListener("click", ()=>deleteAttachmentFile(b.dataset.key)));
+  content.querySelectorAll('[data-act="att-edit-note"]').forEach(b=>{
+    b.addEventListener("click", ()=>{
+      const att=(run.attachments||[]).find(a=>a.key===b.dataset.key);
+      editAttachmentNote(b.dataset.key, att?att.note:"");
+    });
+  });
 }
 
 const pdfScrim=document.getElementById("pdfScrim");

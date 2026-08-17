@@ -84,3 +84,57 @@
   border: 1px solid var(--hair); border-radius: 10px; padding: 10px 12px; font-size: 12.5px;
 }
 .admin-file-row .name { color: var(--ink-soft); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+
+/* ---- permissions manager (إدارة الصلاحيات) ----
+   Wider than the default modal since each section is a row of toggles. */
+.admin-modal.wide { width: min(720px, 94vw); }
+
+/* Mode chooser: role defaults vs a custom per-user set. */
+.admin-mode-choice { display: flex; flex-direction: column; gap: 10px; margin-bottom: 18px; }
+.admin-mode-opt {
+  display: flex; align-items: flex-start; gap: 10px; border: 1px solid var(--hair); border-radius: 12px;
+  padding: 12px 14px; cursor: pointer; background: var(--paper-2); transition: .2s;
+}
+.admin-mode-opt:hover { border-color: var(--slate); }
+.admin-mode-opt.active { border-color: var(--brass); background: var(--paper); box-shadow: 0 0 0 3px rgba(22,40,59,.05); }
+.admin-mode-opt input { margin-top: 3px; accent-color: var(--slate); }
+.admin-mode-opt .t { font-size: 13.5px; font-weight: 600; color: var(--ink); }
+.admin-mode-opt .d { font-size: 11.5px; color: var(--ink-soft); margin-top: 3px; line-height: 1.55; }
+
+/* One card per platform section, holding that section's action switches. */
+.admin-perm-section {
+  border: 1px solid var(--hair); border-radius: 12px; margin-bottom: 12px; overflow: hidden;
+}
+.admin-perm-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 11px 14px; background: var(--paper-2); border-bottom: 1px solid var(--hair);
+}
+.admin-perm-head .nm { font-size: 13.5px; font-weight: 600; color: var(--ink); }
+.admin-perm-actions { display: flex; flex-wrap: wrap; gap: 8px 18px; padding: 13px 14px; }
+
+/* Switch: a checkbox styled as a track+knob. Direction-agnostic so it reads
+   correctly in RTL — the knob starts at the inline-start edge either way. */
+.admin-switch { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; font-size: 12.5px; }
+.admin-switch input { position: absolute; opacity: 0; width: 0; height: 0; }
+.admin-switch .track {
+  position: relative; width: 38px; height: 21px; border-radius: 999px; background: #D8D2C7;
+  border: 1px solid var(--hair); transition: .22s; flex: none;
+}
+.admin-switch .track::after {
+  content: ""; position: absolute; top: 2px; inset-inline-start: 2px; width: 15px; height: 15px;
+  border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.22); transition: .22s;
+}
+.admin-switch input:checked + .track { background: var(--slate); border-color: var(--slate); }
+.admin-switch input:checked + .track::after { inset-inline-start: 19px; }
+.admin-switch input:focus-visible + .track { box-shadow: 0 0 0 3px rgba(22,40,59,.18); }
+.admin-switch .lbl { color: var(--ink); }
+.admin-switch input:disabled + .track { opacity: .45; }
+.admin-switch input:disabled ~ .lbl { color: var(--ink-soft); }
+.admin-switch:has(input:disabled) { cursor: not-allowed; }
+
+/* Shown instead of the toggles while "role defaults" is selected. */
+.admin-perm-locked { opacity: .55; pointer-events: none; }
+.admin-perm-note {
+  background: var(--paper-2); border: 1px solid var(--hair); border-radius: 10px;
+  padding: 11px 14px; font-size: 12px; color: var(--ink-soft); line-height: 1.6; margin-bottom: 14px;
+}

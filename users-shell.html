@@ -86,6 +86,7 @@ tbody tr:hover{background:var(--brass-soft)}
 .error-msg.show{display:block}
 .access-denied{text-align:center;padding:100px 20px;color:var(--ink-soft)}
 </style>
+<link rel="stylesheet" href="/admin-ui.css">
 </head>
 <body>
 <header class="site">
@@ -116,7 +117,7 @@ tbody tr:hover{background:var(--brass-soft)}
     <div class="panel">
       <table>
         <thead>
-          <tr><th>الاسم</th><th>البريد الإلكتروني</th><th>الدور</th><th>الحالة</th><th>تاريخ الإنشاء</th><th>آخر دخول</th><th>إجراءات</th></tr>
+          <tr><th>الاسم</th><th>البريد الإلكتروني</th><th>الدور</th><th>الصلاحيات</th><th>الحالة</th><th>تاريخ الإنشاء</th><th>آخر دخول</th><th>إجراءات</th></tr>
         </thead>
         <tbody id="usersBody"></tbody>
       </table>
@@ -128,6 +129,7 @@ tbody tr:hover{background:var(--brass-soft)}
 <div class="scrim" id="scrim"></div>
 <div class="modal" id="userModal" role="dialog" aria-modal="true" aria-labelledby="modalTitle"></div>
 
+<script src="/admin-ui.js"></script>
 <script>
 const ROLE_LABELS={owner:"المالك",admin:"مدير النظام",hr:"الموارد البشرية",finance:"المالية",viewer:"قراءة فقط"};
 const arMonths=["يناير","فبراير","مارس","أبريل","مايو","يونيو","يوليو","أغسطس","سبتمبر","أكتوبر","نوفمبر","ديسمبر"];
@@ -148,11 +150,13 @@ async function initAuthGate(){
     const r=await fetch("/api/auth/me");
     if(!r.ok){ location.href="/login.html"; return false; }
     const j=await r.json();
-    CURRENT_USER=j.user;
-    if(CURRENT_USER.role!=="owner" && CURRENT_USER.role!=="admin"){
+    CURRENT_USER=AdminUI.setUser(j.user);
+    if(!AdminUI.can("users","view")){
       document.getElementById("appRoot").innerHTML = `<div class="access-denied"><h2>غير مصرّح</h2><p>لا تملك صلاحية الوصول إلى إدارة المستخدمين.</p><a class="back-link" href="/">الرجوع للرئيسية</a></div>`;
       return false;
     }
+    /* Creating users is a separate permission from viewing them. */
+    document.getElementById("addUserBtn").style.display = AdminUI.can("users","create") ? "" : "none";
     return true;
   }catch(err){
     location.href="/login.html";
@@ -175,22 +179,36 @@ function renderUsers(){
   body.innerHTML = USERS.map(u=>{
     const canManage = CURRENT_USER.role==="owner" || u.role!=="owner";
     const isSelf = u.id===CURRENT_USER.id;
+    /* Mirrors guardPermissionChange() in api/app.js — Owner's permissions are
+       fixed, and nobody edits their own. The API enforces both regardless. */
+    const canEditPerms = AdminUI.can("users","manage") && u.role!=="owner" && !isSelf;
     return `<tr>
       <td>${esc(u.name)}</td>
       <td class="num" style="direction:ltr;text-align:right">${esc(u.email)}</td>
       <td>${roleChip(u.role)}</td>
+      <td>${permModeChip(u)}</td>
       <td>${statusChip(u.status)}</td>
       <td>${fmtDate(u.createdAt)}</td>
       <td>${fmtDate(u.lastLogin)}</td>
       <td><div class="row-actions">
         <button class="mini-btn" data-act="edit" data-id="${u.id}" ${canManage?"":"disabled"}>تعديل</button>
+        ${AdminUI.can("users","manage")?`<button class="mini-btn" data-act="perms" data-id="${u.id}" ${canEditPerms?"":"disabled"} title="${u.role==="owner"?"المالك يملك كامل الصلاحيات دائمًا":(isSelf?"لا يمكنك تعديل صلاحيات حسابك":"")}">إدارة الصلاحيات</button>`:""}
         <button class="mini-btn danger" data-act="delete" data-id="${u.id}" ${(canManage && !isSelf)?"":"disabled"}>حذف</button>
       </div></td>
     </tr>`;
   }).join("");
 
   body.querySelectorAll('[data-act="edit"]').forEach(b=>b.addEventListener("click", ()=>openEditModal(b.dataset.id)));
+  body.querySelectorAll('[data-act="perms"]').forEach(b=>b.addEventListener("click", ()=>openPermissionsModal(b.dataset.id)));
   body.querySelectorAll('[data-act="delete"]').forEach(b=>b.addEventListener("click", ()=>confirmDelete(b.dataset.id)));
+}
+
+/* Shows at a glance whether a user follows their role or has a custom set. */
+function permModeChip(u){
+  if(u.role==="owner") return `<span class="role-chip owner">كامل الصلاحيات</span>`;
+  return u.usesRoleDefaults
+    ? `<span class="status-chip active" style="background:var(--paper-2);color:var(--ink-soft)">افتراضية الدور</span>`
+    : `<span class="status-chip active">مخصصة</span>`;
 }
 
 async function loadUsers(){
@@ -296,6 +314,117 @@ function openEditModal(id){
 function wireModalCommon(){
   document.getElementById("mClose").addEventListener("click", closeModal);
   document.getElementById("mCancel").addEventListener("click", closeModal);
+}
+
+/* ---------- permissions manager ----------
+   The whole modal is built from the catalogue the server returns
+   (/api/auth/permissions-catalogue): sections, their supported actions, and
+   the Arabic labels. Adding a section in lib/auth/permissions.js makes it
+   appear here with no change to this file. */
+let CATALOGUE=null;
+async function loadCatalogue(){
+  if(CATALOGUE) return CATALOGUE;
+  const j=await AdminUI.api("GET","/api/auth/permissions-catalogue");
+  CATALOGUE={sections:j.sections, actionLabels:j.actionLabels, roleDefaults:j.roleDefaults};
+  return CATALOGUE;
+}
+
+function permSwitch(sectionKey, action, label, checked, disabled){
+  return `<label class="admin-switch">
+    <input type="checkbox" data-perm="${sectionKey}:${action}" ${checked?"checked":""} ${disabled?"disabled":""}>
+    <span class="track"></span><span class="lbl">${esc(label)}</span>
+  </label>`;
+}
+
+async function openPermissionsModal(id){
+  const u=USERS.find(x=>x.id===id);
+  if(!u) return;
+  let cat;
+  try{ cat=await loadCatalogue(); }
+  catch(err){ alert(err.message); return; }
+
+  /* Start from whatever the user effectively has today, so switching to
+     "custom" begins at their current access rather than an empty set. */
+  const granted=new Set(u.effectivePermissions||[]);
+  const actorHolds=new Set(CURRENT_USER.permissions||[]);
+  const isOwnerActor=CURRENT_USER.role==="owner";
+
+  const sectionsHtml=cat.sections.map(s=>`
+    <div class="admin-perm-section">
+      <div class="admin-perm-head"><span class="nm">${esc(s.label)}</span></div>
+      <div class="admin-perm-actions">
+        ${s.actions.map(a=>{
+          const key=`${s.key}:${a}`;
+          /* A non-Owner can't grant what they don't hold — the switch is
+             disabled rather than hidden so the limit is visible, and the API
+             rejects it anyway. */
+          const blocked=!isOwnerActor && !actorHolds.has(key);
+          return permSwitch(s.key, a, cat.actionLabels[a]||a, granted.has(key), blocked);
+        }).join("")}
+      </div>
+    </div>`).join("");
+
+  const custom=!u.usesRoleDefaults;
+  const modal=AdminUI.openModal(`
+    <div class="admin-mhead"><button class="admin-mclose" data-admin-close>✕</button>
+      <h3>إدارة صلاحيات — ${esc(u.name)}</h3></div>
+    <div class="admin-mbody">
+      <div class="admin-error-msg" data-admin-error></div>
+      <div class="admin-perm-note">
+        الدور الحالي: <b>${esc(ROLE_LABELS[u.role]||u.role)}</b> — الدور يحدّد الصلاحيات الافتراضية فقط،
+        ويمكنك تجاوزه بصلاحيات مخصّصة لهذا المستخدم دون تغيير دوره.
+      </div>
+      <div class="admin-mode-choice">
+        <label class="admin-mode-opt ${custom?"":"active"}" data-mode-opt="default">
+          <input type="radio" name="permMode" value="default" ${custom?"":"checked"}>
+          <span><span class="t">استخدام صلاحيات الدور الافتراضية</span>
+            <span class="d">يتبع المستخدم صلاحيات دوره تلقائيًا، وأي تعديل مستقبلي على صلاحيات الدور ينعكس عليه.</span></span>
+        </label>
+        <label class="admin-mode-opt ${custom?"active":""}" data-mode-opt="custom">
+          <input type="radio" name="permMode" value="custom" ${custom?"checked":""}>
+          <span><span class="t">صلاحيات مخصّصة لهذا المستخدم</span>
+            <span class="d">تحكّم كامل بكل صلاحية على حدة، بدون تغيير دور المستخدم.</span></span>
+        </label>
+      </div>
+      <div id="permSections" class="${custom?"":"admin-perm-locked"}">${sectionsHtml}</div>
+    </div>
+    <div class="admin-mfoot">
+      <button class="admin-btn-ghost" data-admin-close>إلغاء</button>
+      <button class="admin-btn-primary" id="permSave">حفظ الصلاحيات</button>
+    </div>
+  `, {wide:true});
+
+  const sectionsWrap=modal.querySelector("#permSections");
+  function currentMode(){ return modal.querySelector('input[name="permMode"]:checked').value; }
+
+  /* Switching to "role defaults" greys out the switches and resets them to the
+     role's defaults, so what's on screen always matches what would be saved. */
+  function syncMode(){
+    const mode=currentMode();
+    sectionsWrap.classList.toggle("admin-perm-locked", mode!=="custom");
+    modal.querySelectorAll("[data-mode-opt]").forEach(el=>el.classList.toggle("active", el.dataset.modeOpt===mode));
+    if(mode==="default"){
+      const defaults=new Set(cat.roleDefaults[u.role]||[]);
+      sectionsWrap.querySelectorAll("input[data-perm]").forEach(inp=>{ inp.checked=defaults.has(inp.dataset.perm); });
+    }
+  }
+  modal.querySelectorAll('input[name="permMode"]').forEach(r=>r.addEventListener("change", syncMode));
+
+  modal.querySelector("#permSave").addEventListener("click", async ()=>{
+    AdminUI.clearError(modal);
+    const mode=currentMode();
+    /* null tells the API "go back to role defaults"; an array pins a custom set. */
+    const permissions = mode==="custom"
+      ? Array.from(sectionsWrap.querySelectorAll("input[data-perm]:checked")).map(i=>i.dataset.perm)
+      : null;
+    try{
+      await AdminUI.api("PUT","/api/data/users",{id:u.id, permissions});
+      await loadUsers();
+      AdminUI.closeModal();
+    }catch(err){
+      AdminUI.showError(modal, err.message);
+    }
+  });
 }
 
 async function confirmDelete(id){

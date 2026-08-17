@@ -2,7 +2,16 @@ const fs = require("fs");
 const path = require("path");
 
 const { requireUser } = require("../lib/auth/requireAuth");
-const { can, isAdminLike, isValidRole, canManageUser } = require("../lib/auth/roles");
+const { isValidRole, canManageUser } = require("../lib/auth/roles");
+const {
+  PAGE_PERMISSION,
+  SECTION_BY_KEY,
+  hasPermission,
+  resolvePermissions,
+  usesRoleDefaults,
+  sanitizePermissions,
+  catalogue,
+} = require("../lib/auth/permissions");
 const { findByEmailRaw, findByIdRaw, listUsers, createUser, updateUser, deleteUser, touchLastLogin } = require("../lib/auth/users");
 const { verifyPassword, hashPassword, generatePassword } = require("../lib/auth/passwords");
 const { issueSessionToken, verify: verifyToken } = require("../lib/auth/tokens");
@@ -28,21 +37,19 @@ const PAGE_FILES = {
   payroll: "payroll-shell.html",
   "payroll-detail": "payroll-detail-shell.html",
 };
-/* Mirrors lib/auth/roles.js's PAGE_PERMISSIONS at the page-serving level. */
-const PAGE_AUTH = {
-  home: () => true,
-  users: (role) => isAdminLike(role),
-  payroll: (role) => can(role, "finance"),
-  "payroll-detail": (role) => can(role, "finance"),
-};
+/* Which permission each page needs is declared once, in
+   lib/auth/permissions.js (PAGE_PERMISSION) — not duplicated here.
 
-/* Per-resource authorization for /api/data/:resource now lives on each
-   lib/data/<resource>.js module itself (module.auth = {read, write}) — see
-   lib/data/registry.js. Adding a new section is then just a new module
-   file + one registry line; this file never needs to change. "users" is
-   handled separately below (its business rules — self-delete guard,
-   Owner-only Owner management, generated passwords — don't fit a generic
-   CRUD shape). */
+   Per-resource authorization for /api/data/:resource is derived from the
+   resource module's own `section` (see lib/data/employees.js) plus the HTTP
+   method, via METHOD_ACTION below. Adding a new platform section is then a
+   new lib/data/<name>.js module + one registry line + one SECTIONS entry;
+   this file never needs to change. "users" is handled separately below (its
+   business rules — self-delete guard, Owner-only Owner management, generated
+   passwords, permission management — don't fit a generic CRUD shape). */
+const METHOD_ACTION = { GET: "view", POST: "create", PUT: "edit", DELETE: "delete" };
+
+const FORBIDDEN = { ok: false, error: "صلاحيات غير كافية" };
 
 module.exports = async function handler(req, res) {
   const { kind } = req.query || {};
@@ -58,8 +65,7 @@ module.exports = async function handler(req, res) {
 async function handlePage(req, res) {
   const { page } = req.query || {};
   const file = PAGE_FILES[page];
-  const authCheck = PAGE_AUTH[page];
-  if (!file || !authCheck) {
+  if (!file || !(page in PAGE_PERMISSION)) {
     res.status(404).end("Not found");
     return;
   }
@@ -69,7 +75,8 @@ async function handlePage(req, res) {
     res.end();
     return;
   }
-  if (!authCheck(user.role)) {
+  const required = PAGE_PERMISSION[page];
+  if (required && !hasPermission(user, ...required.split(":"))) {
     res.writeHead(302, { Location: "/", ...NO_CACHE });
     res.end();
     return;
@@ -95,7 +102,32 @@ async function handleAuth(req, res, action) {
   if (action === "login") return authLogin(req, res);
   if (action === "logout") return authLogout(req, res);
   if (action === "me") return authMe(req, res);
+  if (action === "permissions-catalogue") return authCatalogue(req, res);
   res.status(404).json({ ok: false, error: "Not found" });
+}
+
+/* The shape every page's client code sees for the signed-in user. `permissions`
+   is the RESOLVED effective list (role defaults or the custom set, with Owner
+   always full), so the frontend never has to reimplement the resolution rules
+   — it just checks membership to decide what to show. */
+function sessionUser(user) {
+  return {
+    id: user.id,
+    name: user.name,
+    email: user.email,
+    role: user.role,
+    jobTitle: user.jobTitle,
+    permissions: resolvePermissions(user),
+  };
+}
+
+/* Section/action catalogue for the "إدارة الصلاحيات" modal. Requires
+   users:manage — there's no reason for anyone else to enumerate it. */
+async function authCatalogue(req, res) {
+  const actor = await requireUser(req);
+  if (!actor) return res.status(401).json({ ok: false, error: "غير مسجّل الدخول" });
+  if (!hasPermission(actor, "users", "manage")) return res.status(403).json(FORBIDDEN);
+  res.status(200).json({ ok: true, ...catalogue() });
 }
 
 async function authLogin(req, res) {
@@ -119,7 +151,7 @@ async function authLogin(req, res) {
   res.setHeader("Set-Cookie", sessionCookie(token, remembered));
   await touchLastLogin(user.id);
   logEvent({ type: "login_success", actorEmail: user.email, actorId: user.id });
-  res.status(200).json({ ok: true, user: { id: user.id, name: user.name, email: user.email, role: user.role, jobTitle: user.jobTitle } });
+  res.status(200).json({ ok: true, user: sessionUser(user) });
 }
 
 async function authLogout(req, res) {
@@ -142,7 +174,7 @@ async function authMe(req, res) {
     const fresh = issueSessionToken(user, false);
     res.setHeader("Set-Cookie", sessionCookie(fresh, false));
   }
-  res.status(200).json({ ok: true, user: { id: user.id, name: user.name, email: user.email, role: user.role, jobTitle: user.jobTitle } });
+  res.status(200).json({ ok: true, user: sessionUser(user) });
 }
 
 /* ---------------- generic data CRUD ---------------- */
@@ -153,15 +185,19 @@ async function handleData(req, res, resource) {
   if (resource === "users") return handleUsers(req, res, actor);
 
   const mod = getResource(resource);
-  const authRule = mod && mod.auth;
-  if (!mod || !authRule) return res.status(404).json({ ok: false, error: "قسم بيانات غير معروف" });
+  if (!mod || !mod.section) return res.status(404).json({ ok: false, error: "قسم بيانات غير معروف" });
 
-  if (resource === "settings") return handleSettings(req, res, actor, mod, authRule);
+  if (resource === "settings") return handleSettings(req, res, actor, mod);
+
+  /* One gate for every method — the action is derived from the verb, so a
+     resource can never accidentally ship without a check on one of them. */
+  const action = METHOD_ACTION[req.method];
+  if (!action) return res.status(405).json({ ok: false, error: "Method not allowed" });
+  if (!hasPermission(actor, mod.section, action)) return res.status(403).json(FORBIDDEN);
 
   const { id } = req.query || {};
   try {
     if (req.method === "GET") {
-      if (!authRule.read(actor.role)) return res.status(403).json({ ok: false, error: "صلاحيات غير كافية" });
       if (id) {
         const item = await mod.get(id);
         if (!item) return res.status(404).json({ ok: false, error: "غير موجود" });
@@ -169,7 +205,6 @@ async function handleData(req, res, resource) {
       }
       return res.status(200).json({ ok: true, items: await mod.list() });
     }
-    if (!authRule.write(actor.role)) return res.status(403).json({ ok: false, error: "صلاحيات غير كافية" });
     if (req.method === "POST") {
       const item = await mod.create(parseBody(req));
       logEvent({ type: `${resource}_created`, actorEmail: actor.email, actorId: actor.id });
@@ -199,13 +234,13 @@ async function handleData(req, res, resource) {
 
 /* settings is key/value, not a list of rows — GET returns the whole merged
    object, PUT upserts a single {key, value} pair. */
-async function handleSettings(req, res, actor, mod, authRule) {
+async function handleSettings(req, res, actor, mod) {
   try {
     if (req.method === "GET") {
-      if (!authRule.read(actor.role)) return res.status(403).json({ ok: false, error: "صلاحيات غير كافية" });
+      if (!hasPermission(actor, mod.section, "view")) return res.status(403).json(FORBIDDEN);
       return res.status(200).json({ ok: true, settings: await mod.list() });
     }
-    if (!authRule.write(actor.role)) return res.status(403).json({ ok: false, error: "صلاحيات غير كافية" });
+    if (!hasPermission(actor, mod.section, "edit")) return res.status(403).json(FORBIDDEN);
     if (req.method === "PUT") {
       const { key, value } = parseBody(req);
       if (!key) return res.status(400).json({ ok: false, error: "المفتاح مطلوب" });
@@ -219,14 +254,66 @@ async function handleSettings(req, res, actor, mod, authRule) {
   }
 }
 
+/* Returns null when the actor may apply `next` to `target`, or {status, error}
+   explaining the refusal. Four rules, in order:
+
+   1. Changing anyone's permissions needs users:manage — a plain users:edit
+      holder can rename a user but not widen their access.
+   2. Owner is always full-access and immutable, so any attempt to pin a
+      permission set on an Owner is rejected outright (rather than silently
+      ignored, which would look like it worked).
+   3. Nobody edits their own permissions. This closes self-escalation without
+      having to reason about which individual grants are safe.
+   4. A non-Owner cannot grant a permission they don't themselves hold, so
+      users:manage can delegate but never manufacture new authority. */
+function guardPermissionChange(actor, target, next) {
+  if (!hasPermission(actor, "users", "manage")) {
+    return { status: 403, error: "لا تملك صلاحية إدارة صلاحيات المستخدمين" };
+  }
+  if (target.role === "owner") {
+    return { status: 403, error: "لا يمكن تعديل صلاحيات حساب المالك — المالك يملك كامل الصلاحيات دائمًا" };
+  }
+  if (target.id === actor.id) {
+    return { status: 403, error: "لا يمكنك تعديل صلاحيات حسابك الخاص" };
+  }
+  if (next !== null && !Array.isArray(next)) {
+    return { status: 400, error: "صيغة الصلاحيات غير صالحة" };
+  }
+  if (actor.role !== "owner" && Array.isArray(next)) {
+    const actorHolds = new Set(resolvePermissions(actor));
+    const escalated = sanitizePermissions(next).filter((p) => !actorHolds.has(p));
+    if (escalated.length) {
+      return { status: 403, error: `لا يمكنك منح صلاحيات لا تملكها: ${escalated.join(", ")}` };
+    }
+  }
+  return null;
+}
+
 /* Users keep their original, more specific business rules (Owner-only Owner
    management, self-delete guard, generated passwords, password hashing) —
    ported as-is from the old api/users/{list,create,update,delete}.js. */
 async function handleUsers(req, res, actor) {
-  if (!isAdminLike(actor.role)) return res.status(403).json({ ok: false, error: "صلاحيات غير كافية" });
+  const action = METHOD_ACTION[req.method];
+  if (!action) return res.status(405).json({ ok: false, error: "Method not allowed" });
+  /* PUT covers two different jobs: editing a user's details (users:edit) and
+     changing their permissions (users:manage). They're independent — someone
+     may be allowed to delegate access without being able to rename accounts,
+     or vice versa — so the coarse gate accepts either and the PUT branch below
+     enforces whichever one this particular request actually needs. */
+  const gate =
+    req.method === "PUT"
+      ? hasPermission(actor, "users", "edit") || hasPermission(actor, "users", "manage")
+      : hasPermission(actor, "users", action);
+  if (!gate) return res.status(403).json(FORBIDDEN);
 
   if (req.method === "GET") {
-    return res.status(200).json({ ok: true, users: await listUsers() });
+    /* Each row carries its resolved permission list and whether it's on role
+       defaults, so the modal can open pre-filled without a second request. */
+    const users = await listUsers();
+    return res.status(200).json({
+      ok: true,
+      users: users.map((u) => ({ ...u, effectivePermissions: resolvePermissions(u), usesRoleDefaults: usesRoleDefaults(u) })),
+    });
   }
 
   if (req.method === "POST") {
@@ -245,7 +332,8 @@ async function handleUsers(req, res, actor) {
   }
 
   if (req.method === "PUT") {
-    const { id, name, email, role, status, password, jobTitle } = parseBody(req);
+    const body = parseBody(req);
+    const { id, name, email, role, status, password, jobTitle } = body;
     if (!id) return res.status(400).json({ ok: false, error: "معرّف المستخدم مطلوب" });
     const target = await findByIdRaw(id);
     if (!target) return res.status(404).json({ ok: false, error: "المستخدم غير موجود" });
@@ -263,6 +351,22 @@ async function handleUsers(req, res, actor) {
     if (status) patch.status = status;
     if (jobTitle) patch.jobTitle = jobTitle;
     if (password) patch.passwordHash = hashPassword(password);
+
+    /* Detail edits need users:edit specifically — holding only users:manage
+       lets you change permissions, not rename or re-role an account. */
+    if (Object.keys(patch).length && !hasPermission(actor, "users", "edit")) {
+      return res.status(403).json(FORBIDDEN);
+    }
+
+    /* Permission changes ride on the same PUT but are gated separately: only
+       "permissions" being present in the body counts as an attempt to change
+       them, so the ordinary edit form (which never sends the key) can't clear
+       a custom set by omission. */
+    if ("permissions" in body) {
+      const guard = guardPermissionChange(actor, target, body.permissions);
+      if (guard) return res.status(guard.status).json({ ok: false, error: guard.error });
+      patch.permissions = body.permissions === null ? null : sanitizePermissions(body.permissions);
+    }
     try {
       const updated = await updateUser(id, patch);
       logEvent({ type: "user_updated", actorEmail: actor.email, actorId: actor.id, targetId: id, meta: { fields: Object.keys(patch) } });
@@ -292,15 +396,28 @@ async function handleUsers(req, res, actor) {
    plain fetch — no client-side Blob SDK needed), we pipe them straight
    into Vercel Blob. Reused by every section that uploads a file (permits,
    payroll attachments, future document types) — the caller picks the
-   `prefix` (a folder-ish label) so files stay organized in the store. */
+   `prefix` (a folder-ish label) so files stay organized in the store, and
+   names the `section` whose upload_files/delete_files permission should be
+   checked. The section is validated against the catalogue, so a caller can't
+   invent one to dodge the check; and because attaching an uploaded URL to a
+   record is itself a PUT on that record, a stray upload can never become
+   visible data without the matching edit permission too. */
 async function handleFiles(req, res, action) {
   const actor = await requireUser(req);
   if (!actor) return res.status(401).json({ ok: false, error: "غير مسجّل الدخول" });
-  if (!isAdminLike(actor.role)) return res.status(403).json({ ok: false, error: "صلاحيات غير كافية" });
+
+  const fileAction = action === "upload" ? "upload_files" : action === "delete" ? "delete_files" : null;
+  if (!fileAction) return res.status(404).json({ ok: false, error: "Not found" });
+
+  const section = String((req.query || {}).section || "");
+  const known = SECTION_BY_KEY[section];
+  if (!known || !known.actions.includes(fileAction)) {
+    return res.status(400).json({ ok: false, error: "قسم غير صالح لعمليات الملفات" });
+  }
+  if (!hasPermission(actor, section, fileAction)) return res.status(403).json(FORBIDDEN);
 
   if (action === "upload") return filesUpload(req, res, actor);
-  if (action === "delete") return filesDelete(req, res, actor);
-  res.status(404).json({ ok: false, error: "Not found" });
+  return filesDelete(req, res, actor);
 }
 
 async function filesUpload(req, res, actor) {
