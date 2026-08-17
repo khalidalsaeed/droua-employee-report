@@ -119,7 +119,7 @@ async function authLogin(req, res) {
   res.setHeader("Set-Cookie", sessionCookie(token, remembered));
   await touchLastLogin(user.id);
   logEvent({ type: "login_success", actorEmail: user.email, actorId: user.id });
-  res.status(200).json({ ok: true, user: { id: user.id, name: user.name, email: user.email, role: user.role } });
+  res.status(200).json({ ok: true, user: { id: user.id, name: user.name, email: user.email, role: user.role, jobTitle: user.jobTitle } });
 }
 
 async function authLogout(req, res) {
@@ -142,7 +142,7 @@ async function authMe(req, res) {
     const fresh = issueSessionToken(user, false);
     res.setHeader("Set-Cookie", sessionCookie(fresh, false));
   }
-  res.status(200).json({ ok: true, user: { id: user.id, name: user.name, email: user.email, role: user.role } });
+  res.status(200).json({ ok: true, user: { id: user.id, name: user.name, email: user.email, role: user.role, jobTitle: user.jobTitle } });
 }
 
 /* ---------------- generic data CRUD ---------------- */
@@ -230,13 +230,13 @@ async function handleUsers(req, res, actor) {
   }
 
   if (req.method === "POST") {
-    const { name, email, role, password } = parseBody(req);
+    const { name, email, role, password, jobTitle } = parseBody(req);
     if (!name || !email || !role) return res.status(400).json({ ok: false, error: "الاسم والبريد الإلكتروني والدور مطلوبة" });
     if (!isValidRole(role)) return res.status(400).json({ ok: false, error: "دور غير صالح" });
     if (!canManageUser(actor.role, role)) return res.status(403).json({ ok: false, error: "فقط المالك يمكنه إنشاء حساب بصلاحية Owner" });
     try {
       const generated = password ? null : generatePassword(14);
-      const user = await createUser({ name, email, role, passwordHash: hashPassword(password || generated), status: "active" });
+      const user = await createUser({ name, email, role, jobTitle, passwordHash: hashPassword(password || generated), status: "active" });
       logEvent({ type: "user_created", actorEmail: actor.email, actorId: actor.id, targetId: user.id, meta: { role } });
       return res.status(200).json({ ok: true, user, generatedPassword: generated || undefined });
     } catch (err) {
@@ -245,7 +245,7 @@ async function handleUsers(req, res, actor) {
   }
 
   if (req.method === "PUT") {
-    const { id, name, email, role, status, password } = parseBody(req);
+    const { id, name, email, role, status, password, jobTitle } = parseBody(req);
     if (!id) return res.status(400).json({ ok: false, error: "معرّف المستخدم مطلوب" });
     const target = await findByIdRaw(id);
     if (!target) return res.status(404).json({ ok: false, error: "المستخدم غير موجود" });
@@ -261,6 +261,7 @@ async function handleUsers(req, res, actor) {
     if (email) patch.email = email;
     if (role) patch.role = role;
     if (status) patch.status = status;
+    if (jobTitle) patch.jobTitle = jobTitle;
     if (password) patch.passwordHash = hashPassword(password);
     try {
       const updated = await updateUser(id, patch);

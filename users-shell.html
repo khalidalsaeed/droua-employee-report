@@ -212,6 +212,7 @@ function openAddModal(){
       <div class="field"><label>الاسم</label><input class="in" id="fName" type="text"></div>
       <div class="field"><label>البريد الإلكتروني</label><input class="in" id="fEmail" type="email" dir="ltr"></div>
       <div class="field"><label>الدور</label><select class="in" id="fRole">${roleOptions("viewer")}</select></div>
+      <div class="field"><label>المسمى الوظيفي</label><input class="in" id="fJobTitle" type="text"></div>
       <div class="field">
         <label>كلمة المرور (اختياري)</label>
         <input class="in" id="fPassword" type="text" dir="ltr">
@@ -224,11 +225,12 @@ function openAddModal(){
     const name=document.getElementById("fName").value.trim();
     const email=document.getElementById("fEmail").value.trim();
     const role=document.getElementById("fRole").value;
+    const jobTitle=document.getElementById("fJobTitle").value.trim();
     const password=document.getElementById("fPassword").value.trim();
     const err=document.getElementById("mError");
     err.classList.remove("show");
     if(!name || !email){ err.textContent="الاسم والبريد الإلكتروني مطلوبان"; err.classList.add("show"); return; }
-    const r=await fetch("/api/data/users",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name,email,role,password:password||undefined})});
+    const r=await fetch("/api/data/users",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name,email,role,jobTitle:jobTitle||undefined,password:password||undefined})});
     const j=await r.json();
     if(!r.ok || !j.ok){ err.textContent=j.error||"تعذّر إنشاء المستخدم"; err.classList.add("show"); return; }
     await loadUsers();
@@ -264,6 +266,7 @@ function openEditModal(id){
       <div class="field"><label>البريد الإلكتروني</label><input class="in" id="fEmail" type="email" dir="ltr" value="${esc(u.email)}"></div>
       <div class="field"><label>الدور</label><select class="in" id="fRole" ${u.role==="owner" && CURRENT_USER.role!=="owner" ? "disabled":""}>${roleOptions(u.role)}</select></div>
       <div class="field"><label>الحالة</label><select class="in" id="fStatus"><option value="active" ${u.status==="active"?"selected":""}>مفعّل</option><option value="disabled" ${u.status==="disabled"?"selected":""}>معطّل</option></select></div>
+      <div class="field"><label>المسمى الوظيفي</label><input class="in" id="fJobTitle" type="text" value="${esc(u.jobTitle||"")}"></div>
       <div class="field">
         <label>كلمة مرور جديدة (اختياري)</label>
         <input class="in" id="fPassword" type="text" dir="ltr">
@@ -277,10 +280,11 @@ function openEditModal(id){
     const email=document.getElementById("fEmail").value.trim();
     const role=document.getElementById("fRole").value;
     const status=document.getElementById("fStatus").value;
+    const jobTitle=document.getElementById("fJobTitle").value.trim();
     const password=document.getElementById("fPassword").value.trim();
     const err=document.getElementById("mError");
     err.classList.remove("show");
-    const r=await fetch("/api/data/users",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({id:u.id,name,email,role,status,password:password||undefined})});
+    const r=await fetch("/api/data/users",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({id:u.id,name,email,role,status,jobTitle:jobTitle||undefined,password:password||undefined})});
     const j=await r.json();
     if(!r.ok || !j.ok){ err.textContent=j.error||"تعذّر تحديث المستخدم"; err.classList.add("show"); return; }
     await loadUsers();

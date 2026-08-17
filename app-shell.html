@@ -632,11 +632,13 @@ const PAGE_PERMISSIONS_CLIENT={
   viewer:["kpi","finance","employees","ajeer","contact"],
 };
 const ROLE_LABELS_CLIENT={owner:"المالك",admin:"مدير النظام",hr:"الموارد البشرية",finance:"المالية",viewer:"قراءة فقط"};
+/* Sidebar-only role label — Owner keeps the existing combined "Owner - المالك"
+   wording; every other role falls back to ROLE_LABELS_CLIENT's plain Arabic label. */
+const SIDEBAR_ROLE_LABELS={...ROLE_LABELS_CLIENT,owner:"Owner - المالك"};
 const SECTION_TO_PAGE={kpiSec:"kpi",finSec:"finance",peopleSec:"employees",ajeerSec:"ajeer",contactSec:"contact"};
 let CURRENT_USER=null;
-/* Sidebar identity card content — loaded from /api/data/settings (key
-   "sidebar_user_card") by loadAppData(), rendered once data arrives. */
-let SIDEBAR_USER_CARD={role:"",name:"",title:""};
+/* Sidebar identity card content — driven entirely by CURRENT_USER (from
+   /api/auth/me), rendered as soon as it's known in initAuthGate(). */
 function renderSidebarUserCard(card){
   const roleEl=document.getElementById("snUserRole");
   const nameEl=document.getElementById("snUserName");
@@ -666,6 +668,7 @@ async function initAuthGate(){
     CURRENT_USER=j.user;
     applyRoleVisibility(CURRENT_USER.role);
     applyAdminVisibility();
+    renderSidebarUserCard({role:SIDEBAR_ROLE_LABELS[CURRENT_USER.role]||CURRENT_USER.role,name:CURRENT_USER.name,title:CURRENT_USER.jobTitle||""});
     return true;
   }catch(err){
     location.href="/login.html";
@@ -1598,7 +1601,6 @@ async function loadAppData(){
   AJEER = permJson.ok ? permJson.items : [];
   const settings = settJson.ok ? settJson.settings : {};
   FIN = settings.financial_summary || {};
-  SIDEBAR_USER_CARD = settings.sidebar_user_card || SIDEBAR_USER_CARD;
   SOON = settings.expiry_soon_days ?? SOON;
 }
 
@@ -1606,7 +1608,6 @@ async function loadAppData(){
   const ok = await initAuthGate();
   if(!ok) return;
   await loadAppData();
-  renderSidebarUserCard(SIDEBAR_USER_CARD);
   renderDashboardTop();
   AJEER_LATEST = dedupeAjeer(AJEER);
   render();
