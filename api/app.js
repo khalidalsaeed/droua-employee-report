@@ -1,5 +1,7 @@
 const fs = require("fs");
 const path = require("path");
+const crypto = require("crypto");
+const QRCode = require("qrcode");
 
 const { requireUser } = require("../lib/auth/requireAuth");
 const { isValidRole, canManageUser } = require("../lib/auth/roles");
@@ -20,6 +22,11 @@ const { logEvent } = require("../lib/auth/audit");
 const { parseBody } = require("../lib/auth/parseBody");
 const { getResource } = require("../lib/data/registry");
 const { uploadFile, deleteFile } = require("../lib/blob");
+const { extractQrTextFromPdf, looksLikePdf } = require("../lib/pdf/qrFromPdf");
+
+/* Vercel caps request bodies well below this; the guard just stops a runaway
+   stream from growing unbounded in memory. */
+const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
 
 /* Single Serverless Function for the entire app (pages + auth + generic
    data CRUD + file uploads) — only api/cron/check-expirations.js is
@@ -406,6 +413,9 @@ async function handleFiles(req, res, action) {
   const actor = await requireUser(req);
   if (!actor) return res.status(401).json({ ok: false, error: "غير مسجّل الدخول" });
 
+  /* Rendering a permit's QR is a read, gated by ajeer:view — not a file action. */
+  if (action === "qr") return filesQrImage(req, res, actor);
+
   const fileAction = action === "upload" ? "upload_files" : action === "delete" ? "delete_files" : null;
   if (!fileAction) return res.status(404).json({ ok: false, error: "Not found" });
 
@@ -429,14 +439,92 @@ async function filesUpload(req, res, actor) {
   // Vercel's Node runtime buffers small bodies into req.body regardless of
   // content-type on some versions; fall back to the raw request stream
   // (req itself) when that hasn't happened, so the file is never dropped.
-  const body = req.body && (Buffer.isBuffer(req.body) || typeof req.body === "string") ? req.body : req;
   try {
+    /* Buffered rather than streamed so a PDF's bytes are available for QR
+       extraction below. These are small documents well under Vercel's request
+       body limit, so holding one in memory is fine. */
+    const body = await readRequestBody(req);
+    if (!body || !body.length) return res.status(400).json({ ok: false, error: "الملف فارغ" });
+
+    const isPdfDeclared = /pdf/i.test(contentType) || /\.pdf$/i.test(safeName);
+    if (isPdfDeclared && !looksLikePdf(body)) {
+      return res.status(400).json({ ok: false, error: "الملف ليس PDF صالحًا" });
+    }
+
     const url = await uploadFile(`${prefix}/${Date.now()}-${safeName}`, body, contentType);
     logEvent({ type: "file_uploaded", actorEmail: actor.email, actorId: actor.id, meta: { url, prefix } });
-    res.status(200).json({ ok: true, url });
+
+    /* Ajeer permit PDFs carry a verification QR. Decode it here, while the
+       bytes are in hand — that keeps it fully server-side and avoids ever
+       fetching a client-supplied URL back. A failure is not an upload failure:
+       the caller gets qrExtracted:false and shows a notice, and the manual QR
+       upload remains available. */
+    let qrText = null;
+    if (isPdfDeclared && (req.query || {}).section === "ajeer") {
+      qrText = extractQrTextFromPdf(body);
+      logEvent({
+        type: qrText ? "ajeer_qr_extracted" : "ajeer_qr_extract_failed",
+        actorEmail: actor.email,
+        actorId: actor.id,
+        meta: { url },
+      });
+    }
+    res.status(200).json({ ok: true, url, qrText, qrExtracted: !!qrText });
   } catch (err) {
     res.status(400).json({ ok: false, error: (err && err.message) || "تعذّر رفع الملف" });
   }
+}
+
+/* Vercel's Node runtime sometimes pre-buffers the body into req.body and
+   sometimes leaves it as a stream, so handle both. */
+function readRequestBody(req) {
+  if (Buffer.isBuffer(req.body)) return Promise.resolve(req.body);
+  if (typeof req.body === "string") return Promise.resolve(Buffer.from(req.body, "binary"));
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    let total = 0;
+    req.on("data", (c) => {
+      total += c.length;
+      if (total > MAX_UPLOAD_BYTES) {
+        reject(new Error("حجم الملف كبير جدًا"));
+        req.destroy();
+        return;
+      }
+      chunks.push(c);
+    });
+    req.on("end", () => resolve(Buffer.concat(chunks)));
+    req.on("error", reject);
+  });
+}
+
+/* Renders the QR for a permit from its stored payload, so no QR image has to
+   be uploaded or stored alongside the PDF. Regenerated on demand and cached by
+   the browser; ETag'd on the payload so a re-extraction busts the cache. */
+async function filesQrImage(req, res, actor) {
+  if (req.method !== "GET") return res.status(405).json({ ok: false, error: "Method not allowed" });
+  if (!hasPermission(actor, "ajeer", "view")) return res.status(403).json(FORBIDDEN);
+  const permitNo = String((req.query || {}).permit || "");
+  if (!permitNo) return res.status(400).json({ ok: false, error: "رقم التصريح مطلوب" });
+
+  const permits = getResource("permits");
+  const permit = await permits.get(permitNo);
+  if (!permit || !permit.qrText) return res.status(404).json({ ok: false, error: "لا يوجد رمز QR لهذا التصريح" });
+
+  const etag = `"qr-${crypto.createHash("sha1").update(permit.qrText).digest("hex").slice(0, 16)}"`;
+  if (req.headers["if-none-match"] === etag) {
+    res.writeHead(304, { ETag: etag });
+    return res.end();
+  }
+  /* The payload is only ever re-encoded into a QR bitmap — never requested,
+     resolved, or interpreted as a link by the server. */
+  const png = await QRCode.toBuffer(permit.qrText, { type: "png", width: 512, margin: 2, errorCorrectionLevel: "M" });
+  res.writeHead(200, {
+    "Content-Type": "image/png",
+    "Content-Length": png.length,
+    ETag: etag,
+    "Cache-Control": "private, max-age=300, must-revalidate",
+  });
+  res.end(png);
 }
 
 async function filesDelete(req, res, actor) {

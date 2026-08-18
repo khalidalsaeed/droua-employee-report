@@ -79,6 +79,15 @@
 }
 .admin-error-msg.show { display: block; }
 
+/* Success-with-a-caveat, e.g. "uploaded but the QR couldn't be read". Amber,
+   not red — the action did succeed. Falls back to the brass accent when a page
+   defines no --warn tokens. */
+.admin-warn-msg {
+  display: none; background: #FBF4E4; color: #7A5A18; border: 1px solid #E8D6A8;
+  border-radius: 10px; padding: 10px 14px; font-size: 12.5px; margin-bottom: 14px; line-height: 1.65;
+}
+.admin-warn-msg.show { display: block; }
+
 .admin-file-row {
   display: flex; align-items: center; gap: 10px; flex-wrap: wrap; background: var(--paper-2);
   border: 1px solid var(--hair); border-radius: 10px; padding: 10px 12px; font-size: 12.5px;

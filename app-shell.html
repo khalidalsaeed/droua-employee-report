@@ -1053,10 +1053,10 @@ function ajeerCard(p,i){
       </div>
     </div>
     <div class="qr-row">
-      <button class="qr-thumb" type="button" data-qr="${esc(p.qr)}" data-permit="${esc(p.permit)}" aria-label="عرض رمز QR للتصريح ${esc(p.permit)}" title="عرض رمز QR">
+      ${p.qr?`<button class="qr-thumb" type="button" data-qr="${esc(p.qr)}" data-permit="${esc(p.permit)}" aria-label="عرض رمز QR للتصريح ${esc(p.permit)}" title="عرض رمز QR">
         <img src="${esc(p.qr)}" alt="QR ${esc(p.permit)}" loading="lazy">
-      </button>
-      <div class="qr-hint">📱 امسح رمز QR للاطلاع على التصريح</div>
+      </button>`:`<div class="qr-thumb" style="display:flex;align-items:center;justify-content:center;font-size:17px;color:var(--ink-soft)" title="لا يوجد رمز QR لهذا التصريح">—</div>`}
+      <div class="qr-hint">${p.qr?"📱 امسح رمز QR للاطلاع على التصريح":"لا يوجد رمز QR — ارفع ملف التصريح (PDF) لاستخراجه تلقائيًا"}</div>
     </div>
     <div class="meta">
       <span class="mi">إصدار <span class="num">${fmtDate(p.issueDate)}</span></span>
@@ -1221,7 +1221,7 @@ function openDrawer(i){
             +drRow("تاريخ الإصدار",fmtDate(p.issueDate))
             +drRow("تاريخ الانتهاء",`${fmtDate(p.expiryDate)}${ajeerChip(st)}`)
             +drRow("المدة المتبقية",ajeerDaysLine(st))
-            +`<div class="dr-row"><span class="dk">رمز QR</span><span class="dv"><button class="qr-thumb-inline" type="button" data-qr="${esc(p.qr)}" data-permit="${esc(p.permit)}" aria-label="عرض رمز QR"><img src="${esc(p.qr)}" alt="QR ${esc(p.permit)}" loading="lazy"></button></span></div>`
+            +`<div class="dr-row"><span class="dk">رمز QR</span><span class="dv">${p.qr?`<button class="qr-thumb-inline" type="button" data-qr="${esc(p.qr)}" data-permit="${esc(p.permit)}" aria-label="عرض رمز QR"><img src="${esc(p.qr)}" alt="QR ${esc(p.permit)}" loading="lazy"></button>`:"—"}</span></div>`
             +`<div class="dr-row"><span class="dk">الملف</span><span class="dv"><a class="reset" href="${esc(p.file)}" target="_blank" rel="noopener" style="margin-inline-end:6px">فتح الملف</a><a class="reset" href="${esc(p.file)}" download>تحميل</a></span></div>`;
         })()}
       </div></div>
@@ -1410,7 +1410,7 @@ document.getElementById("addEmployeeBtn").addEventListener("click", ()=>openEmpl
 /* ---------- ajeer permit management (add/edit/delete + PDF/QR upload) ---------- */
 /* Upload/replace needs ajeer:upload_files, removing needs ajeer:delete_files —
    each button appears only with its own permission. */
-function permitFileRow(label,url,onUpload,onDelete){
+function permitFileRow(label,url,onUpload,onDelete,noteHtml){
   const mayUpload=AdminUI.can("ajeer","upload_files"), mayDelete=AdminUI.can("ajeer","delete_files");
   return `<div class="admin-field"><label>${AdminUI.esc(label)}</label>
     <div class="admin-file-row">
@@ -1418,15 +1418,25 @@ function permitFileRow(label,url,onUpload,onDelete){
       ${mayUpload?`<label class="admin-mini-btn" style="cursor:pointer">${url?"استبدال":"رفع"}<input type="file" accept="${label.includes('QR')?'image/png,image/jpeg':'application/pdf'}" style="display:none" data-upload-for="${onUpload}"></label>`:""}
       ${url&&mayDelete?`<button class="admin-mini-btn danger" type="button" data-delete-for="${onDelete}">حذف</button>`:""}
     </div>
+    ${noteHtml||""}
   </div>`;
 }
-function openPermitForm(existing){
+/* `notice` shows a non-fatal message after the form is rebuilt — used when a
+   PDF uploaded fine but its QR couldn't be decoded. */
+function openPermitForm(existing,notice){
   const isEdit=!!existing;
   const p=existing||{permit:"",iqama:"",nameOnPermit:"",issueDate:"",expiryDate:"",file:null,qr:null};
+  /* The QR is normally decoded from the PDF and regenerated on demand, so it
+     has no uploaded file to name — say where it came from instead. */
+  const qrNote=p.qrAuto
+    ? `<div class="hint">مُستخرج تلقائيًا من ملف التصريح — يتم توليد الصورة عند العرض دون تخزين ملف إضافي.</div>`
+    : (p.qr?`<div class="hint">صورة مرفوعة يدويًا (تتجاوز الاستخراج التلقائي).</div>`
+           :`<div class="hint">يُستخرج تلقائيًا عند رفع ملف التصريح (PDF)، أو ارفع صورة يدويًا.</div>`);
   const modal=AdminUI.openModal(`
     <div class="admin-mhead"><button class="admin-mclose" data-admin-close>✕</button><h3>${isEdit?"تعديل تصريح أجير":"إضافة تصريح أجير"}</h3></div>
     <div class="admin-mbody">
       <div class="admin-error-msg" data-admin-error></div>
+      <div class="admin-warn-msg" data-admin-notice></div>
       <div class="admin-field"><label for="pfPermit">رقم التصريح *</label><input class="in" id="pfPermit" type="text" value="${AdminUI.esc(p.permit)}" ${isEdit?"disabled":""}></div>
       <div class="admin-field"><label for="pfIqama">رقم الإقامة *</label><input class="in" id="pfIqama" type="text" value="${AdminUI.esc(p.iqama)}"></div>
       <div class="admin-field"><label for="pfName">الاسم على التصريح</label><input class="in" id="pfName" type="text" value="${AdminUI.esc(p.nameOnPermit)}"></div>
@@ -1435,27 +1445,48 @@ function openPermitForm(existing){
         <div class="admin-field"><label for="pfExpiry">تاريخ الانتهاء</label><input class="in" id="pfExpiry" type="date" value="${AdminUI.esc(p.expiryDate)}"></div>
       </div>
       ${isEdit?permitFileRow("ملف التصريح (PDF)",p.file,"file","file"):""}
-      ${isEdit?permitFileRow("رمز QR",p.qr,"qr","qr"):""}
+      ${isEdit?permitFileRow("رمز QR",p.qr,"qr","qr",qrNote):""}
       ${!isEdit?`<div class="hint" style="margin-bottom:10px">يمكن رفع ملف التصريح ورمز QR بعد إنشاء السجل، من خلال زر "تعديل".</div>`:""}
     </div>
     <div class="admin-mfoot"><button class="admin-btn-ghost" data-admin-close>إلغاء</button><button class="admin-btn-primary" id="pfSave">${isEdit?"حفظ التغييرات":"إضافة التصريح"}</button></div>
   `);
+  if(notice) AdminUI.showNotice(modal, notice);
   if(isEdit){
     modal.querySelectorAll("[data-upload-for]").forEach(inp=>inp.addEventListener("change",async(e)=>{
       const file=e.target.files[0]; if(!file) return;
       const field=inp.dataset.uploadFor; // "file" | "qr"
       try{
-        const url=await AdminUI.uploadFile(file, `ajeer-permits/${p.permit}`, "ajeer");
-        await AdminUI.api("PUT","/api/data/permits",{id:p.permit, [field]:url});
-        await refreshPermits();
-        AdminUI.closeModal();
+        const up=await AdminUI.uploadFileDetailed(file, `ajeer-permits/${p.permit}`, "ajeer");
+        if(field==="file"){
+          /* Sending qrText on every PDF upload — including null — is what makes
+             replacing a permit refresh (or clear) its QR automatically. */
+          await AdminUI.api("PUT","/api/data/permits",{id:p.permit, file:up.url, qrText:up.qrText||null});
+          await refreshPermits();
+          if(up.qrExtracted){
+            AdminUI.closeModal();
+          }else{
+            /* Upload succeeded, extraction didn't. Reopen with fresh state so
+               the manual QR fallback is right there. */
+            openPermitForm(AJEER_LATEST.find(x=>x.permit===p.permit)||AJEER.find(x=>x.permit===p.permit),
+              "تم رفع التصريح، لكن تعذر استخراج رمز QR تلقائيًا. يمكنك رفع صورة QR يدويًا من الحقل أدناه.");
+          }
+        }else{
+          await AdminUI.api("PUT","/api/data/permits",{id:p.permit, qr:up.url});
+          await refreshPermits();
+          AdminUI.closeModal();
+        }
       }catch(err){ AdminUI.showError(modal, err.message); }
     }));
     modal.querySelectorAll("[data-delete-for]").forEach(btn=>btn.addEventListener("click",async()=>{
       if(!AdminUI.confirmDanger("هل أنت متأكد من حذف هذا الملف؟")) return;
       const field=btn.dataset.deleteFor;
       try{
-        await AdminUI.api("PUT","/api/data/permits",{id:p.permit, [field]:null});
+        /* Removing the QR clears both sources, otherwise deleting a manual
+           image would just fall back to the auto one and look like a no-op.
+           Removing the PDF clears the QR that was decoded from it (server-side
+           rule in lib/data/permits.js). */
+        const patch = field==="qr" ? {id:p.permit, qr:null, qrText:null} : {id:p.permit, file:null};
+        await AdminUI.api("PUT","/api/data/permits",patch);
         await refreshPermits();
         AdminUI.closeModal();
       }catch(err){ alert(err.message); }

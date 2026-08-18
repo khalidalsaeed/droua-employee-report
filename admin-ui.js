@@ -62,6 +62,16 @@ const AdminUI = (function () {
     }
   }
 
+  /* Non-fatal notice — the operation succeeded but something partial happened
+     (e.g. the permit uploaded but its QR couldn't be read). Styled distinctly
+     from showError so a success-with-caveat doesn't read as a failure. */
+  function showNotice(scopeEl, message) {
+    const el = scopeEl.querySelector("[data-admin-notice]");
+    if (!el) return;
+    el.textContent = message;
+    el.classList.add("show");
+  }
+
   /* Generic authenticated JSON call against /api/data/* (or anything else
      returning {ok, error}). Throws with the server's Arabic error message
      on failure so callers can just try/catch and show it. */
@@ -107,7 +117,9 @@ const AdminUI = (function () {
   /* Uploads a File via the server-proxy endpoint (no client Blob SDK
      needed); prefix groups files in the store (e.g. "ajeer-permits") and
      section names the permission the server checks (<section>:upload_files). */
-  async function uploadFile(file, prefix, section) {
+  /* Returns the whole server response, not just the URL — permit PDFs come back
+     with {qrText, qrExtracted} from the server-side QR decode. */
+  async function uploadFileDetailed(file, prefix, section) {
     const r = await fetch(`/api/files/upload?prefix=${encodeURIComponent(prefix)}&section=${encodeURIComponent(section)}`, {
       method: "POST",
       headers: { "Content-Type": file.type || "application/octet-stream", "X-Filename": encodeURIComponent(file.name) },
@@ -120,7 +132,10 @@ const AdminUI = (function () {
       throw new Error("فشل رفع الملف");
     }
     if (!r.ok || !j.ok) throw new Error(j.error || "فشل رفع الملف");
-    return j.url;
+    return j;
+  }
+  async function uploadFile(file, prefix, section) {
+    return (await uploadFileDetailed(file, prefix, section)).url;
   }
   async function deleteFile(url, section) {
     await api("POST", `/api/files/delete?section=${encodeURIComponent(section)}`, { url });
@@ -141,5 +156,5 @@ const AdminUI = (function () {
     });
   }
 
-  return { esc, openModal, closeModal, confirmDanger, showError, clearError, api, setUser, can, canAny, uploadFile, deleteFile, wireTabs };
+  return { esc, openModal, closeModal, confirmDanger, showError, clearError, showNotice, api, setUser, can, canAny, uploadFile, uploadFileDetailed, deleteFile, wireTabs };
 })();
