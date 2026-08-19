@@ -1342,23 +1342,50 @@ function readFieldValue(spec){
   if(spec.type==="number") return el.value===""?null:Number(el.value);
   return el.value.trim()===""?null:el.value.trim();
 }
-function openEmployeeForm(existing){
+/* Document-upload row for the iqama / work-licence tabs. Uploading here has the
+   backend read the expiry out of the document and update the record, so the row
+   sits next to the date field it fills in. Only shown when editing (a new
+   employee has no record to attach to yet) and with employees:upload_files. */
+const EMP_DOC_ROWS={
+  iqama:{docType:"iqama",label:"ملف الإقامة / تقرير مقيم",field:"ملف الإقامة",
+    hint:"يُستخرج تاريخ انتهاء الإقامة تلقائيًا من قسم «بيانات الإقامة»، ويُتحقق من رقم الإقامة قبل التحديث."},
+  license:{docType:"work_license",label:"ملف رخصة العمل",field:"ملف رخصة العمل",
+    hint:"يُستخرج تاريخ انتهاء رخصة العمل فقط من حقله الخاص، ولا يُستخدم أي تاريخ آخر في المستند."},
+};
+function empDocRow(cfg,currentUrl){
+  if(!AdminUI.can("employees","upload_files")) return "";
+  return `<div class="admin-field"><label>${AdminUI.esc(cfg.label)}</label>
+    <div class="admin-file-row">
+      <span class="name">${currentUrl?AdminUI.esc(String(currentUrl).split("/").pop()):"لا يوجد ملف بعد"}</span>
+      <label class="admin-mini-btn" style="cursor:pointer">${currentUrl?"استبدال":"رفع"}
+        <input type="file" accept="application/pdf,image/png,image/jpeg" style="display:none" data-doc-upload="${cfg.docType}">
+      </label>
+    </div>
+    <div class="hint">${AdminUI.esc(cfg.hint)}</div>
+  </div>`;
+}
+
+function openEmployeeForm(existing,notice){
   const isEdit=!!existing;
   const data=existing?{...existing}:{};
   const tabsHtml=EMP_TABS.map((t,i)=>`<button class="admin-tab ${i===0?"active":""}" type="button" data-tab="${t.key}">${AdminUI.esc(t.label)}</button>`).join("");
   const panelsHtml=EMP_TABS.map((t,i)=>`<div data-tab-panel="${t.key}" style="${i===0?"":"display:none"}">
       ${EMP_FIELD_SPECS[t.key].map(spec=>fieldInputHtml(spec,data[fieldKey(spec)],isEdit&&spec.key==="eid")).join("")}
+      ${isEdit&&EMP_DOC_ROWS[t.key]?empDocRow(EMP_DOC_ROWS[t.key],data[EMP_DOC_ROWS[t.key].field]):""}
     </div>`).join("");
   const modal=AdminUI.openModal(`
     <div class="admin-mhead"><button class="admin-mclose" data-admin-close>✕</button><h3>${isEdit?"تعديل بيانات الموظف":"إضافة موظف جديد"}</h3></div>
     <div class="admin-tabs">${tabsHtml}</div>
     <div class="admin-mbody">
       <div class="admin-error-msg" data-admin-error></div>
+      <div class="admin-warn-msg" data-admin-notice></div>
       ${panelsHtml}
     </div>
     <div class="admin-mfoot"><button class="admin-btn-ghost" data-admin-close>إلغاء</button><button class="admin-btn-primary" id="empSaveBtn">${isEdit?"حفظ التغييرات":"إضافة الموظف"}</button></div>
   `);
   AdminUI.wireTabs(modal);
+  if(notice) AdminUI.showNotice(modal,notice);
+  if(isEdit) wireEmployeeDocUploads(modal,existing);
   modal.querySelector("#empSaveBtn").addEventListener("click", async ()=>{
     AdminUI.clearError(modal);
     const patch={};
@@ -1389,6 +1416,59 @@ function openEmployeeForm(existing){
     }
   });
 }
+/* Turns the server's verdict into one sentence. The server decides what
+   happened; this only phrases it. */
+function docVerdictMessage(v){
+  const label=v.label||"الانتهاء";
+  const g=v.extracted&&v.extracted.gregorian;
+  const h=v.extracted&&v.extracted.calendar==="hijri"?v.extracted.hijri:null;
+  const shownDate=g?`${g}${h?` (هجري ${h})`:""}`:"";
+  switch(v.reason){
+    case "set":
+    case "updated":
+      return {kind:"ok",text:`تم استخراج تاريخ انتهاء ${label} وتحديثه إلى ${shownDate}${v.previous?` (كان ${v.previous})`:""}.`};
+    case "unchanged":
+      return {kind:"ok",text:`التاريخ المستخرج (${shownDate}) مطابق للمسجّل — لم يتغيّر شيء.`};
+    case "older_than_current":
+      return {kind:"warn",text:`المستند المرفوع أقدم من البيانات الحالية: المستخرج ${shownDate} والمسجّل ${v.previous}. لم يتم تحديث تاريخ ${label} — الملف مرفوع ومحفوظ، ويمكنك تعديل التاريخ يدويًا إن أردت.`};
+    case "identity_mismatch":
+      return {kind:"warn",text:`رقم الإقامة في المستند (${v.documentId}) لا يطابق رقم إقامة الموظف (${v.employeeId}). لم يتم تحديث أي تاريخ.`};
+    case "no_date":
+      if(v.extractionReason==="needs_ocr")
+        return {kind:"warn",text:`تم رفع الملف، لكن تعذر استخراج تاريخ الانتهاء تلقائيًا — الملف صورة أو PDF ممسوح ضوئيًا بلا نص. عدّل التاريخ يدويًا.`};
+      if(v.extractionReason==="parser_not_configured")
+        return {kind:"warn",text:`تم رفع الملف وحفظه، لكن الاستخراج التلقائي لتاريخ انتهاء ${label} غير مُهيّأ بعد — بانتظار نموذج مستند حقيقي لضبطه. عدّل التاريخ يدويًا في الحقل أعلاه.`};
+      if(v.extractionReason==="identity_not_in_document")
+        return {kind:"warn",text:`تم رفع الملف، لكن لم يُعثر على هوية هذا الموظف داخل المستند. لم يتم تحديث أي تاريخ — تأكد أن الملف يخص هذا الموظف، أو عدّل التاريخ يدويًا.`};
+      if(v.extractionReason==="ambiguous_row_dates")
+        return {kind:"warn",text:`تم رفع الملف، لكن صف الموظف يحتوي أكثر من تاريخ في عمود «صالحة إلى» ولم أخمّن بينها. عدّل التاريخ يدويًا.`};
+      if(v.extractionReason==="table_header_not_found")
+        return {kind:"warn",text:`تم رفع الملف، لكن لم أجد عمود «صالحة إلى» في المستند — قد يكون نموذجًا مختلفًا. عدّل التاريخ يدويًا.`};
+      return {kind:"warn",text:`تم رفع الملف، لكن تعذر استخراج تاريخ الانتهاء تلقائيًا. عدّل التاريخ يدويًا.`};
+    default:
+      return {kind:"warn",text:`تم رفع الملف، لكن تعذر تحديث التاريخ تلقائيًا (${v.reason||"سبب غير معروف"}).`};
+  }
+}
+
+function wireEmployeeDocUploads(modal,employee){
+  const eid=employee[F.eid];
+  modal.querySelectorAll("[data-doc-upload]").forEach(inp=>inp.addEventListener("change",async(ev)=>{
+    const file=ev.target.files[0]; if(!file) return;
+    const docType=inp.dataset.docUpload;
+    AdminUI.clearError(modal);
+    try{
+      const up=await AdminUI.uploadFileDetailed(file,`employees/${eid}/${docType}`,"employees",
+        {docType,eid});
+      /* Reload so the card's status chip and remaining-days countdown recompute
+         from the new date straight away — no redeploy, no manual refresh. */
+      await refreshEmployees();
+      const fresh=DATA.find(x=>String(x[F.eid])===String(eid))||employee;
+      const msg=up.document?docVerdictMessage(up.document):{kind:"warn",text:"تم رفع الملف."};
+      openEmployeeForm(fresh,msg.text);
+    }catch(err){ AdminUI.showError(modal,err.message); }
+  }));
+}
+
 async function deleteEmployee(e){
   if(!AdminUI.confirmDanger(`هل أنت متأكد من حذف الموظف "${e[F.name]}"؟ لا يمكن التراجع عن هذا الإجراء.`)) return;
   try{

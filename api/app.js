@@ -23,6 +23,8 @@ const { parseBody } = require("../lib/auth/parseBody");
 const { getResource } = require("../lib/data/registry");
 const { uploadFile, deleteFile } = require("../lib/blob");
 const { extractQrTextFromPdf, looksLikePdf } = require("../lib/pdf/qrFromPdf");
+const { extractExpiry } = require("../lib/pdf/documentDates");
+const { applyExtractedExpiry, DOC_TARGETS } = require("../lib/data/employees");
 
 /* Vercel caps request bodies well below this; the guard just stops a runaway
    stream from growing unbounded in memory. */
@@ -451,6 +453,13 @@ async function filesUpload(req, res, actor) {
       return res.status(400).json({ ok: false, error: "الملف ليس PDF صالحًا" });
     }
 
+    /* Validate section-specific parameters BEFORE writing to Blob, so a request
+       that is going to be rejected doesn't leave an orphaned object behind. */
+    if ((req.query || {}).section === "employees") {
+      const bad = validateEmployeeDocParams(req, actor);
+      if (bad) return res.status(bad.httpError).json({ ok: false, error: bad.error });
+    }
+
     const url = await uploadFile(`${prefix}/${Date.now()}-${safeName}`, body, contentType);
     logEvent({ type: "file_uploaded", actorEmail: actor.email, actorId: actor.id, meta: { url, prefix } });
 
@@ -469,10 +478,65 @@ async function filesUpload(req, res, actor) {
         meta: { url },
       });
     }
-    res.status(200).json({ ok: true, url, qrText, qrExtracted: !!qrText });
+
+    /* Employee documents (iqama / work licence): read the expiry out of the
+       document and let lib/data/employees.js decide whether it may be applied.
+       The staleness and identity rules live there, server-side, so they can't be
+       bypassed by calling this endpoint directly. */
+    let document = null;
+    if ((req.query || {}).section === "employees") {
+      document = await applyEmployeeDocument(req, res, actor, body, url);
+      if (document && document.httpError) return res.status(document.httpError).json({ ok: false, error: document.error });
+    }
+    res.status(200).json({ ok: true, url, qrText, qrExtracted: !!qrText, document });
   } catch (err) {
     res.status(400).json({ ok: false, error: (err && err.message) || "تعذّر رفع الملف" });
   }
+}
+
+/* Extracts an expiry from an uploaded employee document and applies it under the
+   server-side rules. Writing the date needs employees:edit on top of the
+   employees:upload_files that got the caller this far — uploading a document is
+   not by itself permission to change the record. */
+function validateEmployeeDocParams(req, actor) {
+  const q = req.query || {};
+  if (!DOC_TARGETS[String(q.docType || "")]) return { httpError: 400, error: "نوع المستند غير معروف" };
+  if (!String(q.eid || "")) return { httpError: 400, error: "الرقم الوظيفي مطلوب" };
+  /* Uploading a document is not by itself permission to change the record. */
+  if (!hasPermission(actor, "employees", "edit")) return { httpError: 403, error: "صلاحيات غير كافية لتحديث بيانات الموظف" };
+  return null;
+}
+
+async function applyEmployeeDocument(req, res, actor, body, url) {
+  const q = req.query || {};
+  const docType = String(q.docType || "");
+  const eid = String(q.eid || "");
+  const bad = validateEmployeeDocParams(req, actor);
+  if (bad) return bad;
+
+  /* A licence sheet can list several employees, so the parser needs to know
+     whose row to read. Pass the identity from the record — that also means a
+     document that doesn't mention this employee at all is refused outright
+     rather than matched to the wrong line. */
+  const target = DOC_TARGETS[docType];
+  const employee = await getResource("employees").get(eid);
+  const expectedId = employee && target.verifyAgainst
+    ? String(employee[target.verifyAgainst] || "").replace(/\D/g, "")
+    : null;
+
+  const extraction = await extractExpiry(body, docType, { expectedId });
+  const extracted = extraction.ok ? { ...extraction.expiry, documentId: extraction.documentId } : null;
+  const verdict = await applyExtractedExpiry(eid, docType, extracted, url);
+  if (!extraction.ok) verdict.extractionReason = extraction.reason; // needs_ocr / no_date_found / ...
+
+  logEvent({
+    type: verdict.applied ? "employee_doc_expiry_applied" : "employee_doc_expiry_not_applied",
+    actorEmail: actor.email,
+    actorId: actor.id,
+    targetId: eid,
+    meta: { docType, reason: verdict.reason, extractionReason: verdict.extractionReason, gregorian: extracted && extracted.gregorian },
+  });
+  return verdict;
 }
 
 /* Vercel's Node runtime sometimes pre-buffers the body into req.body and

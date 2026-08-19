@@ -119,8 +119,11 @@ const AdminUI = (function () {
      section names the permission the server checks (<section>:upload_files). */
   /* Returns the whole server response, not just the URL — permit PDFs come back
      with {qrText, qrExtracted} from the server-side QR decode. */
-  async function uploadFileDetailed(file, prefix, section) {
-    const r = await fetch(`/api/files/upload?prefix=${encodeURIComponent(prefix)}&section=${encodeURIComponent(section)}`, {
+  /* extra: additional query params the server needs to act on the upload — e.g.
+     {docType, eid} so an employee document's expiry can be extracted and applied. */
+  async function uploadFileDetailed(file, prefix, section, extra) {
+    const qs = new URLSearchParams({ prefix, section, ...(extra || {}) }).toString();
+    const r = await fetch(`/api/files/upload?${qs}`, {
       method: "POST",
       headers: { "Content-Type": file.type || "application/octet-stream", "X-Filename": encodeURIComponent(file.name) },
       body: file,
