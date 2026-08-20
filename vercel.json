@@ -4,7 +4,7 @@
   ],
   "functions": {
     "api/app.js": {
-      "includeFiles": "{app,users,payroll,payroll-detail}-shell.html"
+      "includeFiles": "{app,users,payroll,payroll-detail,tickets,ticket-detail}-shell.html"
     }
   },
   "rewrites": [
@@ -12,6 +12,8 @@
     { "source": "/users.html", "destination": "/api/app?kind=page&page=users" },
     { "source": "/payroll.html", "destination": "/api/app?kind=page&page=payroll" },
     { "source": "/payroll/:id", "destination": "/api/app?kind=page&page=payroll-detail&id=:id" },
+    { "source": "/tickets.html", "destination": "/api/app?kind=page&page=tickets" },
+    { "source": "/tickets/:id", "destination": "/api/app?kind=page&page=ticket-detail&id=:id" },
     { "source": "/api/auth/:path*", "destination": "/api/app?kind=api&apiPath=auth/:path*" },
     { "source": "/api/data/:path*", "destination": "/api/app?kind=api&apiPath=data/:path*" },
     { "source": "/api/files/:path*", "destination": "/api/app?kind=api&apiPath=files/:path*" }

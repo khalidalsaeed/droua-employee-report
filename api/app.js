@@ -45,6 +45,8 @@ const PAGE_FILES = {
   users: "users-shell.html",
   payroll: "payroll-shell.html",
   "payroll-detail": "payroll-detail-shell.html",
+  tickets: "tickets-shell.html",
+  "ticket-detail": "ticket-detail-shell.html",
 };
 /* Which permission each page needs is declared once, in
    lib/auth/permissions.js (PAGE_PERMISSION) — not duplicated here.
@@ -192,6 +194,7 @@ async function handleData(req, res, resource) {
   if (!actor) return res.status(401).json({ ok: false, error: "غير مسجّل الدخول" });
 
   if (resource === "users") return handleUsers(req, res, actor);
+  if (resource === "tickets") return handleTickets(req, res, actor);
 
   const mod = getResource(resource);
   if (!mod || !mod.section) return res.status(404).json({ ok: false, error: "قسم بيانات غير معروف" });
@@ -261,6 +264,89 @@ async function handleSettings(req, res, actor, mod) {
   } catch (err) {
     res.status(400).json({ ok: false, error: (err && err.message) || "تعذّر تنفيذ العملية" });
   }
+}
+
+/* ---------------- tickets ----------------
+   Special-cased like users because two of its actions don't map onto an HTTP
+   verb: adding a follow-up (the everyday action) and closing/cancelling (a
+   decision). A PUT is therefore gated on what the body actually asks for, not
+   on the method alone. */
+async function handleTickets(req, res, actor) {
+  const tickets = getResource("tickets");
+
+  if (req.method === "GET") {
+    if (!hasPermission(actor, "tickets", "view")) return res.status(403).json(FORBIDDEN);
+    const { id, employeeEid } = req.query || {};
+    if (id) {
+      const item = await tickets.get(id);
+      if (!item) return res.status(404).json({ ok: false, error: "التذكرة غير موجودة" });
+      return res.status(200).json({ ok: true, item });
+    }
+    return res.status(200).json({ ok: true, items: await tickets.list({ employeeEid }) });
+  }
+
+  try {
+    if (req.method === "POST") {
+      const body = parseBody(req);
+      /* A follow-up arrives as a POST against an existing ticket, so it is
+         gated on tickets:add_followup rather than tickets:create. */
+      if (body.followup) {
+        if (!hasPermission(actor, "tickets", "add_followup")) return res.status(403).json(FORBIDDEN);
+        const current = body.id ? await tickets.get(body.id) : null;
+        if (body.followup.status !== undefined && !maySetStatus(actor, body.followup.status, current && current.status)) {
+          return res.status(403).json(FORBIDDEN);
+        }
+        const item = await tickets.addFollowup(body.id, body.followup, actor);
+        logEvent({ type: "ticket_followup_added", actorEmail: actor.email, actorId: actor.id, targetId: item.ticketNo });
+        return res.status(200).json({ ok: true, item });
+      }
+      if (!hasPermission(actor, "tickets", "create")) return res.status(403).json(FORBIDDEN);
+      const item = await tickets.create(body, actor);
+      logEvent({ type: "ticket_created", actorEmail: actor.email, actorId: actor.id, targetId: item.ticketNo, meta: { type: item.type, employeeEid: item.employeeEid } });
+      return res.status(200).json({ ok: true, item });
+    }
+
+    if (req.method === "PUT") {
+      const { id, ...patch } = parseBody(req);
+      if (!id) return res.status(400).json({ ok: false, error: "معرّف التذكرة مطلوب" });
+      const before = await tickets.get(id);
+      if (!before) return res.status(404).json({ ok: false, error: "التذكرة غير موجودة" });
+      /* Crossing the open/closed boundary in EITHER direction needs
+         tickets:close — reopening finished work is the same class of decision as
+         closing it. Any other field edit needs tickets:edit. */
+      if ("status" in patch && !maySetStatus(actor, patch.status, before.status)) return res.status(403).json(FORBIDDEN);
+      const otherFields = Object.keys(patch).filter((k) => k !== "status");
+      if (otherFields.length && !hasPermission(actor, "tickets", "edit")) return res.status(403).json(FORBIDDEN);
+      const item = await tickets.update(id, patch, actor);
+      const statusChanged = before.status !== item.status;
+      logEvent({
+        type: statusChanged ? "ticket_status_changed" : "ticket_updated",
+        actorEmail: actor.email, actorId: actor.id, targetId: item.ticketNo,
+        meta: statusChanged ? { from: before.status, to: item.status } : { fields: Object.keys(patch) },
+      });
+      return res.status(200).json({ ok: true, item });
+    }
+
+    if (req.method === "DELETE") {
+      if (!hasPermission(actor, "tickets", "delete")) return res.status(403).json(FORBIDDEN);
+      const { id } = parseBody(req);
+      if (!id) return res.status(400).json({ ok: false, error: "معرّف التذكرة مطلوب" });
+      const removed = await tickets.remove(id);
+      logEvent({ type: "ticket_deleted", actorEmail: actor.email, actorId: actor.id, targetId: removed.ticketNo });
+      return res.status(200).json({ ok: true });
+    }
+  } catch (err) {
+    return res.status(400).json({ ok: false, error: (err && err.message) || "تعذّر تنفيذ العملية" });
+  }
+  res.status(405).json({ ok: false, error: "Method not allowed" });
+}
+
+/* Any move that starts or ends in a closed state is a tickets:close action;
+   status changes wholly inside the active states are ordinary edits. */
+function maySetStatus(actor, nextStatus, currentStatus) {
+  const { CLOSED_STATUSES } = getResource("tickets");
+  const touchesClosed = CLOSED_STATUSES.includes(String(nextStatus)) || CLOSED_STATUSES.includes(String(currentStatus));
+  return hasPermission(actor, "tickets", touchesClosed ? "close" : "edit");
 }
 
 /* Returns null when the actor may apply `next` to `target`, or {status, error}
