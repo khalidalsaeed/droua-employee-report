@@ -47,6 +47,7 @@ const PAGE_FILES = {
   "payroll-detail": "payroll-detail-shell.html",
   tickets: "tickets-shell.html",
   "ticket-detail": "ticket-detail-shell.html",
+  reports: "reports-shell.html",
 };
 /* Which permission each page needs is declared once, in
    lib/auth/permissions.js (PAGE_PERMISSION) — not duplicated here.
@@ -105,6 +106,7 @@ async function handleApi(req, res) {
   if (section === "auth") return handleAuth(req, res, rest[0]);
   if (section === "data") return handleData(req, res, rest[0]);
   if (section === "files") return handleFiles(req, res, rest[0]);
+  if (section === "reports") return handleReports(req, res, rest[0]);
   res.status(404).json({ ok: false, error: "Not found" });
 }
 
@@ -218,7 +220,10 @@ async function handleData(req, res, resource) {
       return res.status(200).json({ ok: true, items: await mod.list() });
     }
     if (req.method === "POST") {
-      const item = await mod.create(parseBody(req));
+      /* actor is passed to every write, not just PUT: resources that journal
+         changes (employee expiries, Ajeer permit renewals) record who made
+         them. Modules that don't care simply ignore the extra argument. */
+      const item = await mod.create(parseBody(req), actor);
       logEvent({ type: `${resource}_created`, actorEmail: actor.email, actorId: actor.id });
       return res.status(200).json({ ok: true, item });
     }
@@ -226,7 +231,9 @@ async function handleData(req, res, resource) {
       const { id: bodyId, ...patch } = parseBody(req);
       const targetId = bodyId || id;
       if (!targetId) return res.status(400).json({ ok: false, error: "المعرّف مطلوب" });
-      const item = await mod.update(targetId, patch);
+      /* actor is passed so resources that journal changes (employees' expiry
+         history) can record who made them; others ignore it. */
+      const item = await mod.update(targetId, patch, actor);
       logEvent({ type: `${resource}_updated`, actorEmail: actor.email, actorId: actor.id, targetId });
       return res.status(200).json({ ok: true, item });
     }
@@ -234,7 +241,7 @@ async function handleData(req, res, resource) {
       const body = parseBody(req);
       const targetId = body.id || id;
       if (!targetId) return res.status(400).json({ ok: false, error: "المعرّف مطلوب" });
-      await mod.remove(targetId);
+      await mod.remove(targetId, actor);
       logEvent({ type: `${resource}_deleted`, actorEmail: actor.email, actorId: actor.id, targetId });
       return res.status(200).json({ ok: true });
     }
@@ -486,6 +493,107 @@ async function handleUsers(req, res, actor) {
   res.status(405).json({ ok: false, error: "Method not allowed" });
 }
 
+/* ---------------- monthly reports ----------------
+   GET  reports/list                  → the send log
+   GET  reports/pdf?year&month        → build and stream the PDF (no email)
+   GET  reports/summary?year&month    → figures + the email text, for preview
+   POST reports/send                  → email it, once per month ever
+
+   Preview and download never send anything; sending is a separate action behind
+   reports:send. */
+async function handleReports(req, res, action) {
+  const actor = await requireUser(req);
+  if (!actor) return res.status(401).json({ ok: false, error: "غير مسجّل الدخول" });
+  const reports = require("../lib/reports/monthlyReport");
+  const { periodFor, previousMonthPeriod } = require("../lib/reports/period");
+
+  const wantPeriod = () => {
+    const q = req.query || {};
+    if (q.year && q.month) return periodFor(q.year, q.month);
+    return previousMonthPeriod();
+  };
+
+  try {
+    if (action === "list") {
+      if (!hasPermission(actor, "reports", "view")) return res.status(403).json(FORBIDDEN);
+      const [items, recipients] = await Promise.all([reports.listReports(), reports.monthlyRecipients()]);
+      const suggested = previousMonthPeriod();
+      return res.status(200).json({
+        ok: true, items, monthlyRecipients: recipients,
+        suggested: { year: suggested.year, month: suggested.month, label: suggested.label },
+      });
+    }
+
+    if (action === "summary") {
+      if (!hasPermission(actor, "reports", "view")) return res.status(403).json(FORBIDDEN);
+      const period = wantPeriod();
+      const { buildReportData, summarize } = require("../lib/reports/reportData");
+      const { subjectFor, bodyFor } = require("../lib/reports/reportEmail");
+      const { pdfFileName } = require("../lib/reports/reportPdf");
+      const data = await buildReportData(period.year, period.month);
+      return res.status(200).json({
+        ok: true,
+        period: { year: period.year, month: period.month, label: period.label, start: period.start, end: period.end },
+        summary: summarize(data),
+        subject: subjectFor(period),
+        emailBody: bodyFor(data),
+        fileName: pdfFileName(period),
+        historyCoversPeriod: data.historyCoversPeriod,
+        existing: await reports.getReport(period.year, period.month),
+      });
+    }
+
+    if (action === "pdf") {
+      if (!hasPermission(actor, "reports", "generate")) return res.status(403).json(FORBIDDEN);
+      const period = wantPeriod();
+      const { pdf, fileName } = await reports.generate(period.year, period.month);
+      const inline = String((req.query || {}).disposition || "inline") === "inline";
+      logEvent({
+        type: "monthly_report_generated", actorEmail: actor.email, actorId: actor.id,
+        targetId: `${period.year}-${String(period.month).padStart(2, "0")}`, meta: { fileName, inline },
+      });
+      res.writeHead(200, {
+        "Content-Type": "application/pdf",
+        "Content-Length": pdf.length,
+        "Content-Disposition": `${inline ? "inline" : "attachment"}; filename*=UTF-8''${encodeURIComponent(fileName)}`,
+        "Cache-Control": "no-store",
+      });
+      return res.end(pdf);
+    }
+
+    if (action === "send") {
+      if (req.method !== "POST") return res.status(405).json({ ok: false, error: "Method not allowed" });
+      if (!hasPermission(actor, "reports", "send")) return res.status(403).json(FORBIDDEN);
+      const body = parseBody(req);
+      const period = body.year && body.month ? periodFor(body.year, body.month) : previousMonthPeriod();
+      /* A single explicit address may be supplied for a controlled test send;
+         anything else goes to the opted-in recipient list. */
+      const override = typeof body.to === "string" && body.to.includes("@")
+        ? [{ name: body.toName || body.to, email: body.to.trim() }]
+        : null;
+      const result = await reports.sendReport({
+        year: period.year, month: period.month, trigger: "manual", actor,
+        overrideRecipients: override,
+      });
+      if (!result.ok) {
+        const map = {
+          already_sent: "تم إرسال تقرير هذا الشهر مسبقًا — لا يمكن إرساله مرتين.",
+          no_recipients: "لا يوجد مستلمون مُفعّلون للتقرير الشهري.",
+          send_failed: `فشل الإرسال: ${result.error || ""}`,
+        };
+        return res.status(400).json({ ok: false, error: map[result.reason] || result.reason, reason: result.reason });
+      }
+      return res.status(200).json({
+        ok: true, test: !!result.test, period: result.period.label, fileName: result.fileName,
+        subject: result.subject, recipients: result.recipients.map((r) => r.email), messageIds: result.messageIds,
+      });
+    }
+  } catch (err) {
+    return res.status(400).json({ ok: false, error: (err && err.message) || "تعذّر تنفيذ العملية" });
+  }
+  res.status(404).json({ ok: false, error: "Not found" });
+}
+
 /* ---------------- file uploads (Vercel Blob) ----------------
    Server-proxied: the browser POSTs raw file bytes here (same-origin,
    plain fetch — no client-side Blob SDK needed), we pipe them straight
@@ -612,7 +720,7 @@ async function applyEmployeeDocument(req, res, actor, body, url) {
 
   const extraction = await extractExpiry(body, docType, { expectedId });
   const extracted = extraction.ok ? { ...extraction.expiry, documentId: extraction.documentId } : null;
-  const verdict = await applyExtractedExpiry(eid, docType, extracted, url);
+  const verdict = await applyExtractedExpiry(eid, docType, extracted, url, actor);
   if (!extraction.ok) verdict.extractionReason = extraction.reason; // needs_ocr / no_date_found / ...
 
   logEvent({
