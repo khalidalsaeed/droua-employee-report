@@ -1,81 +1,222 @@
 /* Shared admin components — namespaced with .admin- so these never collide
    with any page's own .modal/.scrim (app-shell.html already has two of its
-   own). Relies on the CSS variables every shell page already defines in
-   its own :root (--paper, --ink, --slate, --brass, --hair, --shadow, ...) —
-   no variables of its own, so it always matches the page's identity. */
+   own). Relies on the CSS variables ui.css declares once for the whole
+   platform (--paper, --ink, --slate, --brass, --hair, --shadow, --tap, ...)
+   — no variables of its own, so it always matches the site identity.
 
+   أُعيدت كتابته بمنهج mobile-first. أبرز ما تغيّر ولماذا:
+
+   1. الحوار صار ورقة سفلية تحت 768px. الحوار المتمركز (top:50%) يبقى
+      متمركزًا على المنفذ التخطيطي حين تفتح لوحة المفاتيح، فيختفي الحقل
+      المركَّز وأزرار الحفظ خلفها. الورقة السفلية ترتفع فوق اللوحة عبر
+      المتغيّر --kb الذي يضبطه admin-ui.js من visualViewport.
+   2. .admin-modal صار flex column: الرأس والتذييل ثابتان والجسم وحده
+      يُمرَّر. سابقًا كان التمرير على الحاوية كلها، فيغيب زر الحفظ.
+   3. vh → svh/dvh. على iOS Safari يُحسب vh على المنفذ الكبير، فـ 88vh
+      أطول من المساحة المرئية فعلًا ويقع التذييل خارج الشاشة.
+   4. .admin-field-row كان 1fr 1fr بلا أي نقطة توقّف: عمودان بعرض ~132px
+      داخل حوار عرضه 331px على شاشة 360px. صار عمودًا واحدًا حتى 600px.
+   5. كل أهداف اللمس رُفعت إلى --tap (44px)، وكل :hover صار محروسًا بـ
+      @media (hover:hover) ومعه مكافئ :active — على iOS يلتصق الحوم بعد
+      النقر، وعلى اللمس لا توجد تغذية راجعة أصلًا.
+   6. .admin-mini-btn.danger صار أحمر دائمًا لا عند الحوم فقط: هو زر
+      الحذف، وكان على الجوال مطابقًا بصريًا لزر "تعديل" المجاور. */
+
+/* ======================================================================
+   الحجاب والحوار
+   ====================================================================== */
 .admin-scrim {
-  position: fixed; inset: 0; background: rgba(22,40,59,.34); backdrop-filter: blur(3px);
-  z-index: 200; opacity: 0; visibility: hidden; transition: .35s;
+  position: fixed; inset: 0; background: rgba(22,40,59,.38);
+  z-index: 200; opacity: 0; visibility: hidden; transition: opacity .3s, visibility .3s;
 }
 .admin-scrim.show { opacity: 1; visibility: visible; }
+
 .admin-modal {
-  position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%) scale(.96);
-  width: min(560px, 92vw); max-height: 88vh; overflow: auto;
-  background: var(--paper); border-radius: 18px; box-shadow: var(--shadow-lg);
-  z-index: 201; opacity: 0; visibility: hidden; transition: .3s;
+  position: fixed; z-index: 201;
+  inset-inline: 0; bottom: var(--kb, 0px); top: auto;
+  width: 100%; max-height: calc(90svh - var(--kb, 0px));
+  display: flex; flex-direction: column;
+  background: var(--paper);
+  border-radius: var(--sheet-r, 20px) var(--sheet-r, 20px) 0 0;
+  box-shadow: var(--shadow-lg);
+  transform: translateY(101%);
+  transition: transform .34s var(--ease, cubic-bezier(.16,.8,.3,1));
+  opacity: 1; visibility: hidden;
+  overscroll-behavior: contain;
+  padding-bottom: var(--safe-b, 0px);
 }
-.admin-modal.show { opacity: 1; visibility: visible; transform: translate(-50%,-50%) scale(1); }
+.admin-modal.show { visibility: visible; transform: none; }
 
-.admin-mhead { padding: 22px 26px; border-bottom: 1px solid var(--hair); position: relative; }
-.admin-mhead h3 { font-size: 19px; margin: 0; font-family: var(--serif); font-weight: 400; }
+/* مقبض السحب — العلامة البصرية المتعارف عليها لورقة سفلية */
+.admin-modal::before {
+  content: ""; flex: none; align-self: center;
+  width: 38px; height: 4px; border-radius: 999px;
+  background: var(--hair); margin: 8px 0 2px;
+}
+
+.admin-mhead {
+  flex: none; position: relative;
+  padding: 12px 20px 14px;
+  /* مساحة محجوزة لزر ✕ — العنوان كان يمرّ تحته في عناوين مثل
+     "إدارة صلاحيات — ${name}" */
+  padding-inline-end: calc(20px + var(--tap, 44px) + 8px);
+  border-bottom: 1px solid var(--hair);
+}
+.admin-mhead h3 { font-size: 18px; margin: 0; font-family: var(--serif); font-weight: 400; line-height: 1.4; }
+
 .admin-mclose {
-  position: absolute; top: 16px; inset-inline-end: 18px; width: 32px; height: 32px; border-radius: 9px;
-  border: 1px solid var(--hair); background: var(--paper-2); cursor: pointer; font-size: 14px; color: var(--ink-soft);
+  position: absolute; top: 6px; inset-inline-end: 14px;
+  width: var(--tap, 44px); height: var(--tap, 44px);
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 12px; border: 1px solid var(--hair);
+  background: var(--paper-2); cursor: pointer; font-size: 15px; color: var(--ink-soft);
 }
-.admin-mbody { padding: 24px 26px; }
-.admin-mfoot { display: flex; gap: 10px; justify-content: flex-end; padding: 18px 26px; border-top: 1px solid var(--hair); }
+.admin-mclose:active { background: var(--hair-2); }
 
-.admin-tabs { display: flex; gap: 4px; padding: 0 26px; border-bottom: 1px solid var(--hair); overflow-x: auto; }
+.admin-mbody {
+  flex: 1 1 auto; min-height: 0;
+  overflow-y: auto; overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  padding: 18px 20px;
+}
+
+.admin-mfoot {
+  flex: none;
+  display: flex; flex-wrap: wrap; gap: 10px;
+  padding: 14px 20px; border-top: 1px solid var(--hair);
+  background: var(--paper);
+}
+/* على الجوال: أزرار بعرض كامل مكدّسة، والأساسي أولًا (أقرب للإبهام).
+   كانت justify-content:flex-end تضع الزر الأساسي عند الحافة اليسرى في
+   صفحة RTL — أبعد نقطة عن إبهام اليد اليمنى. */
+.admin-mfoot > * { flex: 1 1 100%; }
+@media (min-width: 480px) {
+  .admin-mfoot { flex-wrap: nowrap; justify-content: flex-end; }
+  .admin-mfoot > * { flex: 0 0 auto; }
+}
+
+@media (min-width: 768px) {
+  .admin-modal {
+    inset-inline: auto; top: 50%; left: 50%; bottom: auto;
+    width: min(560px, 92vw); max-height: 88dvh;
+    border-radius: 18px;
+    transform: translate(-50%, -50%) scale(.97);
+    padding-bottom: 0;
+  }
+  .admin-modal.show { transform: translate(-50%, -50%) scale(1); }
+  .admin-modal::before { display: none; }
+  .admin-mhead { padding: 20px 24px; padding-inline-end: 72px; }
+  .admin-mhead h3 { font-size: 19px; }
+  .admin-mbody { padding: 22px 24px; }
+  .admin-mfoot { padding: 16px 24px; }
+}
+
+/* ======================================================================
+   التبويبات داخل الحوار
+   ====================================================================== */
+.admin-tabs {
+  flex: none;
+  display: flex; gap: 4px; padding: 0 12px;
+  border-bottom: 1px solid var(--hair);
+  overflow-x: auto; -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.admin-tabs::-webkit-scrollbar { display: none; }
 .admin-tab {
-  border: none; background: none; padding: 12px 14px; font-family: var(--sans); font-size: 13px; color: var(--ink-soft);
+  border: none; background: none;
+  min-height: var(--tap, 44px); padding: 10px 14px;
+  font-family: var(--sans); font-size: 14px; color: var(--ink-soft);
   cursor: pointer; border-bottom: 2px solid transparent; white-space: nowrap;
 }
 .admin-tab.active { color: var(--slate); border-bottom-color: var(--brass); font-weight: 600; }
+@media (min-width: 768px) { .admin-tabs { padding: 0 24px; } .admin-tab { font-size: 13px; } }
 
-.admin-field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
-.admin-field label { font-size: 11.5px; color: var(--ink-soft); font-weight: 500; }
+/* ======================================================================
+   الحقول
+   ====================================================================== */
+.admin-field { display: flex; flex-direction: column; gap: 7px; margin-bottom: 16px; }
+.admin-field label { font-size: 13px; color: var(--ink-soft); font-weight: 500; }
 .admin-field .in {
-  background: var(--paper-2); border: 1px solid var(--hair); border-radius: 10px; padding: 10px 12px;
-  font-family: var(--sans); font-size: 14px; color: var(--ink); width: 100%;
+  background: var(--paper-2); border: 1px solid var(--hair); border-radius: 12px;
+  padding: 11px 14px; min-height: var(--tap, 44px);
+  font-family: var(--sans);
+  /* 16px يمنع تكبير iOS القسري عند التركيز؛ يعود إلى 14px على الشاشات
+     الكبيرة حيث لا وجود لهذا السلوك. */
+  font-size: 16px;
+  color: var(--ink); width: 100%;
 }
+.admin-field textarea.in { min-height: 96px; line-height: 1.7; }
 .admin-field .in:focus { outline: none; border-color: var(--slate); box-shadow: 0 0 0 3px rgba(22,40,59,.1); }
-.admin-field .hint { font-size: 11.5px; color: var(--ink-soft); }
-.admin-field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.admin-field .hint { font-size: 12.5px; color: var(--ink-soft); line-height: 1.6; }
 
-.admin-btn-primary {
-  background: var(--slate); color: #fff; border: 1px solid var(--slate); border-radius: 999px;
-  padding: 10px 20px; font-size: 13px; cursor: pointer; transition: .2s; font-family: var(--sans);
+/* عمود واحد افتراضًا؛ عمودان حين يتّسع المكان فعلًا */
+.admin-field-row { display: grid; grid-template-columns: 1fr; gap: 0 14px; }
+@media (min-width: 600px) { .admin-field-row { grid-template-columns: 1fr 1fr; } }
+@media (min-width: 768px) {
+  .admin-field label { font-size: 12px; }
+  .admin-field .in { font-size: 14px; min-height: 40px; padding: 10px 12px; }
 }
-.admin-btn-primary:hover { background: var(--slate-2); }
-.admin-btn-primary:disabled { opacity: .5; cursor: not-allowed; }
-.admin-btn-ghost {
-  background: none; border: 1px solid var(--hair); border-radius: 999px; padding: 10px 20px;
-  font-size: 13px; cursor: pointer; color: var(--ink-soft); font-family: var(--sans);
+
+/* ======================================================================
+   الأزرار
+   ====================================================================== */
+.admin-btn-primary, .admin-btn-ghost, .admin-btn-danger, .admin-add-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  min-height: var(--tap, 44px); padding: 0 20px;
+  border-radius: 999px; border: 1px solid transparent;
+  font-family: var(--sans); font-size: 15px; font-weight: 500;
+  cursor: pointer; transition: background .2s, border-color .2s, color .2s;
 }
-.admin-btn-danger {
-  background: var(--bad-bg); color: var(--bad); border: 1px solid #EACCC5; border-radius: 999px;
-  padding: 10px 20px; font-size: 13px; cursor: pointer; font-family: var(--sans);
+.admin-btn-primary { background: var(--slate); color: #fff; border-color: var(--slate); }
+.admin-btn-ghost { background: var(--paper-2); border-color: var(--hair); color: var(--ink-soft); }
+.admin-btn-danger { background: var(--bad-bg); color: var(--bad); border-color: #EACCC5; }
+.admin-add-btn { background: var(--slate); color: #fff; border-color: var(--slate); }
+.admin-btn-primary:disabled, .admin-btn-ghost:disabled, .admin-btn-danger:disabled, .admin-add-btn:disabled {
+  opacity: .5; cursor: not-allowed;
 }
-.admin-add-btn {
-  display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--slate); background: var(--slate);
-  color: #fff; border-radius: 999px; padding: 10px 18px; font-family: var(--sans); font-size: 13px;
-  font-weight: 500; cursor: pointer; transition: .25s;
+.admin-btn-primary:active:not(:disabled),
+.admin-btn-ghost:active:not(:disabled),
+.admin-btn-danger:active:not(:disabled),
+.admin-add-btn:active:not(:disabled) { transform: translateY(1px); }
+@media (hover: hover) {
+  .admin-btn-primary:hover:not(:disabled) { background: var(--slate-2); border-color: var(--slate-2); }
+  .admin-btn-ghost:hover:not(:disabled) { border-color: var(--slate); color: var(--slate); }
+  .admin-btn-danger:hover:not(:disabled) { background: #F0D6D0; border-color: var(--bad-line); }
+  .admin-add-btn:hover:not(:disabled) { background: var(--slate-2); border-color: var(--slate-2); }
 }
-.admin-add-btn:hover { background: var(--slate-2); border-color: var(--slate-2); }
+
 .admin-mini-btn {
-  border: 1px solid var(--hair); background: var(--paper-2); border-radius: 8px; padding: 6px 10px;
-  font-size: 12px; color: var(--ink); cursor: pointer; transition: .2s; font-family: var(--sans);
-  display: inline-flex; align-items: center; gap: 6px;
+  display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+  min-height: var(--tap, 44px); padding: 0 16px;
+  border: 1px solid var(--hair); background: var(--paper-2); border-radius: 12px;
+  font-size: 14px; color: var(--ink); cursor: pointer; transition: .2s;
+  font-family: var(--sans);
 }
-.admin-mini-btn:hover { border-color: var(--slate); color: var(--slate); }
-.admin-mini-btn.danger:hover { border-color: var(--bad); color: var(--bad); background: var(--bad-bg); }
-.admin-mini-btn:disabled { opacity: .4; cursor: not-allowed; }
-.admin-row-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+/* الحالة المدمّرة مرئية دائمًا، لا عند الحوم فقط. */
+.admin-mini-btn.danger { color: var(--bad); border-color: #EACCC5; background: var(--bad-bg); }
+.admin-mini-btn:disabled { opacity: .45; cursor: not-allowed; }
+.admin-mini-btn:active:not(:disabled) { transform: translateY(1px); }
+.admin-mini-btn.is-busy { opacity: .6; pointer-events: none; }
+@media (hover: hover) {
+  .admin-mini-btn:hover:not(:disabled) { border-color: var(--slate); color: var(--slate); }
+  .admin-mini-btn.danger:hover:not(:disabled) { border-color: var(--bad-line); background: #F0D6D0; color: var(--bad); }
+}
+@media (min-width: 768px) {
+  .admin-btn-primary, .admin-btn-ghost, .admin-btn-danger, .admin-add-btn {
+    min-height: 40px; font-size: 13.5px; padding: 0 18px;
+  }
+  .admin-mini-btn { min-height: 36px; font-size: 12.5px; padding: 0 12px; }
+}
 
+/* فواصل ≥12px: أهداف متجاورة أحدها الحذف تحتاج مسافة تمنع الخطأ */
+.admin-row-actions { display: flex; gap: 12px; flex-wrap: wrap; }
+
+/* ======================================================================
+   الرسائل
+   ====================================================================== */
 .admin-error-msg {
   display: none; background: var(--bad-bg); color: var(--bad); border: 1px solid #EACCC5;
-  border-radius: 10px; padding: 10px 14px; font-size: 12.5px; margin-bottom: 14px;
+  border-radius: 12px; padding: 12px 15px; font-size: 14px; margin-bottom: 14px; line-height: 1.65;
 }
 .admin-error-msg.show { display: block; }
 
@@ -84,31 +225,34 @@
    defines no --warn tokens. */
 .admin-warn-msg {
   display: none; background: #FBF4E4; color: #7A5A18; border: 1px solid #E8D6A8;
-  border-radius: 10px; padding: 10px 14px; font-size: 12.5px; margin-bottom: 14px; line-height: 1.65;
+  border-radius: 12px; padding: 12px 15px; font-size: 14px; margin-bottom: 14px; line-height: 1.65;
 }
 .admin-warn-msg.show { display: block; }
 
 .admin-file-row {
   display: flex; align-items: center; gap: 10px; flex-wrap: wrap; background: var(--paper-2);
-  border: 1px solid var(--hair); border-radius: 10px; padding: 10px 12px; font-size: 12.5px;
+  border: 1px solid var(--hair); border-radius: 12px; padding: 11px 13px; font-size: 13px;
 }
-.admin-file-row .name { color: var(--ink-soft); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.admin-file-row .name { color: var(--ink-soft); flex: 1; min-width: 0; overflow-wrap: anywhere; }
 
-/* ---- permissions manager (إدارة الصلاحيات) ----
-   Wider than the default modal since each section is a row of toggles. */
-.admin-modal.wide { width: min(720px, 94vw); }
+/* ======================================================================
+   مدير الصلاحيات (إدارة الصلاحيات)
+   ====================================================================== */
+.admin-modal.wide { width: 100%; }
+@media (min-width: 768px) { .admin-modal.wide { width: min(720px, 94vw); } }
 
 /* Mode chooser: role defaults vs a custom per-user set. */
 .admin-mode-choice { display: flex; flex-direction: column; gap: 10px; margin-bottom: 18px; }
 .admin-mode-opt {
-  display: flex; align-items: flex-start; gap: 10px; border: 1px solid var(--hair); border-radius: 12px;
-  padding: 12px 14px; cursor: pointer; background: var(--paper-2); transition: .2s;
+  display: flex; align-items: flex-start; gap: 12px; border: 1px solid var(--hair); border-radius: 12px;
+  padding: 14px; cursor: pointer; background: var(--paper-2); transition: .2s;
 }
-.admin-mode-opt:hover { border-color: var(--slate); }
 .admin-mode-opt.active { border-color: var(--brass); background: var(--paper); box-shadow: 0 0 0 3px rgba(22,40,59,.05); }
-.admin-mode-opt input { margin-top: 3px; accent-color: var(--slate); }
-.admin-mode-opt .t { font-size: 13.5px; font-weight: 600; color: var(--ink); }
-.admin-mode-opt .d { font-size: 11.5px; color: var(--ink-soft); margin-top: 3px; line-height: 1.55; }
+.admin-mode-opt:active { border-color: var(--slate); }
+.admin-mode-opt input { margin-top: 3px; accent-color: var(--slate); width: 20px; height: 20px; flex: none; }
+.admin-mode-opt .t { font-size: 14.5px; font-weight: 600; color: var(--ink); }
+.admin-mode-opt .d { font-size: 12.5px; color: var(--ink-soft); margin-top: 4px; line-height: 1.6; }
+@media (hover: hover) { .admin-mode-opt:hover { border-color: var(--slate); } }
 
 /* One card per platform section, holding that section's action switches. */
 .admin-perm-section {
@@ -116,38 +260,59 @@
 }
 .admin-perm-head {
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
-  padding: 11px 14px; background: var(--paper-2); border-bottom: 1px solid var(--hair);
+  padding: 12px 14px; background: var(--paper-2); border-bottom: 1px solid var(--hair);
 }
-.admin-perm-head .nm { font-size: 13.5px; font-weight: 600; color: var(--ink); }
-.admin-perm-actions { display: flex; flex-wrap: wrap; gap: 8px 18px; padding: 13px 14px; }
+.admin-perm-head .nm { font-size: 14px; font-weight: 600; color: var(--ink); }
+/* عمود واحد على الجوال: صفّ من المفاتيح بعرض 132px غير قابل للاستعمال */
+.admin-perm-actions { display: grid; grid-template-columns: 1fr; gap: 2px; padding: 6px 14px 10px; }
+@media (min-width: 480px) { .admin-perm-actions { grid-template-columns: 1fr 1fr; gap: 2px 18px; } }
 
 /* Switch: a checkbox styled as a track+knob. Direction-agnostic so it reads
-   correctly in RTL — the knob starts at the inline-start edge either way. */
-.admin-switch { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; font-size: 12.5px; }
+   correctly in RTL — the knob starts at the inline-start edge either way.
+   المسار 52×32 داخل صفّ ارتفاعه 44px: كان 38×21 وهو نصف الحد الأدنى. */
+.admin-switch {
+  display: flex; align-items: center; gap: 12px; cursor: pointer;
+  font-size: 14.5px; min-height: var(--tap, 44px);
+}
 .admin-switch input { position: absolute; opacity: 0; width: 0; height: 0; }
 .admin-switch .track {
-  position: relative; width: 38px; height: 21px; border-radius: 999px; background: #D8D2C7;
+  position: relative; width: 52px; height: 32px; border-radius: 999px; background: #D8D2C7;
   border: 1px solid var(--hair); transition: .22s; flex: none;
 }
 .admin-switch .track::after {
-  content: ""; position: absolute; top: 2px; inset-inline-start: 2px; width: 15px; height: 15px;
+  content: ""; position: absolute; top: 3px; inset-inline-start: 3px; width: 24px; height: 24px;
   border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.22); transition: .22s;
 }
 .admin-switch input:checked + .track { background: var(--slate); border-color: var(--slate); }
-.admin-switch input:checked + .track::after { inset-inline-start: 19px; }
+.admin-switch input:checked + .track::after { inset-inline-start: 23px; }
 .admin-switch input:focus-visible + .track { box-shadow: 0 0 0 3px rgba(22,40,59,.18); }
 .admin-switch .lbl { color: var(--ink); }
 .admin-switch input:disabled + .track { opacity: .45; }
 .admin-switch input:disabled ~ .lbl { color: var(--ink-soft); }
 .admin-switch:has(input:disabled) { cursor: not-allowed; }
+@media (min-width: 768px) {
+  .admin-switch { font-size: 12.5px; min-height: 36px; gap: 8px; }
+  .admin-switch .track { width: 44px; height: 26px; }
+  .admin-switch .track::after { width: 20px; height: 20px; }
+  .admin-switch input:checked + .track::after { inset-inline-start: 19px; }
+}
 
-/* ---- tickets ----
-   Badges and timeline for the tickets pages and the dashboard widget. Colours
-   come from each page's own tokens (--ok/--warn/--bad/--brass/--slate) so the
-   ticket UI inherits the site identity instead of introducing a new palette. */
+/* Shown instead of the toggles while "role defaults" is selected. */
+.admin-perm-locked { opacity: .55; pointer-events: none; }
+.admin-perm-note {
+  background: var(--paper-2); border: 1px solid var(--hair); border-radius: 12px;
+  padding: 12px 14px; font-size: 13px; color: var(--ink-soft); line-height: 1.65; margin-bottom: 14px;
+}
+
+/* ======================================================================
+   التذاكر — الشارات والخط الزمني
+   Colours come from the platform tokens (--ok/--warn/--bad/--brass/--slate)
+   so the ticket UI inherits the site identity instead of introducing a new
+   palette.
+   ====================================================================== */
 .tk-badge {
   display: inline-flex; align-items: center; gap: 5px; border-radius: 999px;
-  padding: 4px 11px; font-size: 11.5px; font-weight: 500; white-space: nowrap;
+  padding: 4px 11px; font-size: 12px; font-weight: 500; white-space: nowrap;
   border: 1px solid transparent; line-height: 1.7;
 }
 .tk-badge.open           { background: var(--paper-2); color: var(--ink); border-color: var(--hair); }
@@ -167,13 +332,23 @@
 
 .tk-no { font-variant-numeric: tabular-nums; letter-spacing: .3px; font-weight: 600; color: var(--slate); }
 
-/* Stat tiles above the table / in the widget. */
-.tk-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 20px; }
+/* Stat tiles above the table / in the widget.
+   عمود واحد تحت 420px: بطاقتان بعرض ~150px تحملان أرقامًا بحجم 24px
+   وعناوين تلتفّ على ثلاثة أسطر. */
+/* عمودان على الجوال دائمًا: عمود واحد يعني تمرير خمس بطاقات — نصف شاشة —
+   قبل أول تذكرة. البطاقة مضغوطة رأسيًا لأن محتواها رقم وسطر واحد. */
+.tk-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 16px; }
+@media (min-width: 768px) { .tk-stats { grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; } }
 .tk-stat {
-  background: var(--paper); border: 1px solid var(--hair); border-radius: 14px; padding: 14px 16px;
+  background: var(--paper); border: 1px solid var(--hair); border-radius: 12px; padding: 10px 12px;
 }
-.tk-stat .n { font-size: 24px; font-weight: 600; font-family: var(--serif); color: var(--slate); line-height: 1.2; }
-.tk-stat .l { font-size: 11.5px; color: var(--ink-soft); margin-top: 4px; }
+.tk-stat .n { font-size: 21px; font-weight: 600; font-family: var(--serif); color: var(--slate); line-height: 1.15; }
+.tk-stat .l { font-size: 11.5px; color: var(--ink-soft); margin-top: 2px; line-height: 1.45; }
+@media (min-width: 768px) {
+  .tk-stat { border-radius: 14px; padding: 13px 15px; }
+  .tk-stat .n { font-size: 23px; }
+  .tk-stat .l { font-size: 12px; margin-top: 4px; }
+}
 .tk-stat.alert .n { color: var(--bad, #9B3B2A); }
 
 /* Timeline on the detail page. */
@@ -188,30 +363,32 @@
   border-radius: 50%; background: var(--paper); border: 2px solid var(--brass, #B08D57);
 }
 .tk-event.is-followup::before { background: var(--brass, #B08D57); }
-.tk-event .tk-when { font-size: 11.5px; color: var(--ink-soft); }
-.tk-event .tk-what { font-size: 13.5px; color: var(--ink); margin-top: 2px; }
+.tk-event .tk-when { font-size: 12px; color: var(--ink-soft); }
+.tk-event .tk-what { font-size: 14px; color: var(--ink); margin-top: 2px; }
 .tk-event .tk-body {
   margin-top: 7px; background: var(--paper-2); border: 1px solid var(--hair); border-radius: 10px;
-  padding: 10px 12px; font-size: 13px; line-height: 1.75; white-space: pre-wrap;
+  padding: 10px 12px; font-size: 13.5px; line-height: 1.75; white-space: pre-wrap;
+  overflow-wrap: anywhere;   /* رقم تصريح أو رابط ملصوق كان يتجاوز البطاقة */
 }
 
 /* Compact list used by the dashboard widget and the employee drawer. */
 .tk-mini { display: flex; flex-direction: column; gap: 8px; }
 .tk-mini-row {
   display: flex; align-items: center; gap: 10px; flex-wrap: wrap; text-decoration: none; color: inherit;
-  background: var(--paper-2); border: 1px solid var(--hair); border-radius: 12px; padding: 10px 13px; transition: .2s;
+  background: var(--paper-2); border: 1px solid var(--hair); border-radius: 12px;
+  padding: 12px 13px; min-height: var(--tap, 44px); transition: .2s;
 }
-.tk-mini-row:hover { border-color: var(--brass, #B08D57); background: var(--paper); }
-.tk-mini-row .t { font-size: 13px; flex: 1; min-width: 140px; }
-.tk-empty { text-align: center; padding: 22px 0; color: var(--ink-soft); font-size: 13px; }
+.tk-mini-row:active { border-color: var(--brass, #B08D57); background: var(--paper); }
+@media (hover: hover) { .tk-mini-row:hover { border-color: var(--brass, #B08D57); background: var(--paper); } }
+.tk-mini-row .t { font-size: 13.5px; flex: 1; min-width: 140px; overflow-wrap: anywhere; }
+.tk-empty { text-align: center; padding: 22px 0; color: var(--ink-soft); font-size: 13.5px; }
 
-@media (max-width: 640px) {
-  .tk-stats { grid-template-columns: repeat(2, 1fr); }
+/* ======================================================================
+   الجداول القابلة للتمرير أفقيًا (سطح المكتب فقط — الجوال يستعمل البطاقات)
+   ====================================================================== */
+.tk-scroll {
+  overflow-x: auto; -webkit-overflow-scrolling: touch;
+  /* يمنع تسلسل السحب الأفقي إلى إيماءة الرجوع في المتصفح */
+  overscroll-behavior-x: contain;
 }
-
-/* Shown instead of the toggles while "role defaults" is selected. */
-.admin-perm-locked { opacity: .55; pointer-events: none; }
-.admin-perm-note {
-  background: var(--paper-2); border: 1px solid var(--hair); border-radius: 10px;
-  padding: 11px 14px; font-size: 12px; color: var(--ink-soft); line-height: 1.6; margin-bottom: 14px;
-}
+.tk-scroll table { width: 100%; }
