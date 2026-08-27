@@ -27,31 +27,94 @@
 @font-face{font-family:"Thmanyah Serif Display";font-style:normal;font-weight:700;font-display:swap;
   src:url(/assets/fonts/thmanyah-serif-display-700.woff2) format("woff2")}
 
-/* ---------- رموز التصميم ---------- */
+/* =========================================================================
+   رموز التصميم
+   -------------------------------------------------------------------------
+   اللوحة والخطوط هي هوية المنصّة كما هي — لم يتغيّر منها شيء عدا أربع درجات
+   رُفع تباينها لتجتاز WCAG AA (موثَّقة أدناه). الجديد هنا هو أن القياسات
+   صارت سلالم منضبطة بدل قيم مرتجلة: كان في المشروع 31 قيمة مسافات و29 مقاس
+   خط (بينها كسور 11.5 و12.5 و13.5) و12 نصف قطر و10 ظلال و14 مدّة حركة.
+   ========================================================================= */
 :root{
+  /* ---------- الأسطح والحبر ---------- */
   --paper:#F5F2EC;      /* عاجي دافئ */
   --paper-2:#FBF9F5;    /* سطح البطاقة */
+  --paper-3:#FFFFFF;    /* أعلى سطح: رأس الجدول المرتفع والمرفقات */
   --ink:#191815;        /* شبه أسود دافئ */
-  --ink-soft:#5B564D;   /* نص ثانوي */
+  --ink-soft:#5B564D;   /* نص ثانوي — 6.52:1 على الورق */
   --hair:#E4DFD4;       /* خط شعري */
   --hair-2:#EEEAE1;
   --slate:#16283B;      /* كحلي عميق — لون العلامة الأساسي */
   --slate-2:#22405C;
-  --brass:#A98544;      /* لمسة برونزية مقتصدة */
+  --slate-3:#0F1D2B;    /* درجة الضغط للأزرار الأساسية */
+  --on-slate:#C9D3DE;   /* نص ثانوي فوق الكحلي — 9.89:1 */
+  --on-slate-soft:#9FB0BF;                              /* 6.74:1 */
+
+  /* ---------- البرونز ---------- */
+  /* --brass زخرفي بحت (قضبان، مؤشّرات، حدود): 3.07:1 على الورق — يكفي
+     لعنصر غير نصّي (الحد 3:1) ولا يكفي لنص. كل نص برونزي انتقل إلى
+     --brass-ink: 5.40:1 على الورق و4.91:1 على --brass-soft. */
+  --brass:#A98544;
+  --brass-ink:#7C5E23;
   --brass-soft:#F0E7D6;
+
+  /* ---------- ألوان الحالة ----------
+     الأزواج bg/line كما هي. درجات النص الأربع الراسبة رُفعت:
+       warn  #9A6B12 → #7E5608   كان 4.05:1 فوق خلفيته، صار 5.64:1
+       today #B5521A → #96400F   كان 4.12:1، صار 5.67:1
+       na    #7C766A → #67624F   كان 3.69:1، صار 5.00:1
+     (ok و bad و pend كانت ≥5.30:1 أصلًا فلم تُمسّ.) */
   --ok:#1F6E4E;    --ok-bg:#E7F0EA;    --ok-line:#2E8C64;
-  --warn:#9A6B12;  --warn-bg:#F7EED8;  --warn-line:#C7962F;
+  --warn:#7E5608;  --warn-bg:#F7EED8;  --warn-line:#C7962F;
   --bad:#A6382C;   --bad-bg:#F6E4E0;   --bad-line:#C24A3B;
-  --today:#B5521A; --today-bg:#F7E6D5; --today-line:#D2691E;  /* تنتهي اليوم */
-  --na:#7C766A;    --na-bg:#ECE8DF;    --na-line:#9A9384;      /* غير مسجّل */
+  --today:#96400F; --today-bg:#F7E6D5; --today-line:#D2691E;  /* تنتهي اليوم */
+  --na:#67624F;    --na-bg:#ECE8DF;    --na-line:#9A9384;      /* غير مسجّل */
   --pend:#2B5573;  --pend-bg:#E4EDF3;  --pend-line:#3A6E92;    /* جاري السداد */
-  --shadow:0 1px 2px rgba(25,24,21,.04), 0 8px 30px -14px rgba(22,40,59,.22);
-  --shadow-lg:0 30px 70px -30px rgba(22,40,59,.42);
-  --r:16px;
+
+  /* ---------- سلّم الارتفاع ----------
+     أربع درجات مشتقّة كلها من --slate، فالظلال تبدو من عائلة واحدة بدل
+     رماديات متفرّقة. الاسمان القديمان --shadow و --shadow-lg مُبقَيان
+     مسنَدين إلى الدرجتين المقابلتين، فكل استعمال قائم يرتقي بلا تعديل. */
+  --e1:0 1px 2px rgba(22,40,59,.05);
+  --e2:0 1px 2px rgba(22,40,59,.04), 0 4px 14px -6px rgba(22,40,59,.14);
+  --e3:0 2px 4px rgba(22,40,59,.04), 0 14px 32px -12px rgba(22,40,59,.20);
+  --e4:0 4px 12px -4px rgba(22,40,59,.10), 0 28px 64px -26px rgba(22,40,59,.38);
+  --shadow:var(--e2);
+  --shadow-lg:var(--e4);
+
+  /* حلقة التركيز: الكحلي لا البرونز — 15:1 على الورق مقابل 3.07:1، وهي
+     الفارق بين مؤشّر تركيز يُرى ومؤشّر يُخمَّن. */
+  --ring:0 0 0 3px rgba(22,40,59,.14);
+  --ring-bad:0 0 0 3px rgba(194,74,59,.16);
+
+  /* ---------- سلّم الاستدارة ---------- */
+  --r-xs:6px; --r-sm:8px; --r-md:12px; --r-lg:16px; --r-xl:20px; --r-full:999px;
+  --r:var(--r-lg);                         /* الاسم القديم = درجة البطاقة */
+  --sheet-r:var(--r-xl);                   /* استدارة أعلى الورقة السفلية */
+
+  /* ---------- سلّم المسافات (أساسه 4px) ---------- */
+  --s1:4px;  --s2:8px;  --s3:12px; --s4:16px; --s5:20px;
+  --s6:24px; --s8:32px; --s10:40px; --s12:48px; --s16:64px;
+
+  /* ---------- سلّم الطباعة (بلا كسور) ---------- */
+  --t-2xs:11px; --t-xs:12px; --t-sm:13px;  --t-base:14px; --t-md:15px;
+  --t-lg:16px;  --t-xl:18px; --t-2xl:21px; --t-3xl:25px;  --t-4xl:30px; --t-5xl:36px;
+  --lh-tight:1.25; --lh-snug:1.45; --lh-base:1.7;
+  --track-tight:-.015em;                   /* تضييق العناوين الكبيرة */
+  --track-wide:.16em;                       /* توسيع العناوين الفوقية */
+
   --sans:"Thmanyah Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
   --serif:"Thmanyah Serif Display","Thmanyah Sans",serif;
 
-  /* رموز الجوال — جديدة */
+  /* ---------- سلّم الحركة ----------
+     ثلاث مُدد لا أربع عشرة. دالّة التسارع الأصلية للمشروع محفوظة. */
+  --d-fast:120ms;                          /* تلوين، حدود، شفافية */
+  --d:200ms;                               /* الحالة الاعتيادية */
+  --d-slow:320ms;                          /* دخول الطبقات والأوراق */
+  --ease:cubic-bezier(.16,.8,.3,1);
+  --ease-out:cubic-bezier(.22,1,.36,1);
+
+  /* ---------- رموز الجوال ---------- */
   --tap:44px;                              /* الحد الأدنى لهدف اللمس */
   --hdr-h:52px;                            /* ارتفاع الترويسة على الجوال */
   --nav-h:58px;                            /* ارتفاع شريط التنقّل السفلي */
@@ -59,8 +122,6 @@
   --safe-b:env(safe-area-inset-bottom,0px);
   --safe-l:env(safe-area-inset-left,0px);
   --safe-r:env(safe-area-inset-right,0px);
-  --sheet-r:20px;                          /* استدارة أعلى الورقة السفلية */
-  --ease:cubic-bezier(.16,.8,.3,1);
 }
 
 /* نقاط التوقّف المعتمدة (تُكتب صريحة في @media لأن الاستعلامات لا تقرأ المتغيرات):
@@ -106,7 +167,10 @@ section[id],main[id],[data-anchor]{
 }
 
 .muted{color:var(--ink-soft)}
-.eyebrow{font-size:12px;letter-spacing:.22em;text-transform:uppercase;color:var(--brass);font-weight:700}
+.eyebrow{
+  font-size:var(--t-xs);letter-spacing:.2em;text-transform:uppercase;
+  color:var(--brass-ink);font-weight:700;
+}
 
 /* الأرقام تبقى LTR داخل نص RTL، مع كسر عند الضرورة بدل تجاوز الحاوية */
 .num{
@@ -143,7 +207,9 @@ section[id],main[id],[data-anchor]{
 @media(hover:none){
   button:active,[role="button"]:active,a:active{opacity:.72}
 }
-:focus-visible{outline:2px solid var(--brass);outline-offset:2px}
+/* الكحلي لا البرونز: حلقة التركيز عنصر واجهة لا نص، وحدّها 3:1 — والبرونز
+   عندها 3.07:1 بالكاد، بينما الكحلي 15:1. */
+:focus-visible{outline:2px solid var(--slate);outline-offset:2px;border-radius:var(--r-xs)}
 
 /* ---------- كسر النصوص الطويلة ----------
    أرقام التصاريح والإقامات والبُرد الإلكترونية كانت كتلًا غير قابلة للكسر
@@ -274,8 +340,8 @@ html[dir=rtl] .u-drawer{transform:translateX(102%)}
   margin-bottom:14px;
 }
 .u-drawer-sec{
-  font-size:11px;letter-spacing:.16em;text-transform:uppercase;
-  color:var(--brass);font-weight:700;
+  font-size:var(--t-2xs);letter-spacing:var(--track-wide);text-transform:uppercase;
+  color:var(--brass-ink);font-weight:700;
   margin:16px 0 6px;padding-inline:14px;
 }
 .u-drawer-sec:first-of-type{margin-top:4px}
@@ -298,7 +364,7 @@ html[dir=rtl] .u-drawer{transform:translateX(102%)}
 .u-navlink:active{background:var(--hair-2)}
 .u-drawer-foot{margin-top:auto;padding-top:16px;border-top:1px solid var(--hair)}
 .u-user{padding:0 14px 10px;display:flex;flex-direction:column;gap:3px}
-.u-user-role{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--brass);font-weight:700}
+.u-user-role{font-size:var(--t-2xs);letter-spacing:.14em;text-transform:uppercase;color:var(--brass-ink);font-weight:700}
 .u-user-name{font-size:14.5px;font-weight:600;line-height:1.35}
 .u-user-title{font-size:12.5px;color:var(--ink-soft)}
 
@@ -452,7 +518,7 @@ html[dir=rtl] .u-chip{padding:4px 12px 4px 6px}
 }
 .u-back:active,.back-link:active{background:var(--hair-2)}
 @media(hover:hover){
-  .u-back:hover,.back-link:hover{color:var(--brass)}
+  .u-back:hover,.back-link:hover{color:var(--brass-ink)}
 }
 @media(min-width:768px){
   .u-back,.back-link{font-size:13px;min-height:36px}

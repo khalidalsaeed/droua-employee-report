@@ -378,6 +378,10 @@ footer.site{border-top:1px solid var(--hair);margin-top:30px}
 
 </style>
 <link rel="stylesheet" href="/admin-ui.css?v=2">
+<!-- طبقة إعادة تصميم الواجهة. تُحمَّل آخر ملف عمدًا: عند تساوي التخصيص
+     يفوز المتأخّر، فتتقعّد أنماط هذه الصفحة على سلالم ui.css بلا تعديل
+     قاعدة واحدة فيها. حذف هذا السطر يعيد الواجهة إلى ما كانت عليه. -->
+<link rel="stylesheet" href="/ui-polish.css?v=1">
 </head>
 <body>
 
@@ -1110,7 +1114,7 @@ function openQrModal(permitNumber,qrSrc){
   box.innerHTML=`
     <div class="mhead" style="background:var(--paper-2);border-bottom-color:var(--hair)">
       <button class="mclose" id="qrClose" aria-label="إغلاق">✕</button>
-      <span class="eyebrow" style="color:var(--brass)">تصريح أجير</span>
+      <span class="eyebrow" style="color:var(--brass-ink)">تصريح أجير</span>
       <h3 id="qrTitle">رمز التحقق (QR)</h3>
     </div>
     <div class="mbody" style="padding:28px;text-align:center">
