@@ -16,6 +16,8 @@
 <link rel="stylesheet" href="/ui.css?v=1">
 <style>
 *{box-sizing:border-box}
+/* هذه الصفحة كانت .wrap{max-width:1080px} قبل توحيد الحاوية في ui.css */
+:root{--wrap-max:1080px}
 body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);line-height:1.6;font-size:16px;-webkit-font-smoothing:antialiased}
 h1,h2,.serif{font-family:var(--serif);font-weight:400}
 /* padding المختصر هنا يمسح الحشو الجانبي الذي تضعه .wrap، لأن تخصيص
@@ -42,9 +44,29 @@ main.block{padding-block:20px}
 .access-denied{text-align:center;padding:56px 20px;color:var(--ink-soft)}
 /* payroll index cards */
 .payroll-list{display:flex;flex-direction:column;gap:14px}
+/* البطاقة صارت هي .payroll-item لا .payroll-card: أزرار التعديل والحذف
+   خارج الرابط (وهو ضروري — لا يصحّ زر داخل رابط)، وكانت بذلك تطفو تحت
+   بطاقة لها حدّ وظل فتبدو غير منتمية إليها. الآن الصندوق واحد والأزرار
+   داخله أسفل فاصل. */
+.payroll-item{
+  background:var(--paper-2);border:1px solid var(--hair);border-radius:var(--r);
+  box-shadow:var(--shadow);overflow:hidden;transition:border-color .2s,box-shadow .2s;
+}
 .payroll-card-link{display:block;text-decoration:none;color:inherit}
-.payroll-card{background:var(--paper-2);border:1px solid var(--hair);border-radius:var(--r);box-shadow:var(--shadow);padding:22px 24px;display:flex;align-items:center;justify-content:space-between;gap:14px;transition:.2s}
-.payroll-card-link:hover .payroll-card{border-color:var(--brass);box-shadow:var(--shadow-lg)}
+.payroll-card{
+  padding:16px 16px;display:flex;align-items:center;justify-content:space-between;
+  gap:12px;flex-wrap:wrap;transition:background .2s;
+}
+@media(min-width:768px){ .payroll-card{padding:22px 24px;flex-wrap:nowrap} }
+.payroll-card-link:active .payroll-card{background:var(--paper)}
+@media(hover:hover){
+  .payroll-item:hover{border-color:var(--brass);box-shadow:var(--shadow-lg)}
+}
+/* صفّ الإجراءات داخل البطاقة، مفصولًا بخط شعري */
+.payroll-item .admin-row-actions{
+  padding:10px 16px 12px;border-top:1px solid var(--hair-2);background:var(--paper);
+}
+@media(min-width:768px){ .payroll-item .admin-row-actions{padding:10px 24px 12px} }
 .pc-month{font-family:var(--serif);font-size:19px}
 </style>
 <link rel="stylesheet" href="/admin-ui.css?v=2">
@@ -130,7 +152,7 @@ function renderPayrollList(){
           <div>الحالة: ${statusBadge(run.statusKey)}</div>
         </div>
       </a>
-      ${(mayEdit||mayDelete)?`<div class="admin-row-actions" style="margin-top:8px">
+      ${(mayEdit||mayDelete)?`<div class="admin-row-actions">
         ${mayEdit?`<button class="admin-mini-btn" data-act="edit-run" data-id="${esc(run.id)}">تعديل</button>`:""}
         ${mayDelete?`<button class="admin-mini-btn danger" data-act="delete-run" data-id="${esc(run.id)}">حذف</button>`:""}
       </div>`:""}

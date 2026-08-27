@@ -90,7 +90,10 @@ h1,h2,h3,.serif{font-family:var(--serif);font-weight:400;line-height:1.25;letter
 a{color:inherit;text-decoration:none}
 img,svg,video{max-width:100%}
 
-.wrap{max-width:1200px;margin:0 auto;padding:0 16px}
+/* --wrap-max: عرض الحاوية على سطح المكتب. الافتراضي 1200px (الصفحة
+   الرئيسية)؛ صفحات الإدارة الست تضبطه إلى 1080px كما كان لكلٍّ منها
+   تعريفها المحلي قبل التوحيد — فلا يتغيّر تخطيط سطح المكتب. */
+.wrap{max-width:var(--wrap-max,1200px);margin:0 auto;padding:0 16px}
 @media(min-width:768px){ .wrap{padding:0 24px} }
 
 /* روابط الدرج مراسٍ داخل الصفحة، والترويسة لاصقة — فبلا هامش تمرير يقفز

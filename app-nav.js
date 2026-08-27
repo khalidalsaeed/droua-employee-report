@@ -117,7 +117,11 @@ const AppNav = (function () {
           return `<a class="u-tab" href="${d.href}"${active ? ' aria-current="page"' : ""}>${svg(d.icon, 21)}<span class="u-tab-lbl">${esc(d.label)}</span></a>`;
         })
         .join("") +
-      `<button class="u-tab" type="button" data-nav-open>${svg(I.more, 21)}<span class="u-tab-lbl">المزيد</span></button>`;
+      /* الصفحة الحالية قد تكون وجهة في الدرج لا في الشريط (المستخدمون،
+         مسير الرواتب) — فيُميَّز "المزيد" ليعرف المستخدم أين هو. */
+      `<button class="u-tab" type="button" data-nav-open${
+        tabs.some((d) => d.page === page) ? "" : ' aria-current="page"'
+      }>${svg(I.more, 21)}<span class="u-tab-lbl">المزيد</span></button>`;
     tabbarEl.querySelectorAll("[data-nav-open]").forEach((b) => b.addEventListener("click", openDrawer));
   }
 
