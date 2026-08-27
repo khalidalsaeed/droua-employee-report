@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>مسير الرواتب — ذروة الصعود</title>
-<meta name="theme-color" content="#16283B">
+<meta name="theme-color" content="#F5F7FA">
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="icon" href="/assets/icons/icon-192.png" type="image/png">
 <link rel="apple-touch-icon" href="/assets/icons/apple-touch-icon.png">
@@ -13,7 +13,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <link rel="preload" href="/assets/fonts/thmanyah-sans-400.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="/assets/fonts/thmanyah-serif-display-700.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="/ui.css?v=1">
+<link rel="stylesheet" href="/ui.css?v=2">
 <style>
 *{box-sizing:border-box}
 /* هذه الصفحة كانت .wrap{max-width:1080px} قبل توحيد الحاوية في ui.css */
@@ -70,10 +70,9 @@ main.block{padding-block:20px}
 .pc-month{font-family:var(--serif);font-size:19px}
 </style>
 <link rel="stylesheet" href="/admin-ui.css?v=2">
-<!-- طبقة إعادة تصميم الواجهة. تُحمَّل آخر ملف عمدًا: عند تساوي التخصيص
-     يفوز المتأخّر، فتتقعّد أنماط هذه الصفحة على سلالم ui.css بلا تعديل
-     قاعدة واحدة فيها. حذف هذا السطر يعيد الواجهة إلى ما كانت عليه. -->
-<link rel="stylesheet" href="/ui-polish.css?v=1">
+<!-- سمة الواجهة. تُحمَّل آخر ملف عمدًا: عند تساوي التخصيص يفوز المتأخّر،
+     فتُعاد صياغة أنماط هذه الصفحة على نظام ui.css بلا تعديل قاعدة فيها. -->
+<link rel="stylesheet" href="/ui-theme.css?v=1">
 </head>
 <body>
 <!-- يملؤها app-nav.js — ترويسة وشريط سفلي ودرج موحّدة لكل الصفحات -->
@@ -96,7 +95,7 @@ main.block{padding-block:20px}
 </div>
 
 <script src="/admin-ui.js?v=2"></script>
-<script src="/app-nav.js?v=1"></script>
+<script src="/app-nav.js?v=2"></script>
 <script>
 function esc(s){return String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
 
