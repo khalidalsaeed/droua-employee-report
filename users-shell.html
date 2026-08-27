@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>إدارة المستخدمين — ذروة الصعود</title>
-<meta name="theme-color" content="#F5F7FA">
+<meta name="theme-color" content="#16283B">
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="icon" href="/assets/icons/icon-192.png" type="image/png">
 <link rel="apple-touch-icon" href="/assets/icons/apple-touch-icon.png">
@@ -13,7 +13,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <link rel="preload" href="/assets/fonts/thmanyah-sans-400.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="/assets/fonts/thmanyah-serif-display-700.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="/ui.css?v=2">
+<link rel="stylesheet" href="/ui.css?v=1">
 <style>
 *{box-sizing:border-box}
 /* هذه الصفحة كانت .wrap{max-width:1080px} قبل توحيد الحاوية في ui.css */
@@ -134,9 +134,6 @@ tbody tr:hover{background:var(--brass-soft)}
 .access-denied{text-align:center;padding:56px 20px;color:var(--ink-soft)}
 </style>
 <link rel="stylesheet" href="/admin-ui.css?v=2">
-<!-- سمة الواجهة. تُحمَّل آخر ملف عمدًا: عند تساوي التخصيص يفوز المتأخّر،
-     فتُعاد صياغة أنماط هذه الصفحة على نظام ui.css بلا تعديل قاعدة فيها. -->
-<link rel="stylesheet" href="/ui-theme.css?v=1">
 </head>
 <body>
 <!-- يملؤها app-nav.js — ترويسة وشريط سفلي ودرج موحّدة لكل الصفحات -->
@@ -174,7 +171,7 @@ tbody tr:hover{background:var(--brass-soft)}
 <div class="modal" id="userModal" role="dialog" aria-modal="true" aria-labelledby="modalTitle"></div>
 
 <script src="/admin-ui.js?v=2"></script>
-<script src="/app-nav.js?v=2"></script>
+<script src="/app-nav.js?v=1"></script>
 <script>
 const ROLE_LABELS={owner:"المالك",admin:"مدير النظام",hr:"الموارد البشرية",finance:"المالية",viewer:"قراءة فقط"};
 const arMonths=["يناير","فبراير","مارس","أبريل","مايو","يونيو","يوليو","أغسطس","سبتمبر","أكتوبر","نوفمبر","ديسمبر"];

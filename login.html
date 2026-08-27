@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>تسجيل الدخول — ذروة الصعود</title>
-<meta name="theme-color" content="#0C1A2B">
+<meta name="theme-color" content="#16283B">
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="icon" href="/assets/icons/icon-192.png" type="image/png">
 <link rel="apple-touch-icon" href="/assets/icons/apple-touch-icon.png">
@@ -13,7 +13,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <link rel="preload" href="/assets/fonts/thmanyah-sans-400.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="/assets/fonts/thmanyah-serif-display-700.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="/ui.css?v=2">
+<link rel="stylesheet" href="/ui.css?v=1">
 <style>
 /* صفحة الدخول هي الصفحة الوحيدة التي تُقدَّم بلا جلسة، فأصولها مُدرجة في
    PUBLIC_PATHS داخل middleware.mjs. كانت مكتفية ذاتيًا (خطوط ورموز مضمّنة)
@@ -106,9 +106,6 @@ h1{font-family:var(--serif);font-weight:400;font-size:24px;text-align:center;mar
 .error-msg.show{display:block}
 .foot-note{text-align:center;margin-top:24px;font-size:12px;color:var(--ink-soft);line-height:1.7}
 </style>
-<!-- سمة الواجهة. تُحمَّل آخر ملف عمدًا: عند تساوي التخصيص يفوز المتأخّر،
-     فتُعاد صياغة أنماط هذه الصفحة على نظام ui.css بلا تعديل قاعدة فيها. -->
-<link rel="stylesheet" href="/ui-theme.css?v=1">
 </head>
 <body>
 <!-- preserveAspectRatio="none" كان يسحق المنحنيات إلى خطوط شبه رأسية على

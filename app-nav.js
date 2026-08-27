@@ -33,9 +33,6 @@ const AppNav = (function () {
     menu: '<path d="M4 7h16M4 12h16M4 17h16"/>',
     logout: '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/>',
     close: '<path d="M18 6 6 18M6 6l12 12"/>',
-    /* علامة «ذروة»: قمّة وخطّ ارتفاع تحتها — نفس زخرفة الكنتور التي
-       يحملها هيكل التنقّل، مصغّرة إلى شعار. */
-    peak: '<path d="m2.5 18.5 6-10 3.5 5.6 3-4.6 6.5 9Z"/><path d="M7 18.5h10"/>',
   };
   function svg(paths, size) {
     const s = size || 20;
@@ -78,19 +75,7 @@ const AppNav = (function () {
     return "";
   }
 
-  let page = "", headerEl, tabbarEl, drawerEl, scrimEl, sideEl, popDrawer = null;
-
-  const ROLE_LABELS = {
-    owner: "المالك", admin: "مدير النظام", hr: "الموارد البشرية",
-    finance: "المالية", viewer: "قراءة فقط",
-  };
-
-  /* أول حرف من أول كلمتين — بديل الصورة الرمزية في بطاقة المستخدم. */
-  function initials(name) {
-    const parts = String(name || "").trim().split(/\s+/).filter(Boolean);
-    if (!parts.length) return "؟";
-    return (parts[0][0] || "") + (parts[1] ? parts[1][0] : "");
-  }
+  let page = "", headerEl, tabbarEl, drawerEl, scrimEl, popDrawer = null;
 
   /* ---------- الترويسة ---------- */
   function buildHeader(opts) {
@@ -129,14 +114,14 @@ const AppNav = (function () {
       tabs
         .map((d) => {
           const active = d.page === page && (d.key !== "employees" || location.hash === "#peopleSec");
-          return `<a class="u-tab" href="${d.href}"${active ? ' aria-current="page"' : ""}><span class="u-tab-ico">${svg(d.icon, 21)}</span><span class="u-tab-lbl">${esc(d.label)}</span></a>`;
+          return `<a class="u-tab" href="${d.href}"${active ? ' aria-current="page"' : ""}>${svg(d.icon, 21)}<span class="u-tab-lbl">${esc(d.label)}</span></a>`;
         })
         .join("") +
       /* الصفحة الحالية قد تكون وجهة في الدرج لا في الشريط (المستخدمون،
          مسير الرواتب) — فيُميَّز "المزيد" ليعرف المستخدم أين هو. */
       `<button class="u-tab" type="button" data-nav-open${
         tabs.some((d) => d.page === page) ? "" : ' aria-current="page"'
-      }><span class="u-tab-ico">${svg(I.more, 21)}</span><span class="u-tab-lbl">المزيد</span></button>`;
+      }>${svg(I.more, 21)}<span class="u-tab-lbl">المزيد</span></button>`;
     tabbarEl.querySelectorAll("[data-nav-open]").forEach((b) => b.addEventListener("click", openDrawer));
   }
 
@@ -155,6 +140,11 @@ const AppNav = (function () {
     document.body.appendChild(drawerEl);
     return drawerEl;
   }
+
+  const ROLE_LABELS = {
+    owner: "Owner - المالك", admin: "مدير النظام", hr: "الموارد البشرية",
+    finance: "المالية", viewer: "قراءة فقط",
+  };
 
   function renderDrawer() {
     if (!drawerEl) return;
@@ -192,51 +182,6 @@ const AppNav = (function () {
     drawerEl.querySelectorAll("a.u-navlink").forEach((a) => a.addEventListener("click", closeDrawer));
   }
 
-  /* ---------- الشريط الجانبي الدائم (سطح المكتب) ----------
-     يعرض الوجهات نفسها بالصلاحيات نفسها — لا جدول أدوار ثانٍ هنا. مخفيّ
-     بالكامل تحت 1024px عبر CSS، فلا يزاحم نمط الجوال ولا يدخل حساباته. */
-  function buildSide() {
-    const el = document.createElement("aside");
-    el.className = "u-side";
-    el.setAttribute("aria-label", "التنقّل الرئيسي");
-    document.body.appendChild(el);
-    document.body.classList.add("has-side");
-    return el;
-  }
-
-  function renderSide() {
-    if (!sideEl) return;
-    const u = (typeof AdminUI !== "undefined" && AdminUI.getUser) ? AdminUI.getUser() : null;
-    const pages = DEST.filter((d) => allowed(d) && !d.href.includes("#"));
-    const anchors = DEST.filter((d) => allowed(d) && d.href.includes("#"));
-    const link = (d) => {
-      const active = d.page === page && !d.href.includes("#");
-      return `<a class="u-side-link" href="${d.href}"${active ? ' aria-current="page"' : ""}>${svg(d.icon, 19)}<span>${esc(d.label)}</span></a>`;
-    };
-    sideEl.innerHTML = `
-      <div class="u-brand">
-        <span class="u-brand-mark">${svg(I.peak, 21)}</span>
-        <span class="u-brand-txt">
-          <span class="u-brand-name">ذروة الصعود</span>
-          <span class="u-brand-sub">الموارد البشرية</span>
-        </span>
-      </div>
-      <div class="u-side-sec">الصفحات</div>
-      ${pages.map(link).join("")}
-      ${anchors.length ? `<div class="u-side-sec">${page === "home" ? "أقسام هذه الصفحة" : "أقسام الصفحة الرئيسية"}</div>${anchors.map(link).join("")}` : ""}
-      <div class="u-side-foot">
-        ${u ? `<div class="u-side-user">
-          <span class="u-side-avatar" aria-hidden="true">${esc(initials(u.name))}</span>
-          <span class="u-side-who">
-            <span class="u-side-name">${esc(u.name || "")}</span>
-            <span class="u-side-role">${esc(ROLE_LABELS[u.role] || u.role || "")}</span>
-          </span>
-        </div>` : ""}
-        <button class="u-side-link danger" type="button" data-nav-logout>${svg(I.logout, 19)}<span>تسجيل الخروج</span></button>
-      </div>`;
-    sideEl.querySelector("[data-nav-logout]").addEventListener("click", logout);
-  }
-
   function allowed(d) {
     if (!d.perm) return true;
     if (typeof AdminUI === "undefined" || !AdminUI.can) return false;
@@ -267,63 +212,6 @@ const AppNav = (function () {
     }
   }
 
-  /* ---------- ظهور العناصر عند دخولها المنفذ ----------
-     مرّة واحدة لكل عنصر: بمجرّد ظهوره يُرفع عن المراقبة ويبقى ظاهرًا.
-     هذا هو الفرق الجوهري عن animation-timeline:view() التي جُرِّبت أولًا
-     — تلك تربط الشفافية بموضع التمرير ربطًا دائمًا، فعنصرٌ في ذيل
-     الصفحة لا يكتمل مداه أبدًا (لا يوجد ما يُمرَّر بعده) فيعلق شفافًا.
-
-     السلامة أولًا: الفئة u-anim التي تُفعّل الإخفاء في CSS لا تُضاف إلا
-     بعد التأكّد من وجود IntersectionObserver. فإن تعطّل JavaScript أو
-     لم يُدعَم المراقِب، لا يُخفى شيء ويظهر المحتوى كاملًا. */
-  const REVEAL_SEL = [
-    ".sec-head", ".kpi", ".card", ".panel", ".fin-total", ".fin-stat",
-    ".tk-stat", ".tk-card", ".tk-head-card", ".rp-card", ".rp-mail",
-    ".contact-item", ".payroll-item", ".attachment-card", ".u-datacard",
-    ".rp-recip-row",
-  ].join(",");
-
-  function initReveal() {
-    if (!("IntersectionObserver" in window)) return;
-    if (window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    document.documentElement.classList.add("u-anim");
-
-    const io = new IntersectionObserver((entries) => {
-      for (const e of entries) {
-        if (!e.isIntersecting) continue;
-        e.target.classList.add("u-in");
-        io.unobserve(e.target);
-      }
-    }, { rootMargin: "0px 0px -6% 0px", threshold: 0.01 });
-
-    const watch = (root) => {
-      if (!root || root.nodeType !== 1) return;
-      if (root.matches && root.matches(REVEAL_SEL)) observe(root);
-      if (root.querySelectorAll) root.querySelectorAll(REVEAL_SEL).forEach(observe);
-    };
-    /* العنصر الظاهر أصلًا لحظةَ وسمِه لا يُخفى ولا يُراقَب: إخفاؤه ثم
-       إعادة إظهاره يُنتج وميضًا، ولا معنى لحركة دخول لشيء العينُ عليه.
-       دخولُ أول شاشة تتكفّل به حركة .hero و main.block. الوسم المختلف
-       (data-rv-off) يمنع إعادة النظر فيه ولا تلتقطه قاعدة الإخفاء. */
-    const observe = (el) => {
-      if (el.dataset.rv || el.dataset.rvOff) return;
-      if (el.getBoundingClientRect().top < window.innerHeight) {
-        el.dataset.rvOff = "1";
-        return;
-      }
-      el.dataset.rv = "1";
-      io.observe(el);
-    };
-    watch(document.body);
-
-    /* أكثر المحتوى يُصيَّر بعد نداءات الشبكة. رَدُّ MutationObserver يعمل
-       قبل الرسم، ويقتصر على العُقد المضافة لا على مسح المستند كلّه —
-       فلا وميض ولا كلفة تتضاعف مع طول القائمة. */
-    new MutationObserver((muts) => {
-      for (const m of muts) for (const n of m.addedNodes) watch(n);
-    }).observe(document.body, { childList: true, subtree: true });
-  }
-
   /* ---------- التركيب ----------
      mountChrome(): يُستدعى مبكرًا (DOMContentLoaded) فيبني الهيكل قبل الرسم.
      setUser():     يُستدعى بعد /api/auth/me فيعيد رسم الوجهات المسموحة. */
@@ -331,20 +219,16 @@ const AppNav = (function () {
     const o = opts || {};
     page = o.page || currentPage();
     headerEl = buildHeader(o);
-    sideEl = buildSide();
     tabbarEl = buildTabbar();
     buildDrawer();
     renderTabs();
     renderDrawer();
-    renderSide();
-    initReveal();
     return { header: headerEl, slot: headerEl.querySelector("[data-nav-slot]") };
   }
 
   function setUser() {
     renderTabs();
     renderDrawer();
-    renderSide();
   }
 
   /* يضع عنصرًا في الجهة المقابلة من الترويسة (زر إجراء خاص بالصفحة). */

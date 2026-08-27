@@ -1,31 +1,19 @@
-/* ui.css — نظام التصميم ومنصّة الواجهة المشتركة.
+/* ui.css — الطبقة المشتركة لكل صفحات المنصّة.
    =========================================================================
-   الإصدار الثاني: إعادة بناء بصرية كاملة، لا تحسين للسابق.
+   يحلّ محلّ كتلتين كانتا مكرّرتين حرفيًا في الصفحات الثماني:
+     1. ستة @font-face بترميز base64 (~630KB في رأس كل صفحة، تُعاد مع كل
+        انتقال لأن api/app.js يقدّم الصفحات بـ Cache-Control: no-store).
+        صارت ملفات /assets/fonts/*.woff2 تُخزَّن سنة كاملة.
+     2. كتلة :root — 33 رمزًا كانت تُنسخ يدويًا، فأي تغيير في الهوية كان
+        يعني تعديل ثمانية ملفات.
 
-   ما تغيّر جذريًا:
-     • اللوحة — من ورق عاجي دافئ إلى حياد بارد معماري. لوحة العمل رمادية
-       زرقاء فاتحة، والأسطح بيضاء نقية، وهيكل التنقّل أزرق ليلي عميق.
-       التباين بين الاثنين هو ما يعطي الواجهة حدّتها.
-     • البنية — شريط جانبي دائم على سطح المكتب بدل ترويسة عائمة وحيدة،
-       وشريط الصفحة صار سطرًا رفيعًا داخل منطقة المحتوى. على الجوال يبقى
-       النمط المثبَّت: ترويسة مضغوطة + شريط سفلي + درج.
-     • الحركة — انتقال بين الصفحات عبر View Transitions، وظهور الأقسام
-       عبر جدول زمني مرتبط بالتمرير. كلاهما بلا سطر JavaScript واحد.
+   القواعد هنا mobile-first: السلوك الافتراضي هو سلوك الجوال، والتوسّع
+   يتم بـ min-width. الصفحات تُحمّل هذا الملف قبل <style> الخاص بها، فقواعد
+   الصفحة تتغلّب عليه عند تساوي التخصيص — وهذا مقصود.
 
-   ما بقي: عائلتا الخطّ (هما الهوية، واستبدالهما يعني ملفات خطوط جديدة
-   وكلفة تنزيل بلا مقابل)، وزخرفة خطوط الكنتور المشتقّة من اسم «ذروة» —
-   وقد تحوّلت من زينة في المقدّمة إلى نسيج يتكرّر في هيكل التنقّل.
+   لا يعتمد هذا الملف على أي أداة بناء، تمامًا كبقية المشروع. */
 
-   التوافقية: كل أسماء الرموز القديمة (--paper، --ink، --slate، --brass،
-   --hair …) ما زالت معرَّفة لكنها تشير إلى اللوحة الجديدة. بهذا تلتقط
-   أنماطُ الصفحات الألوانَ الجديدة كلها فورًا، ويبقى ملف السمة لما لا
-   تصل إليه المتغيّرات: الشكل والمسافة والحركة والبنية.
-
-   بلا أداة بناء وبلا اعتماديات، كبقية المشروع. */
-
-/* =========================================================================
-   الخطوط
-   ========================================================================= */
+/* ---------- الخطوط ---------- */
 @font-face{font-family:"Thmanyah Sans";font-style:normal;font-weight:300;font-display:swap;
   src:url(/assets/fonts/thmanyah-sans-300.woff2) format("woff2")}
 @font-face{font-family:"Thmanyah Sans";font-style:normal;font-weight:400;font-display:swap;
@@ -39,209 +27,88 @@
 @font-face{font-family:"Thmanyah Serif Display";font-style:normal;font-weight:700;font-display:swap;
   src:url(/assets/fonts/thmanyah-serif-display-700.woff2) format("woff2")}
 
-/* =========================================================================
-   الرموز
-   ========================================================================= */
+/* ---------- رموز التصميم ---------- */
 :root{
-  /* ---------- سلّم الحياد البارد ----------
-     رماديات مائلة إلى الأزرق. الميل مقصود: يجعل الأبيض النقي للأسطح
-     يبدو أنصع، ويربط لوحة العمل بالأزرق الليلي للتنقّل فتُقرأ الواجهة
-     كعائلة لونية واحدة لا كطبقتين متجاورتين. */
-  --n0:#FFFFFF;
-  --n25:#FBFCFD;
-  --n50:#F5F7FA;
-  --n100:#ECF0F5;
-  --n200:#DFE5ED;
-  --n300:#C6D0DC;
-  --n400:#93A1B3;   /* 2.45:1 — أيقونات وزخرفة، لا نصّ أساسي */
-  --n500:#64748B;
-  --n600:#4A5567;   /* 7.02:1 — النص الثانوي */
-  --n700:#333E4F;
-  --n800:#1D2839;
-  --n900:#0E1826;   /* 16.62:1 — النص الأساسي */
-  --n950:#070D17;
-
-  /* ---------- الأزرق الليلي — لون العلامة ---------- */
-  --b900:#081220;
-  --b800:#0C1A2B;
-  --b700:#123049;
-  --b600:#1B4568;   /* 9.33:1 على لوحة العمل — حلقة التركيز والزرّ الأساسي */
-  --b500:#246189;
-
-  /* ---------- ذهب الذروة ----------
-     g400 هو اللون الزخرفي (2.11:1 على الفاتح — لا يصلح نصًّا هناك، لكنه
-     8.28:1 على الأزرق الليلي فيصلح نصًّا وأيقونةً فوق هيكل التنقّل).
-     g600 هو الذهب النصّي على الأسطح الفاتحة: 5.13:1. */
-  --g200:#F1E3C4;
-  --g300:#E3C688;
-  --g400:#CFA659;
-  --g500:#A87F33;
-  --g600:#856327;
-
-  /* ---------- ألوان الحالة ----------
-     كل درجة نصّ ≥5.1:1 فوق خلفيتها الملوّنة، و≥5.3:1 فوق لوحة العمل. */
-  --ok:#0F6B4B;    --ok-bg:#E4F2EB;    --ok-line:#1E9268;
-  --warn:#8A5D08;  --warn-bg:#FBF1D9;  --warn-line:#C08A18;
-  --bad:#A22C22;   --bad-bg:#FBE9E6;   --bad-line:#CE4335;
-  --info:#1B5480;  --info-bg:#E6F0F8;  --info-line:#2C7CB8;
-  --today:#9A4409; --today-bg:#FCEBDC; --today-line:#D2691E;  /* تنتهي اليوم */
-  --na:#5B6675;    --na-bg:#EDF0F4;    --na-line:#93A1B3;      /* غير مسجّل */
-  --pend:#1B5480;  --pend-bg:#E6F0F8;  --pend-line:#2C7CB8;    /* جاري السداد */
-
-  /* ---------- أسماء الرموز القديمة ----------
-     مُبقاة ومُعاد إسنادها. هذه الكتلة وحدها هي ما يُعيد تلوين الصفحات
-     الثماني كلها: كل قاعدة قائمة تستعمل var(--paper) أو var(--slate)
-     تلتقط اللون الجديد بلا تعديل. */
-  --paper:var(--n50);          /* لوحة العمل */
-  --paper-2:var(--n0);         /* سطح البطاقة */
-  --paper-3:var(--n25);
-  --ink:var(--n900);
-  --ink-soft:var(--n600);
-  --hair:var(--n200);
-  --hair-2:var(--n100);
-  --slate:var(--b700);
-  --slate-2:var(--b600);
-  --slate-3:var(--b900);
-  --on-slate:#B9C7D6;
-  --on-slate-soft:#8496AA;
-  --brass:var(--g400);
-  --brass-ink:var(--g600);
-  --brass-soft:var(--g200);
-
-  /* ---------- الأسطح والحدود (أسماء دلالية) ---------- */
-  --canvas:var(--n50);
-  --surface:var(--n0);
-  --surface-sunken:var(--n100);
-  --line:var(--n200);
-  --line-soft:var(--n100);
-  --line-strong:var(--n300);
-  --line-control:#AEBBCA;      /* حدّ عناصر الإدخال */
-
-  /* ---------- سلّم الارتفاع ----------
-     مشتقّ كله من --n900 بميله الأزرق، فالظلّ يبدو امتدادًا للّون لا
-     رمادًا دخيلًا. الاسمان القديمان مُسنَدان إلى درجتين منه. */
-  --e1:0 1px 2px rgba(14,24,38,.05);
-  --e2:0 1px 2px rgba(14,24,38,.05), 0 2px 8px -3px rgba(14,24,38,.10);
-  --e3:0 2px 4px rgba(14,24,38,.05), 0 12px 26px -10px rgba(14,24,38,.16);
-  --e4:0 4px 10px -3px rgba(14,24,38,.10), 0 26px 60px -22px rgba(14,24,38,.34);
-  --e-side:12px 0 40px -24px rgba(7,13,23,.55);
-  --shadow:var(--e2);
-  --shadow-lg:var(--e4);
-
-  /* حلقة التركيز — 9.33:1 على لوحة العمل، وذهبية فوق الأسطح الداكنة */
-  --ring:0 0 0 3px rgba(27,69,104,.20);
-  --ring-bad:0 0 0 3px rgba(206,67,53,.20);
-  --focus:var(--b600);
-  --focus-dark:var(--g400);
-
-  /* ---------- الاستدارة ----------
-     أكبر وأنعم من السابق. الأزرار تركت الشكل الكبسولي إلى مستطيل ليّن —
-     وهو أوضح إشارة مفردة إلى أن هذا نظام تصميم آخر. */
-  --r-xs:6px; --r-sm:10px; --r-md:14px; --r-lg:18px; --r-xl:24px; --r-2xl:30px;
-  --r-full:999px;
-  --r:var(--r-md);
-  --r-btn:12px;
-  --sheet-r:var(--r-xl);
-
-  /* ---------- المسافات (أساسها 4px) ---------- */
-  --s1:4px;  --s2:8px;  --s3:12px; --s4:16px; --s5:20px;
-  --s6:24px; --s7:28px; --s8:32px; --s10:40px; --s12:48px;
-  --s14:56px; --s16:64px; --s20:80px;
-
-  /* ---------- الطباعة ---------- */
-  --t-2xs:11px; --t-xs:12px; --t-sm:13px;  --t-base:14px; --t-md:15px;
-  --t-lg:16px;  --t-xl:18px; --t-2xl:21px; --t-3xl:26px;  --t-4xl:32px;
-  --t-5xl:40px; --t-6xl:52px;
-  --lh-tight:1.18; --lh-snug:1.45; --lh-base:1.7;
-  --track-tight:-.02em;
-  --track-wide:.14em;
-
+  --paper:#F5F2EC;      /* عاجي دافئ */
+  --paper-2:#FBF9F5;    /* سطح البطاقة */
+  --ink:#191815;        /* شبه أسود دافئ */
+  --ink-soft:#5B564D;   /* نص ثانوي */
+  --hair:#E4DFD4;       /* خط شعري */
+  --hair-2:#EEEAE1;
+  --slate:#16283B;      /* كحلي عميق — لون العلامة الأساسي */
+  --slate-2:#22405C;
+  --brass:#A98544;      /* لمسة برونزية مقتصدة */
+  --brass-soft:#F0E7D6;
+  --ok:#1F6E4E;    --ok-bg:#E7F0EA;    --ok-line:#2E8C64;
+  --warn:#9A6B12;  --warn-bg:#F7EED8;  --warn-line:#C7962F;
+  --bad:#A6382C;   --bad-bg:#F6E4E0;   --bad-line:#C24A3B;
+  --today:#B5521A; --today-bg:#F7E6D5; --today-line:#D2691E;  /* تنتهي اليوم */
+  --na:#7C766A;    --na-bg:#ECE8DF;    --na-line:#9A9384;      /* غير مسجّل */
+  --pend:#2B5573;  --pend-bg:#E4EDF3;  --pend-line:#3A6E92;    /* جاري السداد */
+  --shadow:0 1px 2px rgba(25,24,21,.04), 0 8px 30px -14px rgba(22,40,59,.22);
+  --shadow-lg:0 30px 70px -30px rgba(22,40,59,.42);
+  --r:16px;
   --sans:"Thmanyah Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
   --serif:"Thmanyah Serif Display","Thmanyah Sans",serif;
-  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,monospace;
 
-  /* ---------- الحركة ----------
-     أربع مُدد ودالّتا تسارع. --ease-emph فيها تجاوز طفيف (تتخطّى الهدف
-     ثم تستقرّ) وهي المسؤولة عن الإحساس بالجودة في فتح الطبقات؛ لا تُستعمل
-     في أي شيء يتكرّر كثيرًا كي لا تتحوّل إلى ثرثرة بصرية. */
-  --d-fast:130ms;
-  --d:220ms;
-  --d-slow:360ms;
-  --d-xslow:520ms;
-  --ease:cubic-bezier(.2,.7,.3,1);
-  --ease-emph:cubic-bezier(.22,1.02,.36,1);
-  --ease-in:cubic-bezier(.5,0,.9,.4);
-
-  /* ---------- أبعاد الهيكل ---------- */
-  --side-w:268px;                          /* الشريط الجانبي على سطح المكتب */
+  /* رموز الجوال — جديدة */
   --tap:44px;                              /* الحد الأدنى لهدف اللمس */
-  --hdr-h:56px;                            /* شريط الصفحة على الجوال */
-  --hdr-h-lg:64px;
-  --nav-h:62px;                            /* الشريط السفلي */
+  --hdr-h:52px;                            /* ارتفاع الترويسة على الجوال */
+  --nav-h:58px;                            /* ارتفاع شريط التنقّل السفلي */
   --safe-t:env(safe-area-inset-top,0px);
   --safe-b:env(safe-area-inset-bottom,0px);
   --safe-l:env(safe-area-inset-left,0px);
   --safe-r:env(safe-area-inset-right,0px);
+  --sheet-r:20px;                          /* استدارة أعلى الورقة السفلية */
+  --ease:cubic-bezier(.16,.8,.3,1);
 }
 
-/* نقاط التوقّف:
-     ≥480px   جوال عريض
-     ≥768px   لوحي — يختفي الشريط السفلي وتعود الجداول
-     ≥1024px  سطح مكتب — يظهر الشريط الجانبي الدائم
-     ≥1440px  شاشة واسعة                                                  */
+/* نقاط التوقّف المعتمدة (تُكتب صريحة في @media لأن الاستعلامات لا تقرأ المتغيرات):
+     ≥480px  — جوال عريض
+     ≥768px  — لوحي / سطح مكتب: يختفي الشريط السفلي وتعود الجداول والأعمدة
+     ≥1024px — سطح مكتب واسع                                                */
 
-/* =========================================================================
-   الأساس
-   ========================================================================= */
+/* ---------- الأساس ---------- */
 *{box-sizing:border-box}
 html{
   scroll-behavior:smooth;
-  -webkit-text-size-adjust:100%;
-  color-scheme:light;
-  /* clip لا hidden: الأخير يُبطل position:sticky على المتحدّرين. */
-  overflow-x:clip;
+  -webkit-text-size-adjust:100%;   /* يمنع أندرويد من تضخيم النص تلقائيًا */
 }
 body{
-  margin:0;
-  background:var(--canvas);
-  color:var(--ink);
-  font-family:var(--sans);font-weight:400;line-height:var(--lh-base);font-size:16px;
+  margin:0;background:var(--paper);color:var(--ink);
+  font-family:var(--sans);font-weight:400;line-height:1.7;font-size:16px;
   -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;
-  -webkit-tap-highlight-color:transparent;
-  overscroll-behavior-y:none;
+  -webkit-tap-highlight-color:rgba(22,40,59,.10);
+  overscroll-behavior-y:none;      /* يمنع نطّة السحب للتحديث فوق المحتوى */
 }
-h1,h2,h3,h4,.serif{
-  font-family:var(--serif);font-weight:400;
-  line-height:var(--lh-tight);letter-spacing:var(--track-tight);
-  color:var(--ink);
-}
+/* شبكة أمان ضد التمرير الأفقي: أي طبقة تُخفى بالإزاحة خارج الحافة تُوسّع
+   scrollWidth، ومعه تتوسّع الكتلة المحتوية للعناصر الثابتة — فيتمدّد شريط
+   التنقّل السفلي نفسه. clip لا hidden: الأخير يُبطل position:sticky على
+   العناصر المتحدّرة، والترويسة تعتمد عليه. */
+html{overflow-x:clip}
+h1,h2,h3,.serif{font-family:var(--serif);font-weight:400;line-height:1.25;letter-spacing:-.01em}
 a{color:inherit;text-decoration:none}
 img,svg,video{max-width:100%}
-::selection{background:rgba(27,69,104,.16)}
 
-.wrap{max-width:var(--wrap-max,1240px);margin:0 auto;padding:0 var(--s4)}
-@media(min-width:768px){ .wrap{padding:0 var(--s6)} }
-@media(min-width:1024px){ .wrap{padding:0 var(--s8)} }
+/* --wrap-max: عرض الحاوية على سطح المكتب. الافتراضي 1200px (الصفحة
+   الرئيسية)؛ صفحات الإدارة الست تضبطه إلى 1080px كما كان لكلٍّ منها
+   تعريفها المحلي قبل التوحيد — فلا يتغيّر تخطيط سطح المكتب. */
+.wrap{max-width:var(--wrap-max,1200px);margin:0 auto;padding:0 16px}
+@media(min-width:768px){ .wrap{padding:0 24px} }
 
+/* روابط الدرج مراسٍ داخل الصفحة، والترويسة لاصقة — فبلا هامش تمرير يقفز
+   المتصفح فيُخفي عنوان القسم خلفها. */
 section[id],main[id],[data-anchor]{
-  scroll-margin-top:calc(var(--hdr-h) + var(--safe-t) + var(--s3));
+  scroll-margin-top:calc(var(--hdr-h) + var(--safe-t) + 12px);
 }
-@media(min-width:1024px){
-  section[id],main[id],[data-anchor]{scroll-margin-top:calc(var(--hdr-h-lg) + var(--s5))}
+@media(min-width:768px){
+  section[id],main[id],[data-anchor]{scroll-margin-top:80px}
 }
 
 .muted{color:var(--ink-soft)}
-.eyebrow{
-  display:inline-flex;align-items:center;gap:var(--s2);
-  font-size:var(--t-2xs);letter-spacing:var(--track-wide);text-transform:uppercase;
-  color:var(--brass-ink);font-weight:700;
-}
-/* شرطة ذهبية قصيرة تسبق كل عنوان فوقي — تفصيلة تتكرّر في كل صفحة فتُقرأ
-   كتوقيع، ولا تكلّف عنصرًا في DOM. */
-.eyebrow::before{
-  content:"";flex:none;width:16px;height:2px;border-radius:2px;
-  background:linear-gradient(to left,var(--g400),rgba(207,166,89,0));
-}
+.eyebrow{font-size:12px;letter-spacing:.22em;text-transform:uppercase;color:var(--brass);font-weight:700}
+
+/* الأرقام تبقى LTR داخل نص RTL، مع كسر عند الضرورة بدل تجاوز الحاوية */
 .num{
   font-variant-numeric:tabular-nums;font-feature-settings:"tnum";
   direction:ltr;unicode-bidi:embed;display:inline-block;
@@ -249,404 +116,242 @@ section[id],main[id],[data-anchor]{
 }
 
 /* ---------- شبكة أمان لبيئة اللمس ----------
-   !important مقصود: يمنع تسرّب حقل أصغر من 16px (يُجبر iOS على التكبير
-   عند التركيز ولا يعود) أو هدف أصغر من 44px من أي صفحة قائمة أو لاحقة. */
+   القواعد الثلاث التالية تستعمل !important عن قصد. الغرض منها ألّا تتسرّب
+   حقول أصغر من 16px أو أهداف أصغر من 44px من أي صفحة — قائمة أو مستقبلية —
+   بدل ملاحقة كل مُحدِّد على حدة. دون هذا، أي `.field .in{font-size:14px}`
+   في صفحة يتغلّب على القاعدة العامة بحكم التخصيص. */
 @media(max-width:767px){
+  /* أي حقل تحت 16px يُجبر iOS Safari على تكبير الصفحة عند التركيز، ولا
+     يُعيدها أبدًا — فيبقى المستخدم عالقًا في عرض مُقرَّب ومُزاح أفقيًا. */
   input,select,textarea{font-size:16px !important}
-  button,[role="button"],
+
+  /* الحد الأدنى لهدف اللمس. inline عناصر مستثناة لأنها روابط داخل فقرات. */
+  button,
+  [role="button"],
   input[type="button"],input[type="submit"],input[type="reset"],
-  select{min-height:var(--tap) !important}
+  select{
+    min-height:var(--tap) !important;
+  }
   button,[role="button"]{min-width:var(--tap) !important}
 }
 
+/* ---------- الحوم مقابل اللمس ----------
+   المشروع كان يعتمد :hover وحده في نحو عشرين موضعًا. على iOS يلتصق الحوم
+   بعد النقر ولا يزول، وعلى اللمس عمومًا لا يوجد تغذية راجعة قبل النقر.
+   القاعدتان التاليتان تعوّضان ذلك عالميًا؛ والقواعد الخاصة بكل عنصر
+   محروسة بـ @media (hover:hover) في ملفات الصفحات. */
 @media(hover:none){
-  button:active,[role="button"]:active,a:active{opacity:.7}
+  button:active,[role="button"]:active,a:active{opacity:.72}
 }
-:focus-visible{outline:2px solid var(--focus);outline-offset:2px;border-radius:var(--r-xs)}
+:focus-visible{outline:2px solid var(--brass);outline-offset:2px}
 
+/* ---------- كسر النصوص الطويلة ----------
+   أرقام التصاريح والإقامات والبُرد الإلكترونية كانت كتلًا غير قابلة للكسر
+   تفرض عرضًا أدنى على حاوياتها فتتجاوز الشاشة. */
 .tk-no,.tk-sub,.tk-desc,.rp-mono,
 .admin-file-row .name,
 .tk-event .tk-body{overflow-wrap:anywhere}
 
 /* =========================================================================
-   هيكل التطبيق — الشريط الجانبي الدائم
-   -------------------------------------------------------------------------
-   يظهر من 1024px فقط. تحته يبقى نمط الجوال (ترويسة + شريط سفلي + درج)،
-   وهو نمط مُختبَر ولا داعي لاستبداله بشريط جانبي مطويّ.
-
-   .has-side يضعها app-nav.js على <body> عند تركيب الشريط، فصفحة الدخول
-   — وهي بلا تنقّل — لا تكتسب الإزاحة.
+   البدائل الأوّلية (primitives) — تُستعمل في كل الصفحات
    ========================================================================= */
-.u-side{display:none}
 
-@media(min-width:1024px){
-  .u-side{
-    position:fixed;top:0;bottom:0;inset-inline-start:0;z-index:80;
-    width:var(--side-w);
-    display:flex;flex-direction:column;
-    padding:var(--s6) var(--s4) var(--s5);
-    background:
-      linear-gradient(180deg,var(--b800) 0%,var(--b900) 62%,#050C16 100%);
-    color:var(--on-slate);
-    box-shadow:var(--e-side);
-    overflow-y:auto;overscroll-behavior:contain;
-  }
-  /* نسيج الكنتور — الزخرفة المشتقّة من اسم «ذروة». حلقات دائرية متتابعة
-     تحاكي خطوط ارتفاع الخريطة الطبوغرافية، مرسومة بتدرّجين متكرّرين لا
-     بصورة، فلا تكلّف طلبًا ولا بايتًا. */
-  .u-side::before{
-    content:"";position:absolute;inset:0;pointer-events:none;
-    background:
-      repeating-radial-gradient(circle at 84% 10%,
-        rgba(207,166,89,.055) 0 1px, rgba(207,166,89,0) 1px 30px),
-      repeating-radial-gradient(circle at 16% 92%,
-        rgba(147,161,179,.035) 0 1px, rgba(147,161,179,0) 1px 40px);
-    mask-image:linear-gradient(180deg,#000 0%,rgba(0,0,0,.22) 50%,rgba(0,0,0,.7) 100%);
-  }
-  .u-side>*{position:relative}
-
-  body.has-side{padding-inline-start:var(--side-w)}
-  body.has-side .u-tabbar{display:none}
-}
-
-/* ---------- شعار العلامة داخل الشريط ---------- */
-.u-brand{
-  display:flex;align-items:center;gap:var(--s3);
-  padding:0 var(--s3) var(--s5);
-  margin-bottom:var(--s2);
-  border-bottom:1px solid rgba(255,255,255,.08);
-}
-.u-brand-mark{
-  flex:none;width:38px;height:38px;border-radius:var(--r-sm);
-  display:grid;place-items:center;
-  background:linear-gradient(150deg,var(--g400),var(--g600));
-  color:var(--b900);
-  box-shadow:0 2px 10px -2px rgba(207,166,89,.5), inset 0 1px 0 rgba(255,255,255,.35);
-}
-.u-brand-txt{min-width:0;line-height:1.3}
-.u-brand-name{
-  font-family:var(--serif);font-size:var(--t-lg);color:#fff;
-  letter-spacing:var(--track-tight);
-  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
-}
-.u-brand-sub{
-  font-size:var(--t-2xs);letter-spacing:.1em;text-transform:uppercase;
-  color:var(--g300);font-weight:700;margin-top:2px;
-}
-
-/* ---------- روابط الشريط الجانبي ---------- */
-.u-side-sec{
-  font-size:var(--t-2xs);letter-spacing:var(--track-wide);text-transform:uppercase;
-  color:var(--on-slate-soft);font-weight:700;
-  margin:var(--s5) var(--s3) var(--s2);
-}
-.u-side-sec:first-of-type{margin-top:var(--s3)}
-.u-side-link{
-  position:relative;
-  display:flex;align-items:center;gap:var(--s3);
-  min-height:42px;padding:var(--s2) var(--s3);
-  margin-bottom:2px;
-  border-radius:var(--r-sm);
-  font-size:var(--t-base);color:var(--on-slate);
-  border:none;background:none;width:100%;
-  font-family:var(--sans);text-align:start;cursor:pointer;
-  transition:color var(--d-fast) linear,background-color var(--d-fast) linear;
-}
-.u-side-link svg{flex:none;opacity:.72;transition:opacity var(--d-fast) linear,transform var(--d) var(--ease)}
-/* المؤشّر النشط: شريط ذهبي يمتدّ من الحافة. يتحرّك بـscaleY لا بالارتفاع،
-   فلا يُعيد التخطيط. */
-.u-side-link::before{
-  content:"";position:absolute;inset-inline-start:0;top:50%;
-  width:3px;height:22px;margin-top:-11px;
-  border-radius:0 3px 3px 0;
-  background:var(--g400);
-  transform:scaleY(0);transform-origin:center;
-  transition:transform var(--d) var(--ease-emph);
-}
-html[dir=rtl] .u-side-link::before{border-radius:3px 0 0 3px}
-.u-side-link[aria-current="page"]{
-  background:rgba(255,255,255,.07);
-  color:#fff;font-weight:500;
-}
-.u-side-link[aria-current="page"]::before{transform:scaleY(1)}
-.u-side-link[aria-current="page"] svg{opacity:1;color:var(--g300)}
-@media(hover:hover) and (pointer:fine){
-  .u-side-link:hover{background:rgba(255,255,255,.05);color:#fff}
-  .u-side-link:hover svg{opacity:1;transform:translateX(-2px)}
-  html[dir=ltr] .u-side-link:hover svg{transform:translateX(2px)}
-}
-.u-side-link:focus-visible{outline:2px solid var(--focus-dark);outline-offset:-2px}
-.u-side-link.danger{color:#F0A69C}
-@media(hover:hover) and (pointer:fine){
-  .u-side-link.danger:hover{background:rgba(206,67,53,.16);color:#FFC7BF}
-}
-
-.u-side-foot{margin-top:auto;padding-top:var(--s4);border-top:1px solid rgba(255,255,255,.08)}
-.u-side-user{
-  display:flex;align-items:center;gap:var(--s3);
-  padding:var(--s3);margin-bottom:var(--s2);
-  border-radius:var(--r-sm);
-  background:rgba(255,255,255,.05);
-}
-.u-side-avatar{
-  flex:none;width:34px;height:34px;border-radius:var(--r-xs);
-  display:grid;place-items:center;
-  background:linear-gradient(150deg,var(--b600),var(--b700));
-  color:var(--g300);font-family:var(--serif);font-size:var(--t-base);
-  box-shadow:inset 0 1px 0 rgba(255,255,255,.14);
-}
-.u-side-who{min-width:0;line-height:1.35}
-.u-side-name{
-  font-size:var(--t-sm);font-weight:500;color:#fff;
-  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
-}
-.u-side-role{font-size:var(--t-2xs);color:var(--g300);font-weight:700;letter-spacing:.06em}
-
-/* =========================================================================
-   شريط الصفحة (الترويسة)
-   ========================================================================= */
+/* ---------- الترويسة المشتركة ---------- */
 .u-hdr{
   position:sticky;top:0;z-index:60;
-  background:var(--canvas);
-  border-bottom:1px solid var(--line);
+  background:var(--paper);                 /* لون صلب: لا backdrop-filter */
+  border-bottom:1px solid var(--hair);
   padding-top:var(--safe-t);
 }
 .u-hdr-in{
-  display:flex;align-items:center;gap:var(--s3);
+  display:flex;align-items:center;gap:10px;
   min-height:var(--hdr-h);
-  padding:var(--s2) var(--s4);
-  max-width:1240px;margin:0 auto;
+  padding:6px 16px;
+  max-width:1200px;margin:0 auto;
 }
 .u-hdr-btn{
   flex:none;width:var(--tap);height:var(--tap);
   display:inline-flex;align-items:center;justify-content:center;
-  border:1px solid var(--line);border-radius:var(--r-sm);
-  background:var(--surface);color:var(--ink);cursor:pointer;
-  box-shadow:var(--e1);
-  transition:border-color var(--d-fast) linear,color var(--d-fast) linear,
-             box-shadow var(--d) var(--ease),transform var(--d-fast) var(--ease);
+  border:1px solid var(--hair);border-radius:12px;
+  background:var(--paper-2);color:var(--ink);cursor:pointer;
+  transition:border-color .2s,color .2s;
 }
-@media(hover:hover) and (pointer:fine){
-  .u-hdr-btn:hover{border-color:var(--line-control);color:var(--slate);box-shadow:var(--e2)}
-}
-.u-hdr-btn:active{transform:scale(.94)}
 .u-hdr-titles{flex:1;min-width:0}
 .u-hdr-title{
-  font-family:var(--serif);font-size:var(--t-xl);line-height:1.3;
-  letter-spacing:var(--track-tight);
+  font-family:var(--serif);font-size:17px;line-height:1.3;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
 }
-.u-hdr-sub{display:none;font-size:var(--t-xs);color:var(--ink-soft)}
-.u-hdr-slot{flex:none;display:flex;align-items:center;gap:var(--s2)}
+.u-hdr-sub{
+  display:none;                            /* يظهر من 768px فقط */
+  font-size:12.5px;color:var(--ink-soft);
+}
+.u-hdr-slot{flex:none;display:flex;align-items:center;gap:8px}
 .u-hdr-slot:empty{display:none}
-
 @media(min-width:768px){
-  .u-hdr-in{min-height:var(--hdr-h-lg);padding:var(--s3) var(--s6);gap:var(--s4)}
-  .u-hdr-title{font-size:var(--t-2xl);white-space:normal}
+  .u-hdr{
+    /* الضبابية مكلفة على الأجهزة المتوسطة أثناء التمرير، فتقتصر على
+       الشاشات الكبيرة حيث الأداء أوفر. */
+    background:rgba(245,242,236,.9);backdrop-filter:blur(12px);
+  }
+  .u-hdr-in{min-height:64px;padding:12px 24px;gap:16px}
+  .u-hdr-title{font-size:21px;white-space:normal}
   .u-hdr-sub{display:block}
 }
-@media(min-width:1024px){
-  /* داخل الهيكل الجانبي صار شريط الصفحة سطرًا شفّافًا يعلو المحتوى، لا
-     لوحًا مستقلًا: الشريط الجانبي هو من يحمل هوية التنقّل الآن. */
-  .u-hdr{
-    background:color-mix(in srgb,var(--canvas) 82%,transparent);
-    backdrop-filter:blur(14px) saturate(140%);
-    -webkit-backdrop-filter:blur(14px) saturate(140%);
-    border-bottom-color:var(--line-soft);
-  }
-  .u-hdr-in{padding-inline:var(--s8);max-width:none}
-  body.has-side .u-hdr [data-nav-open]{display:none}
-}
-/* ظلّ يظهر حين تُغادر الصفحةُ أعلاها — بجدول التمرير في CSS، بلا JS. */
-@supports (animation-timeline:scroll()){
-  .u-hdr{animation:u-hdr-lift linear both;animation-timeline:scroll();animation-range:0px 80px}
-  @keyframes u-hdr-lift{to{box-shadow:0 1px 0 var(--line), var(--e2)}}
+@media(hover:hover){
+  .u-hdr-btn:hover{border-color:var(--slate);color:var(--slate)}
 }
 
-/* =========================================================================
-   الشريط السفلي — الجوال
-   ========================================================================= */
+/* ---------- شريط التنقّل السفلي ---------- */
 .u-tabbar{
   position:fixed;inset-inline:0;bottom:0;z-index:90;
-  /* vw لا %: الكتلة المحتوية لعنصر ثابت تتبع عرض المستند، وأي طبقة مُزاحة
-     خارج الحافة توسّعه فيتمدّد الشريط ويخرج تبويبه الأخير عن الشاشة. */
+  /* 100vw لا 100%: الكتلة المحتوية لعنصر ثابت تتبع عرض المستند، وأي طبقة
+     مُزاحة خارج الحافة (الدرج المغلق) توسّعه — فيتمدّد الشريط معه ويخرج
+     تبويبه الأخير عن الشاشة. vw يقيس المنفذ نفسه. الشريط مخفي فوق 768px
+     فلا يعنيه أن vw تشمل عرض شريط التمرير على سطح المكتب. */
   width:100vw;max-width:100vw;
   display:flex;align-items:stretch;
-  /* لون صلب لا backdrop-filter: الشريط عنصر ثابت يُركَّب في كل إطار
-     تمرير، والضبابية عليه أثقل ما يمكن تحميله على جهاز متوسط. تقتصر
-     الضبابية على شريط الصفحة فوق 1024px حيث الأداء أوفر. */
-  background:var(--surface);
-  border-top:1px solid var(--line);
-  box-shadow:0 -10px 30px -22px rgba(14,24,38,.5);
+  background:var(--paper-2);
+  border-top:1px solid var(--hair);
   padding-bottom:var(--safe-b);
   padding-inline:max(var(--safe-l),0px) max(var(--safe-r),0px);
 }
 .u-tab{
-  position:relative;
-  /* يتغلّب على شبكة الأمان min-width:44px: خمسة تبويبات تتقاسم العرض
-     بالتساوي (≥64px لكلٍّ على أضيق شاشة) فالهدف يفي بالحدّ أصلًا. */
+  /* يتغلّب على شبكة الأمان min-width:44px أعلاه: خمسة تبويبات تتقاسم العرض
+     بالتساوي (≥64px لكلٍّ على أضيق شاشة)، فالهدف يفي بالحد الأدنى أصلًا. */
   flex:1 1 0;min-width:0 !important;
   display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
-  min-height:var(--nav-h);padding:var(--s2) 2px;
+  min-height:var(--nav-h);padding:6px 2px;
   border:none;background:none;cursor:pointer;
-  font-family:var(--sans);font-size:var(--t-2xs);color:var(--n500);
-  transition:color var(--d-fast) linear;
+  font-family:var(--sans);font-size:11px;color:var(--ink-soft);
+  transition:color .2s;
 }
-.u-tab-ico{
-  display:grid;place-items:center;
-  width:38px;height:26px;border-radius:var(--r-full);
-  transition:background-color var(--d) var(--ease);
+.u-tab svg{flex:none;opacity:.75;transition:opacity .2s}
+.u-tab .u-tab-lbl{
+  max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
 }
-.u-tab svg{flex:none;transition:transform var(--d) var(--ease-emph)}
-.u-tab .u-tab-lbl{max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .u-tab[aria-current="page"]{color:var(--slate);font-weight:700}
-/* الحبّة خلف الأيقونة بدل الخطّ العلوي: أوضح على شاشة صغيرة، وتظهر
-   بتوسّع من المركز. */
-.u-tab[aria-current="page"] .u-tab-ico{
-  background:var(--brass-soft);
-  animation:u-pill-in var(--d) var(--ease-emph) both;
+.u-tab[aria-current="page"] svg{opacity:1}
+.u-tab[aria-current="page"]::before{
+  content:"";position:absolute;top:0;width:26px;height:2.5px;border-radius:0 0 3px 3px;
+  background:var(--brass);
 }
-.u-tab[aria-current="page"] svg{transform:translateY(-1px)}
-.u-tab:active svg{transform:scale(.88)}
-@keyframes u-pill-in{from{transform:scaleX(.4);opacity:0}to{transform:none;opacity:1}}
-
+.u-tab{position:relative}
+/* المحتوى يحتاج مساحة أسفله وإلا غطّاه الشريط */
 body.has-tabbar{padding-bottom:calc(var(--nav-h) + var(--safe-b))}
 @media(min-width:768px){
   .u-tabbar{display:none}
   body.has-tabbar{padding-bottom:0}
 }
 
-/* =========================================================================
-   الطبقات — الحجاب والدرج والورقة
-   ========================================================================= */
+/* ---------- الحجاب المشترك (للدرج والأوراق) ---------- */
 .u-scrim{
   position:fixed;inset:0;z-index:100;
-  background:rgba(7,13,23,.5);
-  backdrop-filter:blur(3px);
-  -webkit-backdrop-filter:blur(3px);
-  opacity:0;visibility:hidden;
-  transition:opacity var(--d-slow) var(--ease),visibility var(--d-slow) linear;
+  background:rgba(22,40,59,.38);
+  opacity:0;visibility:hidden;transition:opacity .3s,visibility .3s;
 }
 .u-scrim.show{opacity:1;visibility:visible}
 
+/* ---------- الدرج الجانبي ---------- */
 .u-drawer{
   position:fixed;top:0;bottom:0;inset-inline-start:0;z-index:101;
   width:min(320px,88vw);
-  background:linear-gradient(180deg,var(--b800),var(--b900) 70%,#050C16);
-  color:var(--on-slate);
-  box-shadow:var(--e4);
+  background:var(--paper);border-inline-end:1px solid var(--hair);
+  box-shadow:var(--shadow-lg);
   display:flex;flex-direction:column;
-  padding:calc(var(--s4) + var(--safe-t)) var(--s4) calc(var(--s4) + var(--safe-b));
+  padding:calc(16px + var(--safe-t)) 16px calc(16px + var(--safe-b));
   overflow-y:auto;overscroll-behavior:contain;
   transform:translateX(-102%);
   /* visibility إلى جانب transform: الإخفاء بالإزاحة وحدها يُبقي الدرج في
-     حسابات التخطيط — يوسّع scrollWidth ويبقى محتواه قابلًا للتركيز. */
+     حسابات التخطيط — يوسّع scrollWidth فيظهر تمرير أفقي، ويبقى محتواه
+     قابلًا للتركيز ومقروءًا لقارئ الشاشة وهو مغلق. */
   visibility:hidden;
-  transition:transform var(--d-slow) var(--ease-emph),visibility var(--d-slow) linear;
+  transition:transform .38s var(--ease),visibility .38s;
 }
 html[dir=rtl] .u-drawer{transform:translateX(102%)}
 .u-drawer.show{transform:none !important;visibility:visible}
-.u-drawer::before{
-  content:"";position:absolute;inset:0;pointer-events:none;
-  background:repeating-radial-gradient(circle at 84% 10%,
-    rgba(207,166,89,.075) 0 1px, rgba(207,166,89,0) 1px 26px);
-  mask-image:linear-gradient(180deg,#000,rgba(0,0,0,.2) 60%,transparent);
-}
-.u-drawer>*{position:relative}
 .u-drawer-head{
-  display:flex;align-items:center;justify-content:space-between;gap:var(--s3);
-  margin-bottom:var(--s4);
+  display:flex;align-items:center;justify-content:space-between;gap:12px;
+  margin-bottom:14px;
 }
-.u-drawer .u-hdr-btn{
-  background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.14);color:#fff;
-  box-shadow:none;
-}
-.u-drawer .eyebrow{color:var(--g300)}
-.u-drawer .eyebrow::before{background:linear-gradient(to left,var(--g300),transparent)}
 .u-drawer-sec{
-  font-size:var(--t-2xs);letter-spacing:var(--track-wide);text-transform:uppercase;
-  color:var(--on-slate-soft);font-weight:700;
-  margin:var(--s4) var(--s3) var(--s2);
+  font-size:11px;letter-spacing:.16em;text-transform:uppercase;
+  color:var(--brass);font-weight:700;
+  margin:16px 0 6px;padding-inline:14px;
 }
-.u-drawer-sec:first-of-type{margin-top:var(--s1)}
+.u-drawer-sec:first-of-type{margin-top:4px}
 .u-navlink{
-  position:relative;
-  display:flex;align-items:center;gap:var(--s3);
-  min-height:48px;padding:var(--s2) var(--s3);
-  border-radius:var(--r-sm);
-  font-size:var(--t-md);color:var(--on-slate);
+  display:flex;align-items:center;gap:12px;
+  min-height:48px;padding:10px 14px;
+  border-radius:12px;font-size:15px;color:var(--ink);
   border:none;background:none;width:100%;
   font-family:var(--sans);text-align:start;cursor:pointer;
-  transition:background-color var(--d-fast) linear,color var(--d-fast) linear;
+  transition:background .18s,color .18s;
 }
-.u-navlink svg{flex:none;opacity:.72}
-.u-navlink[aria-current="page"]{background:rgba(255,255,255,.09);color:#fff;font-weight:500}
-.u-navlink[aria-current="page"] svg{opacity:1;color:var(--g300)}
-.u-navlink[aria-current="page"]::before{
-  content:"";position:absolute;inset-inline-start:0;top:50%;
-  width:3px;height:22px;margin-top:-11px;border-radius:3px;background:var(--g400);
+.u-navlink svg{flex:none;opacity:.7}
+.u-navlink[aria-current="page"]{background:var(--brass-soft);color:var(--slate);font-weight:600}
+.u-navlink[aria-current="page"] svg{opacity:1}
+.u-navlink.danger{color:var(--bad)}
+@media(hover:hover){
+  .u-navlink:hover{background:var(--brass-soft);color:var(--slate)}
+  .u-navlink.danger:hover{background:var(--bad-bg);color:var(--bad)}
 }
-.u-navlink.danger{color:#F0A69C}
-@media(hover:hover) and (pointer:fine){
-  .u-navlink:hover{background:rgba(255,255,255,.06);color:#fff}
-  .u-navlink.danger:hover{background:rgba(206,67,53,.16);color:#FFC7BF}
-}
-.u-navlink:active{background:rgba(255,255,255,.12)}
-.u-navlink:focus-visible{outline:2px solid var(--focus-dark);outline-offset:-2px}
-.u-drawer-foot{margin-top:auto;padding-top:var(--s4);border-top:1px solid rgba(255,255,255,.08)}
-.u-user{padding:0 var(--s3) var(--s3);display:flex;flex-direction:column;gap:3px}
-.u-user-role{font-size:var(--t-2xs);letter-spacing:.12em;text-transform:uppercase;color:var(--g300);font-weight:700}
-.u-user-name{font-size:var(--t-base);font-weight:500;line-height:1.35;color:#fff}
-.u-user-title{font-size:var(--t-xs);color:var(--on-slate-soft)}
+.u-navlink:active{background:var(--hair-2)}
+.u-drawer-foot{margin-top:auto;padding-top:16px;border-top:1px solid var(--hair)}
+.u-user{padding:0 14px 10px;display:flex;flex-direction:column;gap:3px}
+.u-user-role{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--brass);font-weight:700}
+.u-user-name{font-size:14.5px;font-weight:600;line-height:1.35}
+.u-user-title{font-size:12.5px;color:var(--ink-soft)}
 
-/* ---------- الورقة السفلية / الحوار ---------- */
+/* ---------- الورقة السفلية (bottom sheet) ----------
+   النمط المعياري للحوارات على الجوال: تصعد من الأسفل، في متناول الإبهام،
+   وترتفع فوق لوحة المفاتيح بدل أن تختفي خلفها كالحوار المتمركز.
+   من 768px تعود حوارًا متمركزًا تقليديًا. */
 .u-sheet{
   position:fixed;z-index:101;
-  /* --kb يضبطه admin-ui.js من visualViewport: ارتفاع لوحة المفاتيح. */
+  /* --kb يضبطه admin-ui.js من visualViewport: ارتفاع لوحة المفاتيح.
+     بدونه تبقى الورقة أسفل الشاشة خلف اللوحة والحقل المركَّز غير مرئي. */
   inset-inline:0;bottom:var(--kb,0px);top:auto;
   width:100%;max-height:calc(88svh - var(--kb,0px));
   display:flex;flex-direction:column;
-  background:var(--surface);
+  background:var(--paper);
   border-radius:var(--sheet-r) var(--sheet-r) 0 0;
-  box-shadow:var(--e4);
+  box-shadow:var(--shadow-lg);
   transform:translateY(101%);
-  transition:transform var(--d-slow) var(--ease-emph);
+  transition:transform .34s var(--ease);
   overscroll-behavior:contain;
   padding-bottom:var(--safe-b);
 }
 .u-sheet.show{transform:none}
 .u-sheet-grip{
-  flex:none;width:44px;height:4px;border-radius:var(--r-full);
-  background:var(--n300);margin:var(--s2) auto 2px;
+  flex:none;width:38px;height:4px;border-radius:999px;
+  background:var(--hair);margin:8px auto 2px;
 }
 .u-sheet-head{
   flex:none;position:relative;
-  padding:var(--s3) var(--s5) var(--s4);
-  padding-inline-end:calc(var(--s5) + var(--tap) + var(--s2));
-  border-bottom:1px solid var(--line-soft);
+  padding:12px 20px 14px;
+  padding-inline-end:calc(20px + var(--tap) + 8px);   /* مساحة زر الإغلاق */
+  border-bottom:1px solid var(--hair);
 }
-.u-sheet-head h3{font-size:var(--t-xl);margin:0;font-family:var(--serif)}
+.u-sheet-head h3{font-size:18px;margin:0;font-family:var(--serif)}
 .u-sheet-close{
-  position:absolute;top:var(--s1);inset-inline-end:var(--s3);
+  position:absolute;top:6px;inset-inline-end:14px;
   width:var(--tap);height:var(--tap);
   display:inline-flex;align-items:center;justify-content:center;
-  border:1px solid var(--line);border-radius:var(--r-sm);
-  background:var(--surface);color:var(--ink-soft);cursor:pointer;font-size:var(--t-md);
-  transition:background-color var(--d-fast) linear,color var(--d-fast) linear,transform var(--d-fast) var(--ease);
+  border:1px solid var(--hair);border-radius:12px;
+  background:var(--paper-2);color:var(--ink-soft);cursor:pointer;font-size:15px;
 }
-.u-sheet-close:active{transform:scale(.92)}
 .u-sheet-body{
   flex:1 1 auto;min-height:0;
   overflow-y:auto;overscroll-behavior:contain;
   -webkit-overflow-scrolling:touch;
-  padding:var(--s5);
+  padding:18px 20px;
 }
 .u-sheet-foot{
-  flex:none;display:flex;flex-wrap:wrap;gap:var(--s3);
-  padding:var(--s4) var(--s5);border-top:1px solid var(--line-soft);
-  background:var(--n25);
+  flex:none;display:flex;flex-wrap:wrap;gap:10px;
+  padding:14px 20px;border-top:1px solid var(--hair);
+  background:var(--paper);
 }
-.u-sheet-foot>*{flex:1 1 100%}
+.u-sheet-foot>*{flex:1 1 100%}          /* أزرار بعرض كامل مكدّسة على الجوال */
 @media(min-width:480px){
   .u-sheet-foot{flex-wrap:nowrap;justify-content:flex-end}
   .u-sheet-foot>*{flex:0 0 auto}
@@ -654,44 +359,43 @@ html[dir=rtl] .u-drawer{transform:translateX(102%)}
 @media(min-width:768px){
   .u-sheet{
     inset-inline:auto;top:50%;left:50%;bottom:auto;
-    width:min(580px,92vw);max-height:88dvh;
-    border-radius:var(--r-xl);
-    border:1px solid var(--line);
-    transform:translate(-50%,-50%) scale(.96);
+    width:min(560px,92vw);max-height:88dvh;
+    border-radius:18px;
+    transform:translate(-50%,-50%) scale(.97);
   }
   .u-sheet.show{transform:translate(-50%,-50%) scale(1)}
   .u-sheet-grip{display:none}
 }
-.u-confirm .u-sheet-body{padding:var(--s6) var(--s5) var(--s2)}
-.u-confirm-msg{margin:0;font-size:var(--t-md);line-height:1.75;color:var(--ink)}
-@media(min-width:768px){ .u-confirm{width:min(440px,92vw)} }
 
-/* =========================================================================
-   بطاقات البيانات (بديل الجداول على الجوال)
-   ========================================================================= */
-.u-cardlist{display:flex;flex-direction:column;gap:var(--s3)}
+/* ورقة التأكيد المدمّر — بديل window.confirm */
+.u-confirm .u-sheet-body{padding:22px 20px 8px}
+.u-confirm-msg{margin:0;font-size:15.5px;line-height:1.75;color:var(--ink)}
+@media(min-width:768px){ .u-confirm{width:min(420px,92vw)} }
+
+/* ---------- قائمة البطاقات (بديل الجداول على الجوال) ---------- */
+.u-cardlist{display:flex;flex-direction:column;gap:10px}
 .u-datacard{
   display:block;width:100%;text-align:start;
-  background:var(--surface);border:1px solid var(--line);border-radius:var(--r-md);
-  padding:var(--s4);color:inherit;font-family:var(--sans);
-  box-shadow:var(--e1);
-  transition:border-color var(--d-fast) linear,box-shadow var(--d) var(--ease),transform var(--d) var(--ease);
+  background:var(--paper-2);border:1px solid var(--hair);border-radius:14px;
+  padding:14px 15px;color:inherit;font-family:var(--sans);
+  transition:border-color .2s,background .2s;
 }
-.u-datacard:active{transform:scale(.992);box-shadow:none}
-@media(hover:hover) and (pointer:fine){
-  .u-datacard:hover{border-color:var(--line-control);box-shadow:var(--e2);transform:translateY(-2px)}
+.u-datacard:active{background:var(--paper);border-color:var(--brass)}
+@media(hover:hover){
+  .u-datacard:hover{border-color:var(--brass);background:var(--paper)}
 }
-.u-dc-top{display:flex;align-items:flex-start;justify-content:space-between;gap:var(--s3)}
-.u-dc-title{font-size:var(--t-md);font-weight:500;line-height:var(--lh-snug);min-width:0;overflow-wrap:anywhere}
-.u-dc-sub{font-size:var(--t-xs);color:var(--ink-soft);margin-top:3px;overflow-wrap:anywhere}
-.u-dc-chips{display:flex;flex-wrap:wrap;gap:var(--s2);margin-top:var(--s3)}
-.u-dc-rows{margin-top:var(--s3);padding-top:var(--s3);border-top:1px solid var(--line-soft);
-  display:flex;flex-direction:column;gap:var(--s2)}
-.u-dc-row{display:flex;justify-content:space-between;gap:var(--s3);font-size:var(--t-sm)}
+.u-dc-top{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+.u-dc-title{font-size:14.5px;font-weight:600;line-height:1.45;min-width:0;overflow-wrap:anywhere}
+.u-dc-sub{font-size:12.5px;color:var(--ink-soft);margin-top:3px;overflow-wrap:anywhere}
+.u-dc-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.u-dc-rows{margin-top:10px;padding-top:10px;border-top:1px solid var(--hair-2);
+  display:flex;flex-direction:column;gap:5px}
+.u-dc-row{display:flex;justify-content:space-between;gap:12px;font-size:12.5px}
 .u-dc-row .k{color:var(--ink-soft);flex:none}
 .u-dc-row .v{text-align:end;min-width:0;overflow-wrap:anywhere}
-.u-dc-actions{display:flex;flex-wrap:wrap;gap:var(--s2);margin-top:var(--s4)}
+.u-dc-actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:12px}
 
+/* التبديل بين البطاقات والجدول */
 .u-only-mobile{display:block}
 .u-only-desk{display:none}
 @media(min-width:768px){
@@ -699,69 +403,67 @@ html[dir=rtl] .u-drawer{transform:translateX(102%)}
   .u-only-desk{display:block}
 }
 
-/* =========================================================================
-   المرشّحات والشرائح
-   ========================================================================= */
-.u-filterbar{display:flex;align-items:center;gap:var(--s2);margin-bottom:var(--s3)}
+/* ---------- شرائح المرشّحات المطبَّقة ---------- */
+.u-filterbar{display:flex;align-items:center;gap:8px;margin-bottom:12px}
 .u-filterbar .u-search{flex:1;min-width:0}
 .u-filter-btn{
-  flex:none;display:inline-flex;align-items:center;gap:var(--s2);
-  min-height:var(--tap);padding:0 var(--s4);
-  border:1px solid var(--line);border-radius:var(--r-btn);
-  background:var(--surface);color:var(--ink);
-  font-family:var(--sans);font-size:var(--t-base);cursor:pointer;
-  box-shadow:var(--e1);
+  flex:none;display:inline-flex;align-items:center;gap:7px;
+  min-height:var(--tap);padding:0 14px;
+  border:1px solid var(--hair);border-radius:12px;
+  background:var(--paper-2);color:var(--ink);
+  font-family:var(--sans);font-size:14px;cursor:pointer;
 }
 .u-filter-btn .u-count{
   display:inline-flex;align-items:center;justify-content:center;
-  min-width:20px;height:20px;padding:0 6px;border-radius:var(--r-full);
-  background:var(--slate);color:#fff;font-size:var(--t-2xs);font-weight:700;
+  min-width:20px;height:20px;padding:0 6px;border-radius:999px;
+  background:var(--slate);color:#fff;font-size:11.5px;font-weight:700;
 }
-.u-chips{display:flex;flex-wrap:wrap;gap:var(--s2);margin-bottom:var(--s4)}
+.u-chips{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:14px}
 .u-chip{
-  display:inline-flex;align-items:center;gap:var(--s2);
-  min-height:32px;padding:4px 6px 4px var(--s3);
-  border:1px solid var(--line);border-radius:var(--r-full);
-  background:var(--surface);font-size:var(--t-xs);color:var(--ink);
+  display:inline-flex;align-items:center;gap:7px;
+  min-height:34px;padding:4px 6px 4px 12px;
+  border:1px solid var(--hair);border-radius:999px;
+  background:var(--paper-2);font-size:12.5px;color:var(--ink);
 }
-html[dir=rtl] .u-chip{padding:4px var(--s3) 4px 6px}
+html[dir=rtl] .u-chip{padding:4px 12px 4px 6px}
 .u-chip button{
-  width:24px;height:24px;flex:none;
+  width:26px;height:26px;flex:none;
   display:inline-flex;align-items:center;justify-content:center;
-  border:none;border-radius:50%;background:var(--n100);
-  color:var(--ink-soft);cursor:pointer;font-size:var(--t-sm);line-height:1;
-  transition:background-color var(--d-fast) linear,transform var(--d-fast) var(--ease);
+  border:none;border-radius:50%;background:var(--hair-2);
+  color:var(--ink-soft);cursor:pointer;font-size:13px;line-height:1;
 }
-.u-chip button:active{transform:scale(.85)}
 .u-chip-clear{
-  min-height:32px;padding:4px var(--s4);border-radius:var(--r-full);
-  border:1px dashed var(--line-strong);background:none;
-  color:var(--ink-soft);font-family:var(--sans);font-size:var(--t-xs);cursor:pointer;
+  min-height:34px;padding:4px 14px;border-radius:999px;
+  border:1px dashed var(--hair);background:none;
+  color:var(--ink-soft);font-family:var(--sans);font-size:12.5px;cursor:pointer;
 }
 
-/* =========================================================================
-   رابط الرجوع وشريط الإجراءات
-   ========================================================================= */
+/* ---------- رابط الرجوع ----------
+   يبقى مستعملًا داخل الصفحات (تفاصيل التذكرة والرواتب، ورسالة "غير مصرّح")
+   بعد أن استُبدلت ترويسات الصفحات بالترويسة المشتركة. كان بلا حشو إطلاقًا
+   (~21px ارتفاعًا) وهو أصغر هدف لمس كان في التطبيق. */
 .u-back,.back-link{
-  display:inline-flex;align-items:center;gap:var(--s2);
-  min-height:var(--tap);padding-inline-end:var(--s3);
-  border-radius:var(--r-sm);
-  font-size:var(--t-base);color:var(--slate);font-weight:500;
-  transition:color var(--d-fast) linear,gap var(--d) var(--ease);
+  display:inline-flex;align-items:center;gap:7px;
+  min-height:var(--tap);padding-inline-end:12px;
+  border-radius:10px;
+  font-size:14.5px;color:var(--slate);
+  /* بلا هامش سالب: في RTL يعني inline-start الجهةَ اليمنى، فهامش -12px
+     يدفع الرابط خارج حافة الشاشة (قِيس فعليًا: right=402 على شاشة 390). */
 }
-.u-back:active,.back-link:active{background:var(--n100)}
-@media(hover:hover) and (pointer:fine){
-  .u-back:hover,.back-link:hover{color:var(--brass-ink);gap:var(--s3)}
+.u-back:active,.back-link:active{background:var(--hair-2)}
+@media(hover:hover){
+  .u-back:hover,.back-link:hover{color:var(--brass)}
 }
 @media(min-width:768px){
-  .u-back,.back-link{font-size:var(--t-sm);min-height:36px}
+  .u-back,.back-link{font-size:13px;min-height:36px}
 }
 
+/* ---------- شريط إجراءات لاصق أسفل الشاشة ---------- */
 .u-actionbar{
   position:sticky;bottom:0;z-index:50;
-  display:flex;gap:var(--s3);
-  margin-top:var(--s5);padding:var(--s3) 0 calc(var(--s3) + var(--safe-b));
-  background:linear-gradient(to top,var(--canvas) 72%,rgba(245,247,250,0));
+  display:flex;gap:10px;
+  margin-top:20px;padding:12px 0 calc(12px + var(--safe-b));
+  background:linear-gradient(to top,var(--paper) 72%,rgba(245,242,236,0));
 }
 .u-actionbar>.u-btn{flex:1}
 body.has-tabbar .u-actionbar{bottom:calc(var(--nav-h) + var(--safe-b))}
@@ -770,199 +472,79 @@ body.has-tabbar .u-actionbar{bottom:calc(var(--nav-h) + var(--safe-b))}
   .u-actionbar>.u-btn{flex:0 0 auto}
 }
 
-/* =========================================================================
-   الأزرار
-   -------------------------------------------------------------------------
-   المستطيل الليّن حلّ محلّ الكبسولة. الأساسي يحمل تدرّجًا رأسيًا وخطّ ضوء
-   علويًا وظلًّا ملوَّنًا بلون الزرّ نفسه — لا رماديًا — فيبدو مضيئًا لا
-   مُلصقًا.
-   ========================================================================= */
+/* ---------- الأزرار ---------- */
 .u-btn{
-  display:inline-flex;align-items:center;justify-content:center;gap:var(--s2);
-  min-height:var(--tap);padding:0 var(--s5);
-  border-radius:var(--r-btn);border:1px solid transparent;
-  font-family:var(--sans);font-size:var(--t-md);font-weight:500;
-  letter-spacing:.01em;cursor:pointer;
-  transition:background-color var(--d-fast) linear,border-color var(--d-fast) linear,
-             color var(--d-fast) linear,box-shadow var(--d) var(--ease),
-             transform var(--d-fast) var(--ease);
+  display:inline-flex;align-items:center;justify-content:center;gap:8px;
+  min-height:var(--tap);padding:0 20px;
+  border-radius:999px;border:1px solid transparent;
+  font-family:var(--sans);font-size:15px;font-weight:500;
+  cursor:pointer;transition:background .2s,border-color .2s,color .2s;
 }
-.u-btn-primary{
-  background-image:linear-gradient(180deg,var(--b600),var(--b700));
-  background-color:var(--b700);border-color:var(--b700);color:#fff;
-  box-shadow:inset 0 1px 0 rgba(255,255,255,.14), 0 1px 2px rgba(8,18,32,.24), 0 6px 16px -8px rgba(18,48,73,.55);
+.u-btn-primary{background:var(--slate);color:#fff;border-color:var(--slate)}
+.u-btn-ghost{background:var(--paper-2);color:var(--ink);border-color:var(--hair)}
+.u-btn-danger{background:var(--bad-bg);color:var(--bad);border-color:#EACCC5}
+.u-btn:disabled{opacity:.5;cursor:not-allowed}
+.u-btn:active:not(:disabled){transform:translateY(1px)}
+@media(hover:hover){
+  .u-btn-primary:hover:not(:disabled){background:var(--slate-2);border-color:var(--slate-2)}
+  .u-btn-ghost:hover:not(:disabled){border-color:var(--slate);color:var(--slate)}
+  .u-btn-danger:hover:not(:disabled){background:#F0D6D0;border-color:var(--bad-line)}
 }
-.u-btn-ghost{
-  background:var(--surface);color:var(--ink);border-color:var(--line);
-  box-shadow:var(--e1);
-}
-.u-btn-danger{
-  background:var(--bad-bg);color:var(--bad);border-color:#F0CDC7;
-  box-shadow:var(--e1);
-}
-.u-btn:disabled{opacity:.45;cursor:not-allowed;box-shadow:none;background-image:none}
-@media(hover:hover) and (pointer:fine){
-  .u-btn-primary:hover:not(:disabled){
-    background-image:linear-gradient(180deg,var(--b500),var(--b600));
-    border-color:var(--b600);
-    box-shadow:inset 0 1px 0 rgba(255,255,255,.18), 0 2px 4px rgba(8,18,32,.22), 0 12px 26px -10px rgba(18,48,73,.65);
-    transform:translateY(-1px);
-  }
-  .u-btn-ghost:hover:not(:disabled){border-color:var(--line-control);box-shadow:var(--e2);transform:translateY(-1px)}
-  .u-btn-danger:hover:not(:disabled){background:#F8DDD8;border-color:var(--bad-line);transform:translateY(-1px)}
-}
-.u-btn:active:not(:disabled){transform:translateY(1px);box-shadow:inset 0 2px 5px rgba(8,18,32,.22)}
-.u-btn-primary:focus-visible,.u-btn-danger:focus-visible{outline-color:var(--b600)}
 @media(min-width:768px){
-  .u-btn{min-height:38px;font-size:var(--t-base);padding:0 var(--s4)}
+  .u-btn{min-height:40px;font-size:13.5px;padding:0 18px}
 }
 
-/* =========================================================================
-   حالات التحميل والفراغ
-   ========================================================================= */
+/* ---------- هياكل التحميل ---------- */
 .u-skeleton{
-  border-radius:var(--r-sm);
-  background:linear-gradient(100deg,var(--n100) 18%,var(--n25) 46%,var(--n100) 74%);
-  background-size:240% 100%;
-  animation:u-shimmer 1.7s var(--ease) infinite;
+  border-radius:12px;
+  background:linear-gradient(90deg,var(--hair-2) 25%,var(--paper-2) 50%,var(--hair-2) 75%);
+  background-size:200% 100%;
+  animation:u-shimmer 1.3s linear infinite;
 }
-@keyframes u-shimmer{from{background-position:240% 0}to{background-position:-140% 0}}
-.u-skeleton-card{height:160px;margin-bottom:var(--s3)}
-.u-skeleton-row{height:64px;margin-bottom:var(--s3)}
+@keyframes u-shimmer{from{background-position:200% 0}to{background-position:-200% 0}}
+.u-skeleton-card{height:150px;margin-bottom:12px}
+.u-skeleton-row{height:64px;margin-bottom:10px}
 
-/* شريط تقدّم شعري أعلى الصفحة أثناء انتظار الشبكة */
-.u-topbar{
-  position:fixed;top:0;inset-inline:0;height:2px;z-index:200;
-  background:linear-gradient(90deg,var(--g400),var(--b500),var(--g400));
-  background-size:220% 100%;
-  transform:scaleX(0);transform-origin:inline-start;
-  transition:transform var(--d-slow) var(--ease);
-}
-.u-topbar.on{transform:scaleX(1);animation:u-topbar-slide 1.2s linear infinite}
-@keyframes u-topbar-slide{to{background-position:220% 0}}
-
-/* حالة الفراغ — كانت سطرًا رماديًا في المنتصف، صارت لوحة لها هيئة */
-.u-empty{
-  display:flex;flex-direction:column;align-items:center;text-align:center;
-  gap:var(--s3);padding:var(--s12) var(--s5);color:var(--ink-soft);
-}
-.u-empty-ico{
-  width:56px;height:56px;border-radius:var(--r-lg);
-  display:grid;place-items:center;
-  background:var(--n100);color:var(--n400);
-  box-shadow:inset 0 1px 0 rgba(255,255,255,.8);
-}
-.u-empty-title{font-family:var(--serif);font-size:var(--t-xl);color:var(--ink)}
-.u-empty-note{font-size:var(--t-sm);max-width:38ch;line-height:1.7}
-
-/* =========================================================================
-   التنبيهات العائمة وشريط التقدّم
-   ========================================================================= */
+/* ---------- التنبيهات العائمة (toast) ---------- */
 .u-toast-wrap{
   position:fixed;z-index:300;
-  inset-inline:var(--s3);
-  bottom:calc(var(--s3) + var(--safe-b));
-  display:flex;flex-direction:column;gap:var(--s2);
+  inset-inline:12px;
+  bottom:calc(12px + var(--safe-b));
+  display:flex;flex-direction:column;gap:8px;
   pointer-events:none;
 }
-body.has-tabbar .u-toast-wrap{bottom:calc(var(--nav-h) + var(--safe-b) + var(--s3))}
+body.has-tabbar .u-toast-wrap{bottom:calc(var(--nav-h) + var(--safe-b) + 12px)}
 .u-toast{
   pointer-events:auto;
-  display:flex;align-items:flex-start;gap:var(--s3);
-  padding:var(--s3) var(--s4);border-radius:var(--r-md);
-  border:1px solid var(--line);background:var(--surface);
-  box-shadow:var(--e4);
-  font-size:var(--t-base);line-height:1.6;color:var(--ink);
-  opacity:0;transform:translateY(14px) scale(.97);
-  transition:opacity var(--d) var(--ease),transform var(--d-slow) var(--ease-emph);
+  display:flex;align-items:flex-start;gap:10px;
+  padding:13px 16px;border-radius:14px;
+  border:1px solid var(--hair);background:var(--paper-2);
+  box-shadow:var(--shadow-lg);
+  font-size:14px;line-height:1.6;color:var(--ink);
+  opacity:0;transform:translateY(10px);
+  transition:opacity .25s,transform .25s;
   overflow-wrap:anywhere;
 }
 .u-toast.show{opacity:1;transform:none}
-.u-toast.ok{background:var(--ok-bg);border-color:#C4E3D5;color:var(--ok)}
-.u-toast.bad{background:var(--bad-bg);border-color:#F0CDC7;color:var(--bad)}
-.u-toast.warn{background:var(--warn-bg);border-color:#EDD9A6;color:var(--warn)}
+.u-toast.ok{background:var(--ok-bg);border-color:#CDE2D5;color:var(--ok)}
+.u-toast.bad{background:var(--bad-bg);border-color:#EACCC5;color:var(--bad)}
+.u-toast.warn{background:var(--warn-bg);border-color:#E9D9AE;color:var(--warn)}
 @media(min-width:768px){
-  .u-toast-wrap{inset-inline:auto var(--s6);bottom:var(--s6);width:min(400px,90vw)}
-}
-@media(min-width:1024px){
-  body.has-side .u-toast-wrap{inset-inline:auto calc(var(--side-w) + var(--s6))}
+  .u-toast-wrap{inset-inline:auto 24px;bottom:24px;width:min(380px,90vw)}
 }
 
+/* ---------- شريط تقدّم الرفع ---------- */
 .u-progress{
-  height:6px;border-radius:var(--r-full);background:var(--n100);
-  overflow:hidden;margin-top:var(--s2);
-  box-shadow:inset 0 1px 2px rgba(14,24,38,.08);
+  height:6px;border-radius:999px;background:var(--hair);
+  overflow:hidden;margin-top:8px;
 }
 .u-progress span{
-  display:block;height:100%;width:0;border-radius:var(--r-full);
-  background:linear-gradient(90deg,var(--b600),var(--b500));
-  box-shadow:inset 0 1px 0 rgba(255,255,255,.25);
-  transition:width var(--d-fast) linear;
+  display:block;height:100%;width:0;border-radius:999px;
+  background:var(--slate);transition:width .18s linear;
 }
 
-/* =========================================================================
-   الحركة الكبرى — انتقال الصفحات وظهور الأقسام
-   -------------------------------------------------------------------------
-   الاثنان بلا سطر JavaScript، ويتلاشيان بلا أثر حيث لا يُدعمان.
-   ========================================================================= */
-
-/* انتقال بين مستندين: كل صفحة هنا مستند مستقلّ، فهذه هي الآلية الصحيحة
-   بدل محاكاة SPA. الشريط الجانبي والترويسة يُستثنيان بالاسم فيبقيان
-   ثابتين بينما ينزلق المحتوى وحده — وهذا ما يعطي الإحساس بتطبيق واحد. */
-@view-transition{navigation:auto}
-@media(prefers-reduced-motion:no-preference){
-  ::view-transition-old(root){animation:u-vt-out 160ms var(--ease-in) both}
-  ::view-transition-new(root){animation:u-vt-in var(--d-slow) var(--ease) both}
-  @keyframes u-vt-out{to{opacity:0;transform:translateY(-6px)}}
-  @keyframes u-vt-in{from{opacity:0;transform:translateY(12px)}}
-  .u-side{view-transition-name:u-app-side}
-  .u-tabbar{view-transition-name:u-app-tabs}
-  ::view-transition-old(u-app-side),::view-transition-new(u-app-side),
-  ::view-transition-old(u-app-tabs),::view-transition-new(u-app-tabs){
-    animation:none;mix-blend-mode:normal;
-  }
-}
-
-/* ---------- ظهور العناصر أثناء التمرير ----------
-   الآلية: IntersectionObserver في app-nav.js يضع data-rv على كل عنصر
-   يراقبه، ثم u-in حين يدخل المنفذ — مرّة واحدة لكل عنصر ثم يتوقّف عن
-   مراقبته. فبمجرّد أن يظهر عنصر يبقى ظاهرًا.
-
-   جُرِّبت أولًا animation-timeline:view() لأنها بلا JavaScript، فأخفقت
-   إخفاقًا حقيقيًا: مدى entry يكتمل حين تعبر الحافةُ السفلى للعنصر
-   الحافةَ السفلى للمنفذ، وعنصرٌ في ذيل الصفحة لا يبلغ ذلك أبدًا لانعدام
-   ما يُمرَّر بعده — فيعلق عند شفافية جزئية إلى الأبد. رصد الفحص ثلاثة
-   عناصر عالقة في الصفحة الرئيسية (رأس قسم وبطاقتا تواصل).
-
-   الإخفاء معلَّق على data-rv الذي يضعه السكربت: إن لم يعمل JavaScript
-   أو لم يُدعَم IntersectionObserver، لا يُخفى شيء أصلًا.
-   الإزاحة رأسية فقط — أي إزاحة أفقية تُوسّع scrollWidth. */
-html.u-anim [data-rv]{opacity:0;transform:translateY(22px)}
-html.u-anim [data-rv].u-in{
-  opacity:1;transform:none;
-  transition:opacity var(--d-slow) var(--ease), transform var(--d-xslow) var(--ease);
-}
-
-/* دخول أوّلي للمحتوى — يعمل في كل المتصفّحات ويغطّي أول شاشة قبل أن
-   يتسلّم جدولُ التمرير بقيةَ الصفحة. */
-@keyframes u-enter{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
-
-/* =========================================================================
-   الحركة المخفَّضة
-   ========================================================================= */
+/* ---------- الحركة المخفَّضة ---------- */
 @media(prefers-reduced-motion:reduce){
   *{animation-duration:.01ms !important;animation-iteration-count:1 !important;
     transition-duration:.01ms !important;scroll-behavior:auto !important}
-  html.u-anim [data-rv]{opacity:1 !important;transform:none !important}
-}
-
-/* =========================================================================
-   الطباعة الورقية
-   ========================================================================= */
-@media print{
-  .u-side,.u-hdr,.u-tabbar,.u-drawer,.u-scrim,.u-toast-wrap,.u-actionbar,.u-topbar{
-    display:none !important;
-  }
-  body,body.has-side{background:#fff !important;padding:0 !important}
-  html.u-anim [data-rv]{opacity:1 !important;transform:none !important}
 }
