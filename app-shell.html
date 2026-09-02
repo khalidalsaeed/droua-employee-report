@@ -65,7 +65,7 @@ section.block{padding-block:26px}
   padding:15px 15px 14px;box-shadow:var(--shadow);position:relative;overflow:hidden;
   transition:transform .5s cubic-bezier(.16,.8,.3,1),box-shadow .5s}
 @media(hover:hover){.kpi:hover{transform:translateY(-4px);box-shadow:var(--shadow-lg)}}
-.kpi[role=button]:active{transform:scale(.985)}
+a.kpi:active{transform:scale(.985)}
 .kpi .lbl{font-size:12.5px;color:var(--ink-soft);line-height:1.5}
 .kpi .big{font-family:var(--serif);font-size:34px;line-height:1;margin-top:8px}
 @media(min-width:768px){.kpi .big{font-size:46px;margin-top:12px}}
@@ -76,15 +76,27 @@ section.block{padding-block:26px}
 .kpi .rail{position:absolute;inset-inline-start:0;top:0;bottom:0;width:4px;background:var(--brass)}
 .kpi.ok .rail{background:var(--ok-line)} .kpi.warn .rail{background:var(--warn-line)} .kpi.bad .rail{background:var(--bad-line)}
 @media(min-width:768px){.kpi{padding:22px 22px 20px}}
-.kpi[role=button]{cursor:pointer}
-.kpi[role=button]:hover{border-color:var(--warn-line)}
-.kpi[role=button]:focus-visible{outline:2px solid var(--warn-line);outline-offset:3px}
+/* البطاقة القابلة للنقر رابط <a>، فتُنسَّق كصندوق لا كنصّ متدفّق */
+a.kpi{display:block;cursor:pointer;color:inherit;text-decoration:none}
+/* الحوم محروس: بلا @media(hover:hover) يلتصق التمييز على iOS بعد النقر
+   ولا يزول، فتبدو البطاقة محدَّدة دائمًا. */
+@media(hover:hover) and (pointer:fine){
+  a.kpi:hover{border-color:var(--warn-line)}
+}
+/* الكحلي لا لون التحذير: --warn-line عند 2.40:1 على الورق، ومؤشّر
+   التركيز عنصر واجهة حدّه 3:1. الكحلي 13.42:1. */
+a.kpi:focus-visible{outline:2px solid var(--slate);outline-offset:3px}
 .kpi .kpi-hint{font-size:11.5px;color:var(--warn);font-weight:700;margin-top:10px;display:inline-flex;align-items:center;gap:4px}
 .soon-flag{display:inline-flex;align-items:center;gap:6px;margin-top:16px;width:100%;justify-content:center;text-align:center;
   background:var(--warn-bg);color:var(--warn);border:1px solid #E9D9AE;border-radius:11px;padding:10px 12px;
-  font-family:var(--sans);font-size:12.5px;font-weight:500;cursor:pointer;transition:.25s}
-button.soon-flag:hover{background:#F2E4C2;border-color:var(--warn-line)}
-button.soon-flag:focus-visible{outline:2px solid var(--warn-line);outline-offset:2px}
+  font-family:var(--sans);font-size:12.5px;font-weight:500;transition:.25s}
+/* صار رابطًا لا زرًّا؛ والحوم محروس كي لا يلتصق على اللمس */
+a.soon-flag{cursor:pointer;min-height:var(--tap)}
+@media(hover:hover) and (pointer:fine){
+  a.soon-flag:hover{background:#F2E4C2;border-color:var(--warn-line)}
+}
+a.soon-flag:active{background:#EFDFBB}
+a.soon-flag:focus-visible{outline:2px solid var(--slate);outline-offset:2px}
 .soon-flag.ok{background:var(--ok-bg);color:var(--ok);border-color:#CDE2D5;cursor:default}
 .soon-flag b{font-weight:700}
 
@@ -285,11 +297,11 @@ select.in{appearance:none;cursor:pointer;background-image:url("data:image/svg+xm
 .hovercard .hc-stat{display:flex;gap:8px;margin-top:12px;padding-top:12px;border-top:1px solid var(--hair)}
 .hovercard .hc-stat .chip{flex:1;justify-content:center}
 
-/* ---------- Expiring-soon modal ---------- */
+/* ---------- Modal shell (QR preview) ---------- */
 .mscrim{position:fixed;inset:0;background:rgba(22,40,59,.42);backdrop-filter:blur(4px);z-index:110;
   opacity:0;visibility:hidden;transition:.3s;display:flex;align-items:center;justify-content:center;padding:24px}
 .mscrim.show{opacity:1;visibility:visible}
-.modal{width:min(620px,96vw);max-height:86vh;background:var(--paper);border-radius:18px;overflow:hidden;
+.modal{width:min(620px,96vw);max-height:86dvh;background:var(--paper);border-radius:18px;overflow:hidden;
   box-shadow:var(--shadow-lg);display:flex;flex-direction:column;transform:translateY(14px) scale(.98);transition:transform .34s cubic-bezier(.16,.8,.3,1)}
 .mscrim.show .modal{transform:none}
 .modal .mhead{padding:22px 26px;background:var(--warn-bg);border-bottom:1px solid #E9D9AE;position:relative}
@@ -299,18 +311,6 @@ select.in{appearance:none;cursor:pointer;background-image:url("data:image/svg+xm
 .modal .mclose{position:absolute;top:18px;inset-inline-end:20px;width:34px;height:34px;border-radius:9px;border:1px solid #E0CFA3;
   background:#fff;color:var(--warn);cursor:pointer;font-size:15px}
 .modal .mbody{overflow:auto;padding:12px}
-.srow{display:flex;align-items:center;gap:14px;padding:14px 16px;border-radius:12px;cursor:pointer;transition:background .2s}
-.srow:hover{background:var(--warn-bg)}
-.srow+.srow{border-top:1px solid var(--hair-2)}
-.srow .doc{width:42px;height:42px;border-radius:10px;flex:none;display:flex;align-items:center;justify-content:center;
-  background:var(--paper-2);border:1px solid var(--hair);color:var(--slate)}
-.srow .info{min-width:0;flex:1}
-.srow .info .n{font-family:var(--serif);font-size:16px}
-.srow .info .d{font-size:12px;color:var(--ink-soft);margin-top:2px}
-.srow .days{margin-inline-start:auto;text-align:center;flex:none}
-.srow .days .dn{font-family:var(--serif);font-size:22px;color:var(--warn);line-height:1}
-.srow .days .dt{font-size:10.5px;color:var(--ink-soft)}
-
 /* ---------- Drawer ---------- */
 .scrim{position:fixed;inset:0;background:rgba(22,40,59,.34);backdrop-filter:blur(3px);z-index:100;opacity:0;visibility:hidden;transition:.35s}
 .scrim.show{opacity:1;visibility:visible}
@@ -589,7 +589,6 @@ footer.site{border-top:1px solid var(--hair);margin-top:30px}
 </footer>
 
 <div class="hovercard" id="hovercard" role="tooltip"></div>
-<div class="mscrim" id="mscrim"><div class="modal" id="soonModal" role="dialog" aria-modal="true" aria-labelledby="mTitle"></div></div>
 <div class="scrim" id="scrim"></div>
 <aside class="drawer" id="drawer" role="dialog" aria-modal="true" aria-labelledby="drName"></aside>
 
@@ -599,15 +598,19 @@ footer.site{border-top:1px solid var(--hair);margin-top:30px}
 <script src="/admin-ui.js?v=2"></script>
 <script src="/app-nav.js?v=1"></script>
 <script src="/tickets-ui.js?v=2"></script>
+<!-- منطق حالة الوثائق (SOON و statusOf و isSoon و empDocs …) مشترك مع
+     صفحة /expiring.html. يجب أن يسبق سكربت الصفحة لأن تعريفاته عامّة. -->
+<script src="/doc-status.js?v=1"></script>
 <script>
 let DATA = [];
 let FIN = {};
 /* Ajeer staffing-contract permits — matched to employees by iqama number.
    A new permit for the same iqama supersedes the older one (see dedupeAjeer). */
 let AJEER = [];
-let SOON = 90; // days threshold for "expiring soon"
-const NOW = new Date(); NOW.setHours(0,0,0,0);
-const arMonths=["يناير","فبراير","مارس","أبريل","مايو","يونيو","يوليو","أغسطس","سبتمبر","أكتوبر","نوفمبر","ديسمبر"];
+/* SOON و NOW و arMonths و F ودوالّ الحالة كلها في /doc-status.js الآن —
+   تُحمَّل قبل هذا السكربت وتُعرَّف في النطاق العام، فتبقى مواضع استدعائها
+   هنا كما هي. السبب: صفحة /expiring.html تحتاج المنطق نفسه، ونسخة ثانية
+   منه تعني أن يخالف رقمُ البطاقة قائمةَ الصفحة عند أول تعديل. */
 
 /* ---------- auth gate ----------
    Section visibility is driven by the permission list /api/auth/me returns
@@ -641,28 +644,8 @@ async function initAuthGate(){
   }
 }
 
-/* ---------- helpers ---------- */
-function parseDate(s){
-  if(s==null) return null;
-  if(typeof s==="string" && s.includes("/")){const[m,d,y]=s.split("/").map(Number);return new Date(y,m-1,d);}
-  const d=new Date(s); return isNaN(d)?null:d;
-}
-function fmtDate(s){const d=parseDate(s);if(!d)return "—";return `${d.getDate()} ${arMonths[d.getMonth()]} ${d.getFullYear()}`;}
-function daysLeft(s){const d=parseDate(s);if(!d)return null;d.setHours(0,0,0,0);return Math.round((d-NOW)/86400000);}
-/* All statuses are computed live from the device date (new Date()); nothing is hardcoded. */
-function statusOf(s){
-  const n=daysLeft(s);
-  if(n===null) return {key:"na",cls:"na",n:null};
-  if(n<0)      return {key:"bad",cls:"bad",n};
-  if(n===0)    return {key:"today",cls:"today",n:0};
-  if(n<=SOON)  return {key:"warn",cls:"warn",n};
-  return {key:"ok",cls:"ok",n};
-}
-/* license status honours the "جاري السداد" override if present (data-driven) */
-function licStatus(e){
-  if(e && e._licPending) return {key:"pending",cls:"pending",n:daysLeft(e[F.licExp])};
-  return statusOf(e[F.licExp]);
-}
+/* ---------- helpers ----------
+   parseDate و fmtDate و daysLeft و statusOf و licStatus في doc-status.js */
 function statusLabel(st){
   switch(st.key){
     case "pending": return "جاري السداد";
@@ -699,32 +682,13 @@ function docStatusLabel(st){
     default:        return `🟢 سارية · متبقي ${st.n} يوم`;
   }
 }
-function isExpired(st){return st.key==="bad";}
-function isValid(st){return st.key==="ok"||st.key==="warn"||st.key==="today"||st.key==="pending";}
-function isSoon(st){return st.key==="warn"||st.key==="today";}   /* needs attention */
-/* every document that carries an expiry date — applied without exception */
-function empDocs(e){return [
-  {type:"إقامة",     tk:"iq",  exp:e[F.iqExp],   st:statusOf(e[F.iqExp])},
-  {type:"رخصة عمل",  tk:"lic", exp:e[F.licExp],  st:licStatus(e)},
-  {type:"الجواز",    tk:"pass",exp:e[F.passExp], st:statusOf(e[F.passExp])},
-];}
+/* isExpired و isValid و isSoon و empDocs في doc-status.js */
 function money(v){if(v==null||v==="")return "—";return Number(v).toLocaleString("en-US",{minimumFractionDigits:0,maximumFractionDigits:2})+" ريال";}
 function clean(v){return (v==null||v===""||v==="لايوجد")?"—":v;}
 function initials(name){const p=String(name).trim().split(/\s+/);return (p[0]||"").slice(0,1)+((p[1]||"").slice(0,1)||"");}
 function esc(s){return String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
 
-/* normalise field names (source has trailing spaces on some keys) */
-const F={
-  eid:"الرقم الوظيفي", name:"اسم العامل", iqama:"رقم الإقامة", nat:"الجنسية", job:"المهنة",
-  dob:"تاريخ الميلاد", iqExp:"تاريخ انتهاء الإقامة", cStart:"بداية العقد", cEnd:"نهاية العقد",
-  base:"الراتب الأساسي", allow:"البدلات", total:"إجمالي الراتب", phone:"جوال العامل", email:"البريد الإلكتروني",
-  transfer:"حالة النقل", iqState:"حالة الإقامة", licState:"حالة رخصة العمل ", insState:"حالة التأمين الطبي ",
-  acc:"رقم الحساب", iban:"IBAN", bank:"اسم البنك", benef:"اسم المستفيد (كما في البنك)",
-  licExp:"تاريخ انتهاء رخصة العمل", govCost:"التكلفة الحكومية الإجمالية", passport:"رقم الجواز",
-  passExp:"تاريخ انتهاء الجواز", sex:"الجنس", iqIssue:"تاريخ اصدار الاقامة", iqHijri:"تاريخ انتهاء الاقامة بالهجري",
-  employer:"رقم صاحب العمل", joinDate:"تاريخ المباشرة", annualLeave:"الاجازة السنوية",
-  insCompany:"اسم شركة التأمين", insCost:"تكلفة التأمين الطبي", note:"ملاحظة"
-};
+/* خريطة أسماء الحقول F في doc-status.js (تستعملها empDocs هناك أيضًا) */
 
 /* ---------- state ---------- */
 let state={q:"",dept:"",nat:"",iq:"",lic:"",sort:"eid"};
@@ -751,26 +715,34 @@ const cIq=countBy(e=>statusOf(e[F.iqExp]));
 const cLic=countBy(e=>licStatus(e));
 const validIq=cIq.valid, expiredIq=cIq.expired, soonIq=cIq.soon;
 const validLic=cLic.valid, expiredLic=cLic.expired, soonLic=cLic.soon, pendingLic=cLic.pending;
-/* soon / expired across EVERY document that has an expiry date (residency, license, passport, …) */
-const soonDocs=[], expiredDocs=[];
-DATA.forEach((e,i)=>empDocs(e).forEach(dc=>{
-  if(dc.st.key==="na")return;
-  if(isSoon(dc.st)) soonDocs.push({i,...dc});
-  else if(isExpired(dc.st)) expiredDocs.push({i,...dc});
-}));
-soonDocs.sort((a,b)=>a.st.n-b.st.n);
-const byType=(arr,tk)=>arr.filter(x=>x.tk===tk).length;
-function typeCap(arr){const p=[];const iq=byType(arr,"iq"),lc=byType(arr,"lic"),ps=byType(arr,"pass");
-  p.push(`إقامات ${iq}`);p.push(`رخص عمل ${lc}`);if(ps)p.push(`جوازات ${ps}`);return p.join(" · ");}
+/* الوثائق قريبة الانتهاء والمنتهية عبر كل موظف وكل وثيقة لها تاريخ
+   انتهاء. الحساب من doc-status.js — وهي الدالّة نفسها التي تستدعيها
+   صفحة /expiring.html، فرقمُ البطاقة وقائمةُ الصفحة لا يمكن أن يختلفا. */
+const soonDocs=DocStatus.collectSoonDocs(DATA);
+const expiredDocs=DocStatus.collectExpiredDocs(DATA);
 
-function kpiCard(o){return `<div class="kpi ${o.tone||''}" ${o.id?`id="${o.id}" role="button" tabindex="0" aria-label="${o.aria||''}"`:''}>
-  <div class="rail"></div><div class="lbl">${o.lbl}</div><div class="big num">${o.big}</div><div class="cap">${o.cap}</div>${o.hint?`<div class="kpi-hint">${o.hint}</div>`:''}</div>`;}
+/* البطاقة ذات href تُصيَّر رابطًا حقيقيًا لا <div role="button">: الرابط
+   يمنح دعم لوحة المفاتيح (Enter) والفتح في تبويب جديد وقائمة السياق
+   وشريط الحالة بسلوك المتصفّح المعياري بلا سطر JavaScript واحد. */
+function kpiCard(o){
+  const inner=`<div class="rail"></div><div class="lbl">${o.lbl}</div><div class="big num">${o.big}</div><div class="cap">${o.cap}</div>${o.hint?`<div class="kpi-hint">${o.hint}</div>`:''}`;
+  return o.href
+    ? `<a class="kpi ${o.tone||''}" href="${o.href}" aria-label="${esc(o.aria||'')}">${inner}</a>`
+    : `<div class="kpi ${o.tone||''}">${inner}</div>`;
+}
+/* الانتقال إلى الصفحة يتطلّب employees:view — وهي صلاحية بياناتها.
+   بدونها تبقى البطاقة رقمًا للاطّلاع لا رابطًا يقود إلى تحويلة. */
+const canOpenSoon=AdminUI.can("employees","view");
 kpiRow.innerHTML=[
   kpiCard({tone:"feature",lbl:"إجمالي الموظفين",big:DATA.length,cap:"موظف مسجّل في القائمة"}),
   kpiCard({tone:"ok",lbl:"إقامات سارية",big:validIq,cap:soonIq?`منها ${soonIq} قريبة من الانتهاء`:"جميعها غير منتهية"}),
-  kpiCard({tone:"warn",id:"kpiSoon",aria:"عرض الوثائق قريبة الانتهاء",lbl:"وثائق قريبة الانتهاء",big:soonDocs.length,
-           cap:`${typeCap(soonDocs)} — خلال ${SOON} يومًا`,hint:"اضغط لعرض التفاصيل ←"}),
-  kpiCard({tone:"bad",lbl:"وثائق منتهية",big:expiredDocs.length,cap:expiredDocs.length?typeCap(expiredDocs):"لا توجد وثائق منتهية"}),
+  kpiCard({tone:"warn",href:canOpenSoon?"/expiring.html":null,
+           aria:`عرض الوثائق قريبة الانتهاء — ${soonDocs.length} وثيقة خلال ${DocStatus.SOON} يومًا`,
+           lbl:"وثائق قريبة الانتهاء",big:soonDocs.length,
+           cap:`${DocStatus.summarizeDocs(soonDocs)} — خلال ${DocStatus.SOON} يومًا`,
+           hint:canOpenSoon?"عرض القائمة كاملة ←":""}),
+  kpiCard({tone:"bad",lbl:"وثائق منتهية",big:expiredDocs.length,
+           cap:expiredDocs.length?DocStatus.summarizeDocs(expiredDocs):"لا توجد وثائق منتهية"}),
 ].join("");
 
 /* SVG donut — offline, no dependency */
@@ -799,7 +771,9 @@ donut("chartIqama",[["سارية",validIq,C.ok],["منتهية",expiredIq,C.bad]
 donut("chartLicense",[["سارية",validLic,C.ok], pendingLic?["جاري السداد",pendingLic,C.pending]:null, ["منتهية",expiredLic,C.bad]],"legendLicense");
 /* amber "expiring soon" flags below each donut (still valid, need renewal) */
 function soonFlag(id,n){const el=document.getElementById(id);if(!el)return;
-  el.innerHTML = n? `<button class="soon-flag" data-soon="1">⚠️ قريبة الانتهاء خلال ${SOON} يومًا: <b class="num">${n}</b> — اضغط للعرض</button>`
+  el.innerHTML = n? (canOpenSoon
+                    ? `<a class="soon-flag" href="/expiring.html">⚠️ قريبة الانتهاء خلال ${DocStatus.SOON} يومًا: <b class="num">${n}</b> — عرض القائمة</a>`
+                    : `<span class="soon-flag">⚠️ قريبة الانتهاء خلال ${DocStatus.SOON} يومًا: <b class="num">${n}</b></span>`)
                   : `<span class="soon-flag ok">✓ لا توجد وثائق قريبة الانتهاء</span>`;}
 soonFlag("soonIq",soonIq); soonFlag("soonLic",soonLic);
 
@@ -1252,7 +1226,7 @@ function openDrawer(i){
 }
 function closeDrawer(){scrim.classList.remove("show");drawer.classList.remove("show");document.body.style.overflow="";}
 scrim.addEventListener("click",closeDrawer);
-document.addEventListener("keydown",e=>{if(e.key==="Escape"){closeDrawer();closeSoonModal();closeSidenav();closeQrModal();}});
+document.addEventListener("keydown",e=>{if(e.key==="Escape"){closeDrawer();closeSidenav();closeQrModal();}});
 
 /* ---------- employee management (add/edit/delete) ----------
    Every control below is shown only when the user holds the matching
@@ -1661,45 +1635,13 @@ function employeeTicketsBlock(eid){
   </div>`;
 }
 
-/* ---------- expiring-soon modal ---------- */
-const mscrim=document.getElementById("mscrim"),soonModal=document.getElementById("soonModal");
-const docIcon={iq:'<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18"/>',
-               lic:'<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M9 13h6M9 17h4"/>',
-               pass:'<rect x="4" y="2" width="16" height="20" rx="2"/><circle cx="12" cy="10" r="3"/><path d="M9 17h6"/>'};
-/* attention list = every document (residency, license, passport) needing action — computed live */
-function collectSoon(){ return soonDocs.map(d=>({i:d.i,type:d.type,tk:d.tk,exp:d.exp,n:d.st.n,key:d.st.key})); }
-function openSoonModal(){
-  const items=collectSoon();
-  soonModal.innerHTML=`
-    <div class="mhead">
-      <button class="mclose" id="mClose" aria-label="إغلاق">✕</button>
-      <span class="eyebrow">تنبيه · متابعة الوثائق</span>
-      <h3 id="mTitle">وثائق قريبة الانتهاء</h3>
-      <p>${items.length} وثيقة ستنتهي خلال ${SOON} يومًا — مرتّبة من الأقرب انتهاءً. اضغط على أي صف لفتح ملف الموظف.</p>
-    </div>
-    <div class="mbody">${items.map(it=>`
-      <div class="srow" data-i="${it.i}" tabindex="0" role="button">
-        <span class="doc"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${docIcon[it.tk]}</svg></span>
-        <span class="info"><span class="n">${esc(DATA[it.i][F.name])}</span><span class="d">${it.type} · تنتهي ${fmtDate(it.exp)} · #${esc(DATA[it.i][F.eid])}</span></span>
-        <span class="days">${it.key==="today"?`<span class="dn" style="font-size:15px">تنتهي<br>اليوم</span>`:`<span class="dn num">${it.n}</span><span class="dt">يوم متبقٍّ</span>`}</span>
-      </div>`).join("")||`<div style="padding:30px;text-align:center;color:var(--ink-soft)">لا توجد وثائق قريبة الانتهاء</div>`}</div>`;
-  mscrim.classList.add("show");document.body.style.overflow="hidden";
-  document.getElementById("mClose").onclick=closeSoonModal;
-  soonModal.querySelectorAll(".srow").forEach(r=>{
-    const open=()=>{closeSoonModal();openDrawer(+r.dataset.i);};
-    r.addEventListener("click",open);
-    r.addEventListener("keydown",ev=>{if(ev.key==="Enter"||ev.key===" "){ev.preventDefault();open();}});
-  });
-  document.getElementById("mClose").focus();
-}
-function closeSoonModal(){mscrim.classList.remove("show");if(!drawer.classList.contains("show"))document.body.style.overflow="";}
-mscrim.addEventListener("click",e=>{if(e.target===mscrim)closeSoonModal();});
-(function wireSoonTriggers(){
-  const k=document.getElementById("kpiSoon");
-  if(k){k.addEventListener("click",openSoonModal);
-        k.addEventListener("keydown",e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();openSoonModal();}});}
-  document.querySelectorAll("button.soon-flag[data-soon]").forEach(b=>b.addEventListener("click",openSoonModal));
-})();
+/* عرض «الوثائق قريبة الانتهاء» انتقل إلى صفحة مستقلّة: /expiring.html.
+   البطاقة وشارات الرسوم البيانية روابط <a> إليها الآن، فلا حاجة إلى حوار
+   ولا إلى ربط مستمعين ولا إلى إدارة سجلّ تصفّح — المتصفّح يتكفّل بذلك.
+   حُذفت هنا: openSoonModal و closeSoonModal و collectSoon و docIcon
+   و syncSoonToHash ومستمعا popstate/hashchange ومفوِّضا النقر ولوحة
+   المفاتيح. القائمة نفسها تُبنى الآن في expiring-shell.html من
+   DocStatus.collectSoonDocs — المصدر نفسه الذي يعطي البطاقة رقمها. */
 
 /* ---------- wiring ---------- */
 function reset(){state={q:"",dept:"",nat:"",iq:"",lic:"",sort:"eid"};
@@ -1806,6 +1748,9 @@ function showSkeletons(){
   render();
   renderAjeer();
   renderTicketsWidget();
+  /* فتح مباشر من الرابط: /#expiring يعرض القائمة فور اكتمال التحميل،
+     فيصلح للحفظ في المفضّلة وللمشاركة. يأتي بعد renderDashboardTop()
+     لأن soonDocs لا تُحسب قبله. */
 })();
 </script>
 </body>

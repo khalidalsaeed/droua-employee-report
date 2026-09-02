@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>الوثائق قريبة الانتهاء — ذروة الصعود</title>
+<meta name="theme-color" content="#16283B">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/assets/icons/icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="/assets/icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="ذروة الصعود">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="preload" href="/assets/fonts/thmanyah-sans-400.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/assets/fonts/thmanyah-serif-display-700.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/ui.css?v=1">
+<style>
+*{box-sizing:border-box}
+/* نفس عرض حاوية صفحات الإدارة */
+:root{--wrap-max:1080px}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);line-height:1.6;font-size:16px;-webkit-font-smoothing:antialiased}
+h1,h2,.serif{font-family:var(--serif);font-weight:400}
+/* padding المختصر يمسح الحشو الجانبي الذي تضعه .wrap لأن تخصيص main.block
+   أعلى منها؛ الحشو الرأسي وحده هو المقصود. */
+main.block{padding-block:20px}
+@media(min-width:768px){main.block{padding-block:40px}}
+.sec-head{display:flex;flex-direction:column;align-items:stretch;gap:10px;
+  padding-bottom:12px;margin-bottom:18px;border-bottom:1px solid var(--hair)}
+.sec-head>*{min-width:0}
+.sec-head h1{font-size:21px;overflow-wrap:anywhere}
+@media(min-width:768px){
+  .sec-head{flex-direction:row;align-items:center;justify-content:space-between;gap:16px;padding-bottom:18px;margin-bottom:26px}
+  .sec-head h1{font-size:25px}
+}
+.sec-sub{font-size:12.5px;color:var(--ink-soft);line-height:1.7}
+.sec-sub b{color:var(--ink);font-weight:700}
+
+.panel{background:var(--paper-2);border:1px solid var(--hair);border-radius:var(--r);box-shadow:var(--shadow);overflow:hidden}
+.tk-scroll{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:13.5px}
+thead th{background:var(--paper);text-align:start;padding:13px 14px;font-size:11.5px;color:var(--ink-soft);font-weight:600;border-bottom:1px solid var(--hair);white-space:nowrap}
+tbody td{padding:13px 14px;border-bottom:1px solid var(--hair-2);vertical-align:middle}
+tbody tr:last-child td{border-bottom:none}
+@media(hover:hover) and (pointer:fine){ tbody tr:hover{background:var(--paper)} }
+.emp-name{font-weight:500;overflow-wrap:anywhere}
+.doc-type{display:inline-flex;align-items:center;gap:7px;white-space:nowrap}
+.doc-type svg{flex:none;opacity:.6}
+
+/* شارة الأيام المتبقية — تتبع نفس مفاتيح الحالة القادمة من doc-status.js */
+.d-chip{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:999px;
+  font-size:11.5px;font-weight:700;white-space:nowrap}
+.d-chip .dot{width:6px;height:6px;border-radius:50%;flex:none}
+.d-chip.today{background:var(--today-bg);color:var(--today)}
+.d-chip.today .dot{background:var(--today-line)}
+.d-chip.warn{background:var(--warn-bg);color:var(--warn)}
+.d-chip.warn .dot{background:var(--warn-line)}
+/* الأشدّ إلحاحًا داخل نافذة الـ90 يومًا يستحقّ تمييزًا أقوى من البقية */
+.d-chip.urgent{background:var(--bad-bg);color:var(--bad)}
+.d-chip.urgent .dot{background:var(--bad-line)}
+
+.empty-note{padding:48px 20px;text-align:center;color:var(--ink-soft);line-height:1.8}
+.empty-note .big{font-family:var(--serif);font-size:20px;color:var(--ink);display:block;margin-bottom:6px}
+.access-denied{text-align:center;padding:56px 20px;color:var(--ink-soft)}
+.loading-note{padding:40px 20px;text-align:center;color:var(--ink-soft)}
+</style>
+<link rel="stylesheet" href="/admin-ui.css?v=2">
+</head>
+<!-- data-page-title يقرأه app-nav.js عند التركيب التلقائي: هذه الصفحة
+     ليست إحدى الوجهات المعروفة في DEST، فلا عنوان لها في PAGE_TITLES. -->
+<body data-page-title="الوثائق قريبة الانتهاء">
+
+<!-- يملؤها app-nav.js — ترويسة وشريط سفلي ودرج موحّدة لكل الصفحات -->
+<header class="u-hdr" data-app-header></header>
+
+<div id="appRoot">
+  <main class="block wrap">
+    <a class="back-link" href="/">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+      العودة إلى لوحة المؤشّرات
+    </a>
+    <div class="sec-head">
+      <h1>الوثائق قريبة الانتهاء</h1>
+      <div class="sec-sub" id="summary">…</div>
+    </div>
+    <div id="content"><div class="loading-note">جارٍ تحميل البيانات…</div></div>
+  </main>
+</div>
+
+<script src="/admin-ui.js?v=2"></script>
+<script src="/app-nav.js?v=1"></script>
+<!-- المصدر الوحيد لشرط «قريب الانتهاء»؛ الصفحة الرئيسية تحمّل الملف نفسه -->
+<script src="/doc-status.js?v=1"></script>
+<script>
+/* صفحة عرض الوثائق قريبة الانتهاء.
+   ==========================================================================
+   لا تحسب هذه الصفحة شيئًا بنفسها: تجلب الموظفين ثم تسلّمهم إلى
+   DocStatus.collectSoonDocs() — الدالّة نفسها التي يشتقّ منها رقمُ بطاقة
+   «وثائق قريبة الانتهاء» في الصفحة الرئيسية. العتبة (SOON) وشرط الاحتساب
+   (isSoon) وقائمة أنواع الوثائق (empDocs) كلها معرَّفة مرّة واحدة في
+   /doc-status.js، فلا يمكن للرقم أن يخالف هذه القائمة.
+
+   الاستثناءات تأتي من هناك أيضًا بلا تكرار: المنتهية (bad) والبعيدة (ok)
+   ورخصة «جاري السداد» (pending) والوثيقة بلا تاريخ مسجَّل (na). */
+
+function esc(s){return String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
+
+const ICON={
+  iq:'<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18"/>',
+  lic:'<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M9 13h6M9 17h4"/>',
+  pass:'<rect x="4" y="2" width="16" height="20" rx="2"/><circle cx="12" cy="10" r="3"/><path d="M9 17h6"/>',
+};
+function docIcon(tk){
+  return `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON[tk]||""}</svg>`;
+}
+
+/* شارة الأيام. المفاتيح من doc-status.js: today للمنتهية اليوم، warn لما
+   دونها. «عاجل» تمييز بصري فقط لما تبقّى له أسبوع أو أقلّ — لا يغيّر
+   شيئًا في الاحتساب. */
+function daysChip(st){
+  if(st.key==="today") return `<span class="d-chip today"><span class="dot"></span>تنتهي اليوم</span>`;
+  const cls=st.n<=7?"urgent":"warn";
+  return `<span class="d-chip ${cls}"><span class="dot"></span><span class="num">${st.n}</span> يومًا</span>`;
+}
+
+function renderRows(rows){
+  const content=document.getElementById("content");
+  if(!rows.length){
+    content.innerHTML=`<div class="panel"><div class="empty-note">
+      <span class="big">لا توجد وثائق قريبة الانتهاء</span>
+      كل الإقامات ورخص العمل والجوازات المسجَّلة إمّا سارية لمدة تتجاوز
+      ${DocStatus.SOON} يومًا، وإمّا خارج نطاق هذا المؤشّر.</div></div>`;
+    return;
+  }
+  /* جدول على الشاشات العريضة، وبطاقات على الجوال — نفس النمط المعتمد في
+     بقية صفحات القوائم. الحقول الخمسة نفسها في الوجهين. */
+  const table=`
+    <div class="panel u-only-desk"><div class="tk-scroll"><table>
+      <thead><tr>
+        <th>الموظف</th><th>الرقم الوظيفي</th><th>نوع الوثيقة</th>
+        <th>تاريخ الانتهاء</th><th>المتبقّي</th>
+      </tr></thead>
+      <tbody>${rows.map(d=>`<tr>
+        <td class="emp-name">${esc(d.emp[DocStatus.F.name])}</td>
+        <td class="num">${esc(d.emp[DocStatus.F.eid])}</td>
+        <td><span class="doc-type">${docIcon(d.tk)}${esc(d.type)}</span></td>
+        <td class="num">${esc(DocStatus.fmtDate(d.exp))}</td>
+        <td>${daysChip(d.st)}</td>
+      </tr>`).join("")}</tbody>
+    </table></div></div>`;
+
+  const cards=`
+    <div class="u-cardlist u-only-mobile">${rows.map(d=>`
+      <div class="u-datacard">
+        <div class="u-dc-top">
+          <div>
+            <div class="u-dc-title">${esc(d.emp[DocStatus.F.name])}</div>
+            <div class="u-dc-sub"><span class="doc-type">${docIcon(d.tk)}${esc(d.type)}</span></div>
+          </div>
+          ${daysChip(d.st)}
+        </div>
+        <div class="u-dc-rows">
+          <div class="u-dc-row"><span class="k">الرقم الوظيفي</span><span class="v num">${esc(d.emp[DocStatus.F.eid])}</span></div>
+          <div class="u-dc-row"><span class="k">تاريخ الانتهاء</span><span class="v num">${esc(DocStatus.fmtDate(d.exp))}</span></div>
+        </div>
+      </div>`).join("")}</div>`;
+
+  content.innerHTML=table+cards;
+}
+
+function renderSummary(rows){
+  const el=document.getElementById("summary");
+  el.innerHTML = rows.length
+    ? `<b class="num">${rows.length}</b> وثيقة تنتهي خلال <b class="num">${DocStatus.SOON}</b> يومًا · ${esc(DocStatus.summarizeDocs(rows))} — مرتّبة من الأقرب انتهاءً`
+    : `لا توجد وثائق تنتهي خلال ${DocStatus.SOON} يومًا`;
+}
+
+async function initAuthGate(){
+  try{
+    const r=await fetch("/api/auth/me");
+    if(!r.ok){ location.href="/login.html"; return false; }
+    const j=await r.json();
+    AdminUI.setUser(j.user);
+    AppNav.setUser();   /* يعيد رسم الشريط السفلي والدرج بالوجهات المسموحة */
+    /* نفس الصلاحية التي يفرضها الخادم على /api/data/employees وعلى هذه
+       الصفحة في lib/auth/permissions.js — الحجب هنا لتجنّب تحويلة عمياء. */
+    if(!AdminUI.can("employees","view")){
+      document.getElementById("appRoot").innerHTML=
+        `<main class="block wrap"><div class="access-denied">لا تملك صلاحية عرض سجلّ الموظفين.<br><a class="back-link" href="/">العودة إلى لوحة المؤشّرات</a></div></main>`;
+      return false;
+    }
+    return true;
+  }catch(err){
+    location.href="/login.html";
+    return false;
+  }
+}
+
+(async function boot(){
+  if(!(await initAuthGate())) return;
+  try{
+    const j=await AdminUI.api("GET","/api/data/employees");
+    const rows=DocStatus.collectSoonDocs(j.items);
+    renderSummary(rows);
+    renderRows(rows);
+  }catch(err){
+    document.getElementById("summary").textContent="";
+    document.getElementById("content").innerHTML=
+      `<div class="panel"><div class="empty-note">تعذّر تحميل البيانات — تحقّق من الاتصال وأعد تحميل الصفحة.</div></div>`;
+    AdminUI.toastError(err.message||"تعذّر تحميل البيانات");
+  }
+})();
+</script>
+</body>
+</html>

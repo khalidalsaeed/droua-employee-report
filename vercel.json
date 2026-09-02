@@ -25,6 +25,7 @@
     { "source": "/tickets.html", "destination": "/api/app?kind=page&page=tickets" },
     { "source": "/tickets/:id", "destination": "/api/app?kind=page&page=ticket-detail&id=:id" },
     { "source": "/reports.html", "destination": "/api/app?kind=page&page=reports" },
+    { "source": "/expiring.html", "destination": "/api/app?kind=page&page=expiring" },
     { "source": "/api/auth/:path*", "destination": "/api/app?kind=api&apiPath=auth/:path*" },
     { "source": "/api/data/:path*", "destination": "/api/app?kind=api&apiPath=data/:path*" },
     { "source": "/api/files/:path*", "destination": "/api/app?kind=api&apiPath=files/:path*" },
