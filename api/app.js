@@ -48,6 +48,7 @@ const PAGE_FILES = {
   tickets: "tickets-shell.html",
   "ticket-detail": "ticket-detail-shell.html",
   reports: "reports-shell.html",
+  expiring: "expiring-shell.html",
 };
 /* Which permission each page needs is declared once, in
    lib/auth/permissions.js (PAGE_PERMISSION) — not duplicated here.
