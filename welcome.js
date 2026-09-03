@@ -125,17 +125,20 @@ const Welcome = (function () {
     disarm();
     clearTimeout(safety);
 
-    const text = (v) => (typeof v === "string" ? v.trim() : "");
-    const name = text(user && user.name);
-    const jobTitle = text(user && user.jobTitle);
+    const name = typeof user === "object" && user && typeof user.name === "string"
+      ? user.name.trim() : "";
     const greeting = greetingFor(new Date());
     /* بلا اسم لا تُعرض قيمة بديلة ولا فاصلة معلّقة — التحية وحدها. */
     greetEl.textContent = name ? `${greeting}، ${name}` : greeting;
-    /* المسمّى الوظيفي كما هو في بيانات المستخدم؛ غيابه يعني سطرًا محذوفًا
-       لا سطرًا فارغًا. */
+    /* الدور بتسميته العربية. الترجمة تأتي من AppNav.roleLabel — المصدر
+       المشترك المطابق لـ lib/auth/roles.js — فلا نسخة جديدة من الخريطة
+       هنا. دور غير معروف يعيد "" فيُحذف السطر: القيمة البرمجية الخام
+       (owner، admin) لا تُعرض للمستخدم بحال. */
     if (roleEl) {
-      roleEl.textContent = jobTitle;
-      roleEl.hidden = !jobTitle;
+      const label = (typeof AppNav !== "undefined" && AppNav.roleLabel)
+        ? AppNav.roleLabel(user && user.role) : "";
+      roleEl.textContent = label;
+      roleEl.hidden = !label;
     }
 
     prevFocus = document.activeElement;

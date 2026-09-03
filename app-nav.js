@@ -141,10 +141,22 @@ const AppNav = (function () {
     return drawerEl;
   }
 
+  /* التسميات العربية للأدوار، مطابقة لـ ROLE_LABELS في lib/auth/roles.js.
+     مُصدَّرة عبر AppNav.roleLabel() لأن هذا الملف يُحمَّل في كل صفحة قبل
+     سكربتاتها، فهو الموضع الطبيعي لها بدل نسخة رابعة في كل مستهلك جديد. */
   const ROLE_LABELS = {
-    owner: "Owner - المالك", admin: "مدير النظام", hr: "الموارد البشرية",
+    owner: "المالك", admin: "مدير النظام", hr: "الموارد البشرية",
     finance: "المالية", viewer: "قراءة فقط",
   };
+  /* بطاقة الهوية في الدرج تعرض للمالك الكلمة الإنجليزية أيضًا منذ نشأتها.
+     يُحتفظ بها هنا كتجاوز عرضٍ صريح حتى لا يتغيّر نصّ الدرج تبعًا لتغيير
+     لم يُطلب فيه. */
+  const DRAWER_ROLE_TEXT = { owner: "Owner - المالك" };
+
+  /* تُعيد "" لدور غير معروف — لا تُعرض القيمة البرمجية الخام للمستخدم. */
+  function roleLabel(role) {
+    return ROLE_LABELS[role] || "";
+  }
 
   function renderDrawer() {
     if (!drawerEl) return;
@@ -173,7 +185,7 @@ const AppNav = (function () {
              الجوال — حيث تُفعَّل الإشعارات أصلًا. -->
         <div class="u-push" data-push-row></div>
         ${u ? `<div class="u-user">
-          <span class="u-user-role">${esc(ROLE_LABELS[u.role] || u.role || "")}</span>
+          <span class="u-user-role">${esc(DRAWER_ROLE_TEXT[u.role] || roleLabel(u.role) || u.role || "")}</span>
           <span class="u-user-name">${esc(u.name || "")}</span>
           ${u.jobTitle ? `<span class="u-user-title">${esc(u.jobTitle)}</span>` : ""}
         </div>` : ""}
@@ -399,7 +411,7 @@ const AppNav = (function () {
     return slot;
   }
 
-  return { mountChrome, setUser, openDrawer, closeDrawer, headerSlot, logout, currentPage, svg, ICONS: I };
+  return { mountChrome, setUser, openDrawer, closeDrawer, headerSlot, logout, currentPage, roleLabel, svg, ICONS: I };
 })();
 
 /* تركيب تلقائي: كل صفحة تحمل <header class="u-hdr" data-app-header> فارغًا
