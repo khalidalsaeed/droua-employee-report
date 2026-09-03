@@ -6,6 +6,7 @@ const recipientsData = require("../../lib/data/recipients");
 const { buildEmail } = require("../../lib/notifications/templates");
 const { sendMail } = require("../../lib/notifications/mailer");
 const { runScheduled } = require("../../lib/reports/monthlyReport");
+const { sendExpiryDigest } = require("../../lib/push/notify");
 
 /* The daily expiry scan. Kept as one function on purpose (Hobby caps the
    count), so the monthly report rides along on the same trigger: runScheduled
@@ -15,17 +16,21 @@ const { runScheduled } = require("../../lib/reports/monthlyReport");
    The two jobs are isolated from each other — neither one's failure may stop
    the other, which is why each has its own try/catch and its own key in the
    response instead of sharing one. */
-async function runExpiryAlerts() {
-  const [employees, permitExpiryByIqama, documentTypes, recipients] = await Promise.all([
+/* المسح مرّة واحدة. القناتان — البريد والدفع — تستهلكان مخرجاته نفسها،
+   فلا يوجد في المنصّة تعريفان لِما يستحقّ تنبيهًا. */
+async function scanOnce() {
+  const [employees, permitExpiryByIqama, documentTypes] = await Promise.all([
     loadEmployees(),
     loadPermitExpiryByIqama(),
     documentTypesData.list(),
-    recipientsData.list(),
   ]);
   for (const emp of employees) emp.ajeerExp = permitExpiryByIqama.get(String(emp.iqama)) || null;
-  const alerts = scanExpirations(employees, documentTypes);
-  if (!alerts.length) return { ok: true, sent: 0, alerts: 0 };
+  return scanExpirations(employees, documentTypes);
+}
 
+async function runExpiryAlerts(alerts) {
+  if (!alerts.length) return { ok: true, sent: 0, alerts: 0 };
+  const recipients = await recipientsData.list();
   const results = [];
   for (const recipient of recipients) {
     const email = buildEmail(recipient, alerts);
@@ -49,12 +54,32 @@ module.exports = async function handler(req, res) {
       return;
     }
   }
-  let expiry, monthly;
+  let alerts = null, expiry, monthly, push;
   try {
-    expiry = await runExpiryAlerts();
+    alerts = await scanOnce();
   } catch (err) {
+    alerts = null;
     expiry = { ok: false, error: (err && err.message) || "خطأ داخلي" };
   }
+
+  if (alerts) {
+    try {
+      expiry = await runExpiryAlerts(alerts);
+    } catch (err) {
+      expiry = { ok: false, error: (err && err.message) || "خطأ داخلي" };
+    }
+  }
+
+  /* الدفع يركب على المسح نفسه، معزولًا عن البريد في الاتجاهين: فشل SMTP
+     لا يمنع وصول الإشعار، وفشل خدمة الدفع لا يمنع وصول البريد. تخطّي
+     الدفع حين لا تكون مفاتيح VAPID مضبوطة ليس خطأً — الميزة ببساطة غير
+     مُفعّلة على هذه البيئة بعد. */
+  try {
+    push = alerts ? await sendExpiryDigest(alerts) : { ok: false, error: "تعذّر المسح" };
+  } catch (err) {
+    push = { ok: false, error: (err && err.message) || "خطأ داخلي" };
+  }
+
   try {
     monthly = await runScheduled(new Date());
   } catch (err) {
@@ -62,5 +87,5 @@ module.exports = async function handler(req, res) {
   }
   /* 500 only if the expiry scan itself failed — that is what this cron is
      primarily for, and what a red run in Vercel's log should mean. */
-  res.status(expiry.ok ? 200 : 500).json({ ok: expiry.ok, ...expiry, monthlyReport: monthly });
+  res.status(expiry.ok ? 200 : 500).json({ ok: expiry.ok, ...expiry, push, monthlyReport: monthly });
 };
