@@ -297,6 +297,37 @@ html[dir=rtl] .u-drawer{transform:translateX(102%)}
 }
 .u-navlink:active{background:var(--hair-2)}
 .u-drawer-foot{margin-top:auto;padding-top:16px;border-top:1px solid var(--hair)}
+
+/* ---------- إشعارات الجوال (داخل تذييل الدرج) ---------- */
+.u-push{
+  margin:0 0 12px;padding:12px 14px;
+  border:1px solid var(--hair);border-radius:12px;background:var(--paper-2);
+}
+.u-push:empty{display:none}
+.u-push-head{display:flex;align-items:center;gap:8px}
+/* نقطة الحالة: خضراء مفعّلة، حمراء إن رُفض الإذن، رمادية فيما عدا ذلك */
+.u-push-dot{width:8px;height:8px;border-radius:50%;flex:none;background:var(--na-line)}
+.u-push-dot.on{background:var(--ok-line)}
+.u-push-dot.bad{background:var(--bad-line)}
+.u-push-title{font-size:13.5px;font-weight:600}
+.u-push-note{font-size:12px;color:var(--ink-soft);line-height:1.6;margin-top:4px}
+.u-push-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.u-push-btn{
+  flex:1 1 auto;min-height:var(--tap);padding:0 14px;
+  border:1px solid var(--hair);border-radius:11px;
+  background:var(--paper);color:var(--ink);
+  font-family:var(--sans);font-size:13.5px;cursor:pointer;
+  transition:background .2s,border-color .2s,color .2s;
+}
+.u-push-btn.primary{background:var(--slate);border-color:var(--slate);color:#fff}
+.u-push-btn.danger{background:var(--bad-bg);border-color:#EACCC5;color:var(--bad)}
+.u-push-btn:disabled{opacity:.55;cursor:default}
+@media(hover:hover) and (pointer:fine){
+  .u-push-btn:hover:not(:disabled){border-color:var(--slate)}
+  .u-push-btn.primary:hover:not(:disabled){background:var(--slate-2);border-color:var(--slate-2)}
+}
+.u-push-btn:active:not(:disabled){transform:translateY(1px)}
+@media(min-width:768px){ .u-push-btn{min-height:36px;font-size:12.5px} }
 .u-user{padding:0 14px 10px;display:flex;flex-direction:column;gap:3px}
 .u-user-role{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--brass);font-weight:700}
 .u-user-name{font-size:14.5px;font-weight:600;line-height:1.35}

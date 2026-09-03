@@ -168,6 +168,10 @@ const AppNav = (function () {
       ${pages.map(link).join("")}
       ${anchors.length ? `<div class="u-drawer-sec">${page === "home" ? "أقسام هذه الصفحة" : "أقسام الصفحة الرئيسية"}</div>${anchors.map(link).join("")}` : ""}
       <div class="u-drawer-foot">
+        <!-- إعداد خاصّ بهذا الجهاز، فموضعه الطبيعي بجوار بطاقة صاحبه.
+             الدرج متاح من كل صفحة، وهو أقرب ما يصل إليه المستخدم على
+             الجوال — حيث تُفعَّل الإشعارات أصلًا. -->
+        <div class="u-push" data-push-row></div>
         ${u ? `<div class="u-user">
           <span class="u-user-role">${esc(ROLE_LABELS[u.role] || u.role || "")}</span>
           <span class="u-user-name">${esc(u.name || "")}</span>
@@ -177,6 +181,7 @@ const AppNav = (function () {
       </div>`;
     drawerEl.querySelector("[data-nav-close]").addEventListener("click", closeDrawer);
     drawerEl.querySelector("[data-nav-logout]").addEventListener("click", logout);
+    renderPushRow();   /* الدرج يُعاد بناؤه، فيُعاد ملء صفّ الإشعارات معه */
     /* الوجهة تُغلق الدرج؛ ومرساة داخل الصفحة نفسها لا تُعيد التحميل فيلزم
        إغلاقها يدويًا قبل القفز. */
     drawerEl.querySelectorAll("a.u-navlink").forEach((a) => a.addEventListener("click", closeDrawer));
@@ -212,6 +217,159 @@ const AppNav = (function () {
     }
   }
 
+  /* =====================================================================
+     إشعارات الجوال (Web Push)
+     ---------------------------------------------------------------------
+     كل ما هنا خاصّ بالجهاز الحالي وحده: الاشتراك يُنشئه المتصفّح لهذا
+     الجهاز ويُسجَّل باسم صاحب الجلسة، فالتفعيل من جوالك يسجّل جوالك لا
+     غيره. الحالات المعروضة: غير مدعوم · يحتاج تثبيتًا (iOS) · غير مُهيّأة
+     على الخادم · غير مفعّلة · مفعّلة · الإذن مرفوض. لكلٍّ نصّه، فلا يقف
+     المستخدم أمام زرّ صامت لا يعرف لماذا لا يعمل.
+     ===================================================================== */
+  const PUSH = {
+    supported: typeof navigator !== "undefined" && "serviceWorker" in navigator
+      && typeof window !== "undefined" && "PushManager" in window && "Notification" in window,
+    enabledOnServer: null,   // من /api/push/config
+    publicKey: null,
+    registration: null,
+    subscription: null,
+    busy: false,
+  };
+
+  const isIOS = () => /iPad|iPhone|iPod/.test(navigator.userAgent || "");
+  /* iOS لا يمنح Web Push إلا لتطبيق مثبَّت على الشاشة الرئيسية (16.4+):
+     في تبويب Safari عادي لا وجود لـPushManager أصلًا. */
+  const isStandalone = () =>
+    (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches) ||
+    window.navigator.standalone === true;
+
+  /* المفتاح العام يصل بترميز base64url ويجب أن يُسلَّم للمتصفّح بايتاتٍ. */
+  function urlBase64ToUint8Array(base64String) {
+    const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+    const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+    const raw = atob(base64);
+    const out = new Uint8Array(raw.length);
+    for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
+    return out;
+  }
+
+  async function pushInit() {
+    if (!PUSH.supported) { renderPushRow(); return; }
+    try {
+      const cfg = await (await fetch("/api/push/config")).json();
+      PUSH.enabledOnServer = !!(cfg && cfg.enabled);
+      PUSH.publicKey = cfg && cfg.publicKey;
+    } catch { PUSH.enabledOnServer = false; }
+    if (PUSH.enabledOnServer) {
+      try {
+        PUSH.registration = await navigator.serviceWorker.register("/sw.js");
+        PUSH.subscription = await PUSH.registration.pushManager.getSubscription();
+      } catch {
+        /* تعذّر تسجيل عامل الخدمة — لا يُعرض زرّ لا يمكنه أن يعمل. */
+        PUSH.enabledOnServer = false;
+      }
+    }
+    renderPushRow();
+  }
+
+  function pushState() {
+    if (!PUSH.supported) return isIOS() && !isStandalone() ? "needs_install" : "unsupported";
+    if (PUSH.enabledOnServer === null) return "loading";
+    if (PUSH.enabledOnServer === false) return "server_off";
+    if (Notification.permission === "denied") return "denied";
+    return PUSH.subscription ? "on" : "off";
+  }
+
+  async function pushEnable() {
+    if (PUSH.busy) return;
+    PUSH.busy = true; renderPushRow();
+    try {
+      /* الإذن يجب أن يُطلب من إيماءة مستخدم — وهذا نداء من مُعالِج نقر. */
+      const perm = await Notification.requestPermission();
+      if (perm !== "granted") return;          // مرفوض أو مؤجَّل: الحالة تتكفّل بالرسالة
+      const sub = await PUSH.registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(PUSH.publicKey),
+      });
+      await AdminUI.api("POST", "/api/push/subscribe", { subscription: sub.toJSON() });
+      PUSH.subscription = sub;
+      AdminUI.toastOk("تم تفعيل إشعارات هذا الجهاز");
+    } catch (err) {
+      AdminUI.toastError((err && err.message) || "تعذّر تفعيل الإشعارات");
+    } finally {
+      PUSH.busy = false; renderPushRow();
+    }
+  }
+
+  async function pushDisable() {
+    if (PUSH.busy || !PUSH.subscription) return;
+    PUSH.busy = true; renderPushRow();
+    const endpoint = PUSH.subscription.endpoint;
+    try {
+      await PUSH.subscription.unsubscribe();
+      PUSH.subscription = null;
+      /* تنظيف الخادم بعد إلغاء المتصفّح لا قبله: لو انعكس الترتيب وفشل
+         الإلغاء محليًا لبقي صفّ حيّ لجهاز لم يعد مشتركًا. */
+      await AdminUI.api("POST", "/api/push/unsubscribe", { endpoint });
+      AdminUI.toastOk("تم إيقاف إشعارات هذا الجهاز");
+    } catch (err) {
+      AdminUI.toastError((err && err.message) || "تعذّر إيقاف الإشعارات");
+    } finally {
+      PUSH.busy = false; renderPushRow();
+    }
+  }
+
+  async function pushTest() {
+    if (PUSH.busy) return;
+    PUSH.busy = true; renderPushRow();
+    try {
+      const r = await AdminUI.api("POST", "/api/push/test");
+      AdminUI.toastOk(`أُرسل إشعار تجريبي إلى ${r.sent} من ${r.total} جهاز`);
+    } catch (err) {
+      AdminUI.toastError((err && err.message) || "تعذّر إرسال الإشعار التجريبي");
+    } finally {
+      PUSH.busy = false; renderPushRow();
+    }
+  }
+
+  const PUSH_TEXT = {
+    loading:       "جارٍ التحقّق…",
+    unsupported:   "هذا المتصفّح لا يدعم إشعارات الويب",
+    needs_install: "أضف التطبيق إلى الشاشة الرئيسية أولًا لتفعيل الإشعارات",
+    server_off:    "غير مُهيّأة على الخادم",
+    denied:        "الإذن مرفوض — فعّله من إعدادات المتصفّح لهذا الموقع",
+    off:           "غير مفعّلة على هذا الجهاز",
+    on:            "مفعّلة على هذا الجهاز",
+  };
+
+  function renderPushRow() {
+    const hosts = document.querySelectorAll("[data-push-row]");
+    if (!hosts.length) return;
+    const state = pushState();
+    const dot = state === "on" ? "on" : state === "denied" ? "bad" : "off";
+    const actionable = state === "off" || state === "on";
+    const html = `
+      <div class="u-push-head">
+        <span class="u-push-dot ${dot}" aria-hidden="true"></span>
+        <span class="u-push-title">إشعارات الجوال</span>
+      </div>
+      <div class="u-push-note">${esc(PUSH_TEXT[state] || PUSH_TEXT.loading)}</div>
+      ${actionable ? `
+        <div class="u-push-actions">
+          <button class="u-push-btn${state === "on" ? " danger" : " primary"}" type="button" data-push-toggle${PUSH.busy ? " disabled" : ""}>
+            ${PUSH.busy ? "…" : state === "on" ? "إيقاف" : "تفعيل"}
+          </button>
+          ${state === "on" ? `<button class="u-push-btn" type="button" data-push-test${PUSH.busy ? " disabled" : ""}>إشعار تجريبي</button>` : ""}
+        </div>` : ""}`;
+    hosts.forEach((host) => {
+      host.innerHTML = html;
+      const toggle = host.querySelector("[data-push-toggle]");
+      if (toggle) toggle.addEventListener("click", () => (pushState() === "on" ? pushDisable() : pushEnable()));
+      const test = host.querySelector("[data-push-test]");
+      if (test) test.addEventListener("click", pushTest);
+    });
+  }
+
   /* ---------- التركيب ----------
      mountChrome(): يُستدعى مبكرًا (DOMContentLoaded) فيبني الهيكل قبل الرسم.
      setUser():     يُستدعى بعد /api/auth/me فيعيد رسم الوجهات المسموحة. */
@@ -229,6 +387,9 @@ const AppNav = (function () {
   function setUser() {
     renderTabs();
     renderDrawer();
+    /* بعد معرفة المستخدم لا قبلها: نقاط /api/push/* كلها تتطلّب جلسة،
+       ونداؤها قبل اكتمال المصادقة يعود بـ401 بلا داعٍ. */
+    pushInit();
   }
 
   /* يضع عنصرًا في الجهة المقابلة من الترويسة (زر إجراء خاص بالصفحة). */
