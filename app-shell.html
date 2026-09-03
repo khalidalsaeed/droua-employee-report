@@ -58,6 +58,85 @@ section.block{padding-block:26px}
 }
 .sec-head .idx{font-family:var(--serif);color:var(--brass);font-size:15px;letter-spacing:.1em}
 
+/* ---------- تنبيه الوثائق قريبة الانتهاء ----------
+   ليس Alert تقليديًا: لا أحمر ولا حدّ سميك. لوح بلون الورق يحمل قضيبًا
+   ذهبيًا على حافته الداخلية — نفس لغة قضيب بطاقات المؤشّرات تحته — فيُقرأ
+   كجزء من القسم لا كطارئ مقحَم عليه.
+   العنصر كلّه <a> واحد: زرّ «عرض الوثائق» بداخله <span> لا زرّ حقيقي،
+   لأن عنصرًا تفاعليًا داخل رابط HTML غير صالح ويُنتج محطّتَي تنقّل
+   بلوحة المفاتيح لوجهة واحدة. النتيجة: نقرة في أي موضع تعمل، ومحطّة
+   واحدة، واسم وصفي واحد. */
+.soon-callout{
+  /* درجة الذهب النصّية: 4.91:1 على أغمق طرفَي التدرّج (#F0E7D6) و5.73:1
+     على أفتحهما. الذهب الزخرفي --brass عند 2.79:1 لا يصلح نصًّا هنا. */
+  --sc-gold-ink:#7C5E23;
+  display:flex;align-items:center;gap:14px;
+  position:relative;overflow:hidden;
+  margin-bottom:16px;padding:16px 18px;
+  background:linear-gradient(90deg,var(--brass-soft),var(--paper-2) 62%);
+  border:1px solid #E7DAC2;border-radius:var(--r);
+  box-shadow:var(--shadow);
+  color:var(--ink);
+  transition:transform .28s cubic-bezier(.16,.8,.3,1),box-shadow .28s,border-color .2s;
+}
+html[dir=rtl] .soon-callout{background:linear-gradient(270deg,var(--brass-soft),var(--paper-2) 62%)}
+/* القضيب على الحافة الداخلية — يطابق .kpi .rail */
+/* تدرّج معدني لا لون مصمت: الذهب الفاتح وحده عند 2.79:1 فوق خلفية
+   التنبيه يبدو لطخة باهتة لا حافّة مقصودة. */
+.soon-callout::before{
+  content:"";position:absolute;inset-inline-start:0;top:0;bottom:0;width:4px;
+  background:linear-gradient(180deg,#C9A05A,var(--sc-gold-ink));
+}
+.sc-ico{
+  flex:none;width:44px;height:44px;border-radius:12px;
+  display:flex;align-items:center;justify-content:center;
+  background:var(--slate);color:var(--brass-soft);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.14);
+}
+.sc-txt{min-width:0;flex:1}
+.sc-title{
+  display:block;font-family:var(--serif);font-size:17px;line-height:1.35;
+  color:var(--slate);overflow-wrap:anywhere;
+}
+.sc-title b{font-weight:700;color:var(--sc-gold-ink)}
+.sc-sub{display:block;font-size:12.5px;color:var(--ink-soft);margin-top:4px;line-height:1.6}
+/* زرّ بالمظهر فقط — الرابط الحاوي هو ما يستقبل النقر */
+.sc-cta{
+  flex:none;display:inline-flex;align-items:center;gap:7px;
+  min-height:40px;padding:0 18px;border-radius:999px;
+  background:var(--slate);color:#fff;border:1px solid var(--slate);
+  font-size:13.5px;font-weight:500;white-space:nowrap;
+  transition:background .2s,border-color .2s,transform .2s;
+}
+.sc-cta svg{transition:transform .28s cubic-bezier(.16,.8,.3,1)}
+@media(hover:hover) and (pointer:fine){
+  .soon-callout:hover{transform:translateY(-2px);box-shadow:var(--shadow-lg);border-color:var(--brass)}
+  .soon-callout:hover .sc-cta{background:var(--slate-2);border-color:var(--slate-2)}
+  /* السهم يزحف باتجاه القراءة — RTL فيتحرّك يسارًا */
+  .soon-callout:hover .sc-cta svg{transform:translateX(-3px)}
+}
+.soon-callout:active{transform:translateY(0) scale(.995);box-shadow:var(--shadow)}
+.soon-callout:active .sc-cta{background:#0F1D2B}
+.soon-callout:focus-visible{outline:2px solid var(--slate);outline-offset:3px}
+
+/* الجوال: يتحوّل إلى عمود ويبقى مضغوطًا — الأيقونة والعنوان في صفّ،
+   والزرّ بعرض كامل تحتهما فيبقى هدف لمس مريحًا بلا أن يزاحم النص. */
+@media(max-width:639px){
+  .soon-callout{
+    flex-wrap:wrap;gap:12px;padding:14px 15px;
+    align-items:flex-start;
+  }
+  .sc-ico{width:38px;height:38px;border-radius:10px}
+  .sc-txt{flex:1 1 auto;min-width:0}
+  .sc-title{font-size:15.5px}
+  .sc-sub{font-size:12px}
+  .sc-cta{flex:1 1 100%;justify-content:center;min-height:var(--tap)}
+}
+@media(prefers-reduced-motion:reduce){
+  .soon-callout,.soon-callout .sc-cta,.soon-callout .sc-cta svg{transition:none}
+  .soon-callout:hover,.soon-callout:active{transform:none}
+}
+
 /* ---------- KPI band ---------- */
 .kpi-row{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}
 @media(max-width:900px){.kpi-row{grid-template-columns:repeat(2,1fr);gap:10px}}
@@ -408,6 +487,9 @@ footer.site{border-top:1px solid var(--hair);margin-top:30px}
 
 <section class="block wrap" id="kpiSec">
   <div class="sec-head"><h2>المؤشرات التنفيذية</h2><span class="idx">لمحة عامة</span></div>
+  <!-- يملؤه renderDashboardTop() ويبقى فارغًا إن لم تكن هناك وثائق قريبة
+       الانتهاء — فلا يحجز مساحة ولا يظهر إطار فارغ. -->
+  <div id="soonCallout"></div>
   <div class="kpi-row" id="kpiRow"></div>
   <div class="panels">
     <div class="panel">
@@ -721,6 +803,43 @@ const validLic=cLic.valid, expiredLic=cLic.expired, soonLic=cLic.soon, pendingLi
 const soonDocs=DocStatus.collectSoonDocs(DATA);
 const expiredDocs=DocStatus.collectExpiredDocs(DATA);
 
+/* تنبيه أعلى القسم. يقرأ soonDocs نفسها التي تعطي البطاقة رقمها — لا عدّ
+   ولا شرط قرب انتهاء يُكتب هنا — ولا يظهر إطلاقًا إذا كانت فارغة.
+   يُخفى أيضًا بلا employees:view، تمامًا كرابط البطاقة، فلا يعرض طريقًا
+   مسدودًا (canOpenSoon مُعرَّفة أدناه قبل أول نداء لهذه الدالّة). */
+function soonCountPhrase(n){
+  /* العربية تصرّف المعدود: «وثيقة واحدة» و«وثيقتان» و«٣ وثائق» و«١١ وثيقة».
+     صياغة «1 وثيقة» صحيحة حسابيًا ورديئة لغويًا. */
+  if(n===1) return "لديك وثيقة واحدة قريبة من الانتهاء";
+  if(n===2) return "لديك وثيقتان قريبتان من الانتهاء";
+  if(n<=10) return `لديك <b class="num">${n}</b> وثائق قريبة من الانتهاء`;
+  return `لديك <b class="num">${n}</b> وثيقة قريبة من الانتهاء`;
+}
+function renderSoonCallout(docs){
+  const el=document.getElementById("soonCallout");
+  if(!el) return;
+  if(!docs.length || !canOpenSoon){ el.innerHTML=""; return; }
+  el.innerHTML=`
+    <a class="soon-callout" href="/expiring.html"
+       aria-label="عرض قائمة الوثائق قريبة الانتهاء — ${docs.length} وثيقة خلال ${DocStatus.SOON} يومًا">
+      <span class="sc-ico" aria-hidden="true">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M7 2h10M7 22h10"/>
+          <path d="M17 2v3.6a5 5 0 0 1-5 5 5 5 0 0 1-5-5V2"/>
+          <path d="M7 22v-3.6a5 5 0 0 1 5-5 5 5 0 0 1 5 5V22"/>
+        </svg>
+      </span>
+      <span class="sc-txt">
+        <span class="sc-title">${soonCountPhrase(docs.length)}</span>
+        <span class="sc-sub">راجع الوثائق التي تحتاج إلى إجراء خلال الـ${DocStatus.SOON} يومًا القادمة.</span>
+      </span>
+      <span class="sc-cta">
+        عرض الوثائق
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>
+      </span>
+    </a>`;
+}
+
 /* البطاقة ذات href تُصيَّر رابطًا حقيقيًا لا <div role="button">: الرابط
    يمنح دعم لوحة المفاتيح (Enter) والفتح في تبويب جديد وقائمة السياق
    وشريط الحالة بسلوك المتصفّح المعياري بلا سطر JavaScript واحد. */
@@ -744,6 +863,8 @@ kpiRow.innerHTML=[
   kpiCard({tone:"bad",lbl:"وثائق منتهية",big:expiredDocs.length,
            cap:expiredDocs.length?DocStatus.summarizeDocs(expiredDocs):"لا توجد وثائق منتهية"}),
 ].join("");
+/* المصفوفة نفسها التي أعطت البطاقة رقمها */
+renderSoonCallout(soonDocs);
 
 /* SVG donut — offline, no dependency */
 function donut(boxId,rows,legendId){
