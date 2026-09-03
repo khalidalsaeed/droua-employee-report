@@ -2,6 +2,9 @@
   "name": "droua-employee-report",
   "version": "1.0.0",
   "private": true,
+  "scripts": {
+    "test": "node --test \"test/**/*.test.js\""
+  },
   "dependencies": {
     "@neondatabase/serverless": "^1.1.0",
     "@vercel/blob": "^2.8.0",
