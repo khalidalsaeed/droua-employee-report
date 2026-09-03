@@ -1872,7 +1872,13 @@ async function loadAppData(){
   AJEER = permJson.ok ? permJson.items : [];
   const settings = settJson.ok ? settJson.settings : {};
   FIN = settings.financial_summary || {};
-  SOON = settings.expiry_soon_days ?? SOON;
+  /* لا يُسنَد هنا إلى SOON: عتبة «قريب الانتهاء» تعيش في doc-status.js
+     بـ const، وكل قارئ لها في هذه الصفحة يمرّ بـ DocStatus.SOON. كان
+     هنا سطر إسناد بقي من زمن `let SOON` المحلّي قبل استخراج المنطق إلى
+     الملف المشترك، فصار يرمي TypeError في آخر هذه الدالّة — فيبتلعه
+     catch في boot() ويعرض «تعذّر تحميل البيانات» بلا فشل شبكة واحد،
+     ويمنع loadTickets() من العمل أصلًا فتبقى ودجة التذاكر فارغة.
+     scripts/check-shared-globals.js يحرس هذا الصنف من الأخطاء. */
 }
 
 /* هياكل تحميل بدل شاشة بيضاء: boot() ينتظر أربعة نداءات شبكة قبل أن يرسم
