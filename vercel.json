@@ -29,6 +29,7 @@
     { "source": "/api/auth/:path*", "destination": "/api/app?kind=api&apiPath=auth/:path*" },
     { "source": "/api/data/:path*", "destination": "/api/app?kind=api&apiPath=data/:path*" },
     { "source": "/api/files/:path*", "destination": "/api/app?kind=api&apiPath=files/:path*" },
-    { "source": "/api/reports/:path*", "destination": "/api/app?kind=api&apiPath=reports/:path*" }
+    { "source": "/api/reports/:path*", "destination": "/api/app?kind=api&apiPath=reports/:path*" },
+    { "source": "/api/push/:path*", "destination": "/api/app?kind=api&apiPath=push/:path*" }
   ]
 }

@@ -108,7 +108,94 @@ async function handleApi(req, res) {
   if (section === "data") return handleData(req, res, rest[0]);
   if (section === "files") return handleFiles(req, res, rest[0]);
   if (section === "reports") return handleReports(req, res, rest[0]);
+  if (section === "push") return handlePush(req, res, rest[0]);
   res.status(404).json({ ok: false, error: "Not found" });
+}
+
+/* ---------------- إشعارات الدفع ----------------
+   قسم داخل هذه الدالّة لا دالّة خادمة جديدة — العدد يبقى اثنتين.
+
+   لا صلاحية خاصة لأي من هذه المسارات: تفعيل الإشعارات على جهازك وإلغاؤه
+   وتجربتها إعدادٌ شخصي لا قدرة إدارية. الأمان يأتي من أن كل مسار مقيَّد
+   بأجهزة صاحب الجلسة نفسه: لا يستطيع أحد تسجيل جهاز لغيره ولا إلغاؤه ولا
+   إرسال تجربة إليه. (الصلاحية employees:view تُفحص عند إرسال التنبيهات
+   الحقيقية في lib/push/notify.js، لا هنا.) */
+async function handlePush(req, res, action) {
+  const actor = await requireUser(req);
+  if (!actor) return res.status(401).json({ ok: false, error: "غير مسجّل الدخول" });
+
+  if (action === "config") return pushConfig(req, res);
+  if (action === "subscribe") return pushSubscribe(req, res, actor);
+  if (action === "unsubscribe") return pushUnsubscribe(req, res, actor);
+  if (action === "test") return pushTest(req, res, actor);
+  res.status(404).json({ ok: false, error: "Not found" });
+}
+
+/* المفتاح العام وحده. عام بطبيعته — يُنشر في كل جهاز يشترك — والمفتاح
+   الخاص لا يغادر متغيّرات البيئة على الخادم إطلاقًا.
+   `enabled: false` تجعل الواجهة تُخفي زرّ التفعيل بدل عرض زرّ يفشل. */
+async function pushConfig(req, res) {
+  const { isConfigured, publicKey } = require("../lib/push/vapid");
+  if (!isConfigured()) return res.status(200).json({ ok: true, enabled: false });
+  res.status(200).json({ ok: true, enabled: true, publicKey: publicKey() });
+}
+
+async function pushSubscribe(req, res, actor) {
+  if (req.method !== "POST") return res.status(405).json({ ok: false, error: "Method not allowed" });
+  const subscriptions = require("../lib/push/subscriptions");
+  const body = parseBody(req);
+  try {
+    const saved = await subscriptions.upsert(actor.id, body.subscription, req.headers["user-agent"]);
+    logEvent({ type: "push_subscribed", actorEmail: actor.email, actorId: actor.id, meta: { subscriptionId: saved.id } });
+    res.status(200).json({ ok: true, subscriptionId: saved.id });
+  } catch (err) {
+    res.status(400).json({ ok: false, error: (err && err.message) || "تعذّر تسجيل الجهاز" });
+  }
+}
+
+async function pushUnsubscribe(req, res, actor) {
+  if (req.method !== "POST") return res.status(405).json({ ok: false, error: "Method not allowed" });
+  const subscriptions = require("../lib/push/subscriptions");
+  const body = parseBody(req);
+  const endpoint = body && (body.endpoint || (body.subscription && body.subscription.endpoint));
+  if (!endpoint) return res.status(400).json({ ok: false, error: "عنوان الاشتراك مطلوب" });
+  const removed = await subscriptions.removeByEndpoint(actor.id, endpoint);
+  if (removed) logEvent({ type: "push_unsubscribed", actorEmail: actor.email, actorId: actor.id });
+  /* الحذف مُطابِق للغياب من وجهة نظر المُنادي: الجهاز غير مسجَّل الآن في
+     الحالتين، فلا داعي لخطأ يربك الواجهة. */
+  res.status(200).json({ ok: true, removed });
+}
+
+/* إشعار تجريبي إلى أجهزة المُرسِل وحدها. هذا ما يجعله آمنًا لأي مستخدم
+   مسجّل: لا يقبل مُعرِّف مستخدم ولا عنوان اشتراك من الطلب إطلاقًا، بل
+   يقرأ أجهزة صاحب الجلسة من القاعدة — فلا سبيل لاستهداف غيره.
+
+   لا يمسّ push_notification_log: لا حجز ولا صفّ. فلا يستهلك مفتاح اليوم
+   ولا يمنع التنبيه الحقيقي من الوصول بعده. يُسجَّل في audit_log فقط —
+   نفس ما يفعله الإرسال التجريبي للتقرير الشهري. */
+async function pushTest(req, res, actor) {
+  if (req.method !== "POST") return res.status(405).json({ ok: false, error: "Method not allowed" });
+  const { isConfigured } = require("../lib/push/vapid");
+  if (!isConfigured()) return res.status(503).json({ ok: false, error: "إشعارات الدفع غير مُهيّأة على الخادم" });
+
+  const subscriptions = require("../lib/push/subscriptions");
+  const { sendToMany } = require("../lib/push/send");
+  const { buildTestPayload } = require("../lib/push/notify");
+
+  const subs = await subscriptions.listForUser(actor.id);
+  if (!subs.length) return res.status(400).json({ ok: false, error: "لا يوجد جهاز مسجَّل لهذا الحساب" });
+
+  const report = await sendToMany(subs, buildTestPayload());
+  logEvent({
+    type: "push_test_sent",
+    actorEmail: actor.email,
+    actorId: actor.id,
+    meta: { devices: report.total, sent: report.sent, gone: report.gone, failed: report.failed },
+  });
+  if (!report.sent) {
+    return res.status(502).json({ ok: false, error: "تعذّر إرسال الإشعار التجريبي إلى أي جهاز", ...report });
+  }
+  res.status(200).json({ ok: true, sent: report.sent, total: report.total, gone: report.gone, failed: report.failed });
 }
 
 /* ---------------- auth ---------------- */
