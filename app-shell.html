@@ -457,8 +457,32 @@ footer.site{border-top:1px solid var(--hair);margin-top:30px}
 
 </style>
 <link rel="stylesheet" href="/admin-ui.css?v=2">
+<!-- منع الوميض: يجب أن ترتفع طبقة الترحيب قبل أوّل رسم للجسم، وإلّا لمح
+     المستخدم النظام قبل الترحيب. سطر مضمّن عمدًا — أي ملف خارجي يصل بعد
+     أن يكون الرسم قد بدأ. المفتاح نفسه في login.html و welcome.js. -->
+<script>
+try{ if(sessionStorage.getItem("droua:welcome")==="1") document.documentElement.className+=" welcoming"; }catch(e){}
+</script>
 </head>
 <body>
+<!-- نصّ التحية فارغ عمدًا: لا اسم بديل ولا placeholder. يملؤه welcome.js
+     بعد أن يعود /api/auth/me بالاسم الحقيقي، وعندها فقط تظهر البطاقة. -->
+<div class="welcome" id="welcome" role="dialog" aria-modal="true" aria-labelledby="welcomeGreet">
+  <div class="welcome-card">
+    <div class="welcome-brand"><b>ذروة الصعود</b><i>&amp;</i><b>ضمان الأعمال</b></div>
+    <h2 class="welcome-greet" id="welcomeGreet"></h2>
+    <!-- hidden افتراضيًا: بلا مسمّى وظيفي لا يبقى سطر فارغ يوسّع البطاقة. -->
+    <p class="welcome-role" id="welcomeRole" hidden></p>
+    <p class="welcome-sub">مرحبًا بعودتك، كل شيء جاهز لتبدأ يومك.</p>
+    <button type="button" class="welcome-btn" id="welcomeBtn">
+      <span>الدخول إلى المنصة</span>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M19 12H5"/><path d="m12 19-7-7 7-7"/>
+      </svg>
+    </button>
+  </div>
+</div>
 
 <!-- يملؤها app-nav.js؛ تُترك هنا لتحجز مساحتها فلا يقفز التخطيط. -->
 <header class="u-hdr" data-app-header></header>
@@ -683,6 +707,8 @@ footer.site{border-top:1px solid var(--hair);margin-top:30px}
 <!-- منطق حالة الوثائق (SOON و statusOf و isSoon و empDocs …) مشترك مع
      صفحة /expiring.html. يجب أن يسبق سكربت الصفحة لأن تعريفاته عامّة. -->
 <script src="/doc-status.js?v=1"></script>
+<!-- شاشة الترحيب. تُستدعى من initAuthGate() بعد /api/auth/me لا قبله. -->
+<script src="/welcome.js?v=1"></script>
 <script>
 let DATA = [];
 let FIN = {};
@@ -719,6 +745,10 @@ async function initAuthGate(){
     applyPermissionVisibility();
     applyAdminVisibility();
     AppNav.setUser();   /* يعيد رسم الشريط السفلي والدرج بالوجهات المسموحة */
+    /* بعد التحقق من الجلسة ومعرفة الاسم يقينًا. لا تعرض شيئًا ما لم يكن
+       هذا التحميل ناتجًا عن تسجيل دخول ناجح، و boot() يواصل جلب البيانات
+       خلفها فلا يحتاج زرّ الدخول إلى إعادة تحميل. */
+    Welcome.show(j.user);
     return true;
   }catch(err){
     location.href="/login.html";

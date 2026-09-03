@@ -243,6 +243,11 @@ form.addEventListener("submit", async (e) => {
     });
     const j = await r.json().catch(() => ({}));
     if (r.ok && j.ok) {
+      /* علامة «دخول جديد» لشاشة الترحيب في الصفحة الرئيسية. sessionStorage
+         محصور بهذا التبويب، و welcome.js يمحوها فور قراءتها — فتظهر مرّة
+         واحدة لكل دخول ناجح، لا في كل إعادة تحميل داخل الجلسة. المفتاح
+         نفسه في welcome.js و app-shell.html. */
+      try { sessionStorage.setItem("droua:welcome", "1"); } catch (e) { /* وضع خاص */ }
       window.location.href = "/";
       return;
     }

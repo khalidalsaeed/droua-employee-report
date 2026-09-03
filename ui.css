@@ -574,6 +574,112 @@ body.has-tabbar .u-toast-wrap{bottom:calc(var(--nav-h) + var(--safe-b) + 12px)}
   background:var(--slate);transition:width .18s linear;
 }
 
+/* ---------- شاشة الترحيب بعد تسجيل الدخول ---------- */
+/* الصنف .welcoming يوضع على <html> في رأس app-shell.html قبل أن يُرسم
+   الجسم، فترتفع الطبقة الضبابية من أوّل إطار ولا يلمح المستخدم النظام
+   قبل الترحيب. البطاقة تبقى غير مرئية حتى يُضاف is-in — أي بعد أن يعود
+   /api/auth/me بالاسم الحقيقي — فلا يظهر نصّ ناقص ولا اسم بديل. */
+.welcome{display:none}
+html.welcoming, html.welcoming body{overflow:hidden}
+html.welcoming .welcome{
+  display:flex;align-items:center;justify-content:center;
+  position:fixed;inset:0;z-index:400;   /* فوق الدرج (101) والحوار (201) والتنبيهات (300) */
+  padding:calc(24px + var(--safe-t)) 20px calc(24px + var(--safe-b));
+  /* الموقع مموّه لا مخفي. تبدأ الطبقة أكثف قليلًا ثم تستقرّ عند is-in،
+     فيبدو الدخول استقرارًا هادئًا لا ومضة. */
+  background:rgba(245,242,236,.93);
+  -webkit-backdrop-filter:blur(26px) saturate(1.04);
+  backdrop-filter:blur(26px) saturate(1.04);
+  transition:opacity .45s ease, background .55s ease,
+             -webkit-backdrop-filter .55s ease, backdrop-filter .55s ease;
+}
+html.welcoming .welcome.is-in{
+  background:rgba(245,242,236,.72);
+  -webkit-backdrop-filter:blur(18px) saturate(1.04);
+  backdrop-filter:blur(18px) saturate(1.04);
+}
+/* الخروج: تلاشي الطبقة مع تناقص شعاع الضباب إلى الصفر، فيعود الموقع
+   إلى وضوحه تدريجيًا بدل أن يظهر دفعة واحدة. */
+html.welcoming .welcome.is-leaving{
+  opacity:0;pointer-events:none;
+  background:rgba(245,242,236,0);
+  -webkit-backdrop-filter:blur(0) saturate(1);
+  backdrop-filter:blur(0) saturate(1);
+}
+/* متصفّح بلا backdrop-filter: خلفية شبه صلبة تؤدّي الغرض نفسه بلا مكتبة. */
+@supports not ((backdrop-filter:blur(4px)) or (-webkit-backdrop-filter:blur(4px))){
+  html.welcoming .welcome,
+  html.welcoming .welcome.is-in{background:rgba(245,242,236,.97)}
+}
+
+.welcome-card{
+  width:min(440px,100%);position:relative;overflow:hidden;
+  background:var(--paper-2);border:1px solid var(--hair);border-radius:22px;
+  padding:34px 24px 28px;text-align:center;box-shadow:var(--shadow-lg);
+  opacity:0;transform:translateY(12px) scale(.98);
+  transition:opacity .5s cubic-bezier(.22,.61,.36,1),
+             transform .5s cubic-bezier(.22,.61,.36,1);
+}
+.welcome-card::before{
+  content:"";position:absolute;inset-inline:0;top:0;height:2px;
+  background:linear-gradient(90deg,transparent,var(--brass),transparent);opacity:.8;
+}
+.welcome.is-in .welcome-card{opacity:1;transform:none}
+
+.welcome-brand{
+  display:flex;justify-content:center;align-items:baseline;gap:7px;
+  margin-bottom:18px;font-family:var(--serif);font-size:13px;color:var(--ink-soft);
+}
+.welcome-brand b{font-weight:700;color:var(--slate)}
+.welcome-brand i{font-style:normal;color:var(--brass);font-size:15px}
+
+.welcome-greet{
+  margin:0 0 10px;font-family:var(--serif);font-weight:700;
+  font-size:clamp(24px,6vw,32px);line-height:1.3;color:var(--slate);
+  /* يحجز سطرًا مسبقًا فلا تقفز البطاقة لحظة وصول الاسم. */
+  min-height:1.3em;overflow-wrap:anywhere;
+}
+/* المسمّى الوظيفي: سطر تابع للاسم لا عنوان مستقلّ — أصغر وأهدأ، ويختفي
+   كليًّا إن لم يكن للمستخدم مسمّى (الهامش السالب يجعل غيابه يعيد التباعد
+   إلى ما كان عليه بالضبط). */
+.welcome-role{
+  margin:-4px 0 14px;font-size:14px;line-height:1.7;
+  color:var(--ink-soft);font-weight:500;overflow-wrap:anywhere;
+}
+.welcome-sub{margin:0 0 26px;font-size:15px;line-height:1.8;color:var(--ink-soft)}
+
+.welcome-btn{
+  width:100%;min-height:52px;
+  display:inline-flex;align-items:center;justify-content:center;gap:10px;
+  padding:14px 22px;border-radius:999px;
+  background:var(--slate);border:1px solid var(--slate);color:#fff;
+  font-family:var(--sans);font-size:16px;font-weight:600;cursor:pointer;
+  transition:background .25s ease,border-color .25s ease,
+             box-shadow .25s ease,transform .12s ease;
+}
+.welcome-btn svg{flex:none;transition:transform .25s ease}
+/* داخل hover:hover حتى لا تعلق حالة التمرير على شاشة اللمس. */
+@media(hover:hover) and (pointer:fine){
+  .welcome-btn:hover{
+    background:var(--slate-2);border-color:var(--slate-2);
+    box-shadow:0 12px 28px -16px rgba(169,133,68,.95);
+  }
+  .welcome-btn:hover svg{transform:translateX(-4px)}   /* RTL: الأمام يسارًا */
+}
+.welcome-btn:active{transform:translateY(1px)}
+.welcome-btn:focus-visible{outline:2px solid var(--brass);outline-offset:3px}
+
+@media(min-width:600px){
+  .welcome-card{padding:40px 34px 32px}
+}
+/* حركة مخفَّضة: تُلغى الإزاحة والتحجيم فقط؛ آلية الإظهار تبقى كما هي
+   (الكتلة العامة أدناه تُصفّر مُدد الانتقال) فلا تظهر بطاقة بلا اسم. */
+@media(prefers-reduced-motion:reduce){
+  .welcome-card,
+  .welcome.is-in .welcome-card{transform:none}
+  .welcome-btn:active{transform:none}
+}
+
 /* ---------- الحركة المخفَّضة ---------- */
 @media(prefers-reduced-motion:reduce){
   *{animation-duration:.01ms !important;animation-iteration-count:1 !important;
