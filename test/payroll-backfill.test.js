@@ -268,3 +268,61 @@ test("مسير غير موجود يُرفض قبل أي شيء", async () => {
   assert.equal(r.reason, "run_not_found");
   assert.equal(h.sql.calls.length, 0);
 });
+
+/* ── انحدار: مسار النجاح كان يُسقط extraction ──
+   =========================================================================
+   العطل: «Cannot read properties of undefined (reading 'sumNet')» عند أول
+   ‎--dry-run ناجح فعلًا على أغسطس، بعد ربط أرقام جسر العشرة.
+
+   سببه أن backfill() تبني كائنًا جديدًا في مسار النجاح ولا تنسخ إليه
+   extraction، بينما مسار الفشل ينشر ‎...resolved فيحمله معه. فظلّ العطل
+   مستورًا طوال الوقت: كل التشغيلات السابقة كانت تتوقّف عند
+   unknown_jisr_numbers — أي في المسار السليم — ولم يبلغ أحدها النجاح.
+
+   ولهذا لا يكفي اختبارٌ يفحص r.ok أو عدد الصفوف: كلاهما كان صحيحًا
+   والانهيار وقع بعدهما. ما يعضّ هو قراءة الحقل الذي يقرؤه التقرير. */
+
+test("انحدار: التشغيل الناجح يحمل extraction بأرقامه", async () => {
+  const h = harness();
+  const r = await backfill({ ...h.opts, dryRun: true });
+
+  assert.equal(r.ok, true);
+  assert.equal(r.roster.length, 10, "العشرة مربوطون بأرقام جسر");
+  assert.ok(r.extraction, "extraction يجب أن يصل إلى المُنادي — إسقاطه هو العطل");
+  assert.equal(typeof r.extraction.sumNet, "number");
+  assert.equal(typeof r.extraction.totalNet, "number");
+  assert.equal(r.extraction.staff.length, 10);
+});
+
+/* محاكاة سطر التقرير حرفيًا: هو ما انهار، فهو ما يُختبر. */
+test("انحدار: سطر «تحقّق الاكتمال» لا ينهار", async () => {
+  const h = harness();
+  const r = await backfill({ ...h.opts, dryRun: true });
+  assert.doesNotThrow(() => {
+    if (r.source === "payroll_sheet" && r.extraction) {
+      return `تحقّق الاكتمال: ${r.extraction.sumNet.toFixed(2)} = ${r.extraction.totalNet.toFixed(2)}`;
+    }
+    return "";
+  });
+  assert.equal(r.extraction.sumNet.toFixed(2), r.extraction.totalNet.toFixed(2), "الكشف مكتمل");
+});
+
+/* ‎--from-employees لا كشف له، فلا extraction — ويجب ألّا ينهار أيضًا. */
+test("مصدر بلا كشف: extraction فارغ ولا انهيار", async () => {
+  const h = harness();
+  const r = await backfill({ ...h.opts, dryRun: true, fromEmployees: true });
+  assert.equal(r.ok, true);
+  assert.equal(r.source, "employees_table");
+  assert.equal(r.extraction, null, "null صريح لا undefined");
+  assert.doesNotThrow(() => (r.source === "payroll_sheet" && r.extraction) ? r.extraction.sumNet.toFixed(2) : "");
+});
+
+/* كل حقل يقرؤه التقرير يجب أن يصل — لا extraction وحده. */
+test("التشغيل الناجح يحمل كل ما يطبعه التقرير", async () => {
+  const h = harness();
+  const r = await backfill({ ...h.opts, dryRun: true });
+  for (const key of ["runId", "monthLabel", "source", "sheetUrl", "existing", "roster", "unknown", "excluded", "attempted"]) {
+    assert.ok(key in r, `الحقل ${key} مفقود من ردّ النجاح`);
+  }
+  assert.ok(Array.isArray(r.unknown) && Array.isArray(r.excluded));
+});

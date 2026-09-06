@@ -208,6 +208,12 @@ async function backfill(options = {}) {
   return {
     ok: true, runId: RUN_ID, monthLabel: run.monthLabel,
     source: resolved.source, sheetUrl: resolved.url || null,
+    /* extraction يُمرَّر صراحةً: مسار الفشل ينشر ‎...resolved فيحمله معه،
+       أمّا مسار النجاح فيبني كائنًا جديدًا — وكان يُسقطه. فانكسر التقرير
+       عند أول تشغيل ناجح فعلًا، بعد أن ظلّ العطل مستورًا ما دامت كل
+       التشغيلات تتوقّف عند unknown_jisr_numbers.
+       غائب في مسار ‎--from-employees: لا كشف هناك أصلًا، فالمُنادي يفحص. */
+    extraction: resolved.extraction || null,
     existing, roster: resolved.roster, unknown: resolved.unknown || [], excluded: resolved.excluded || [],
     ...result,
   };
@@ -264,7 +270,7 @@ async function main() {
 
   if (!r.ok) {
     console.error(`فشل: ${REASONS[r.reason] || r.reason}`);
-    if (r.reason === "totals_mismatch") {
+    if (r.reason === "totals_mismatch" && r.extraction) {
       console.error(`  المستخرج: ${r.extraction.sumNet.toFixed(2)} · المطبوع: ${r.extraction.totalNet.toFixed(2)}`);
     }
     if (r.reason === "duplicate_jisr_in_platform") {
@@ -273,8 +279,9 @@ async function main() {
     if (r.reason === "unknown_jisr_numbers") {
       console.error("");
       for (const u of r.unknown) console.error(`  رقم جسر ${String(u.jisrNo).padStart(5)} — الاسم في الكشف تقريبًا: «${u.nameHint}»`);
-      console.error(`\n  ${r.unknown.length} من ${r.extraction.staff.length} غير مربوطين.`);
-      if (r.unknown.length === r.extraction.staff.length) {
+      const total = (r.extraction && r.extraction.staff) ? r.extraction.staff.length : r.unknown.length;
+      console.error(`\n  ${r.unknown.length} من ${total} غير مربوطين.`);
+      if (r.unknown.length === total) {
         console.error("  الكلّ غير مربوط: الأرجح أن حقل «رقم جسر» لم يُملأ بعد لأي موظف.");
         console.error("  شغّل أولًا: node scripts/set-jisr-numbers.js --propose --run 2026-08 --out jisr-map.json");
       } else {
@@ -289,7 +296,9 @@ async function main() {
 
   console.log(`المسير: ${r.monthLabel} (${r.runId})`);
   console.log(`المصدر: ${r.source === "payroll_sheet" ? `كشف الرواتب المرفوع — ${r.sheetUrl}` : "سجلّ الموظفين الحالي"}`);
-  if (r.source === "payroll_sheet") {
+  /* التقرير لا يُسقط التشغيل: مصدرٌ بلا كشف (‎--from-employees) لا
+     extraction له، وسطرُ عرضٍ ناقص أهون من انهيار بعد عمل صحيح. */
+  if (r.source === "payroll_sheet" && r.extraction) {
     console.log(`تحقّق الاكتمال: مجموع الصوافي ${r.extraction.sumNet.toFixed(2)} = صف الإجماليات ${r.extraction.totalNet.toFixed(2)} ✅`);
   }
   console.log(`صفوف إثبات موجودة مسبقًا: ${r.existing}`);
