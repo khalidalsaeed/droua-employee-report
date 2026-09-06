@@ -43,36 +43,140 @@ function deps(o = {}) {
   };
 }
 
-/* ─── تشابه الأسماء: للاقتراح والعرض فقط، لا للربط ───
-   يُختزل الاسم إلى حروفه الأساسية (بلا همزات ولا تاء مربوطة ولا مسافات)
-   كي يقارَب «لامين مولا» بـ«الأمين مولا». النتيجة اقتراحٌ لبشر يراجع،
-   ولا تكتب شيئًا بنفسها أبدًا. */
+/* ─── مطابقة الأسماء: للاقتراح والعرض فقط، لا للربط ───
+   =========================================================================
+   النسخة الأولى قاست اشتراك الحروف بلا ترتيب، فتقاربت أسماءٌ لا صلة
+   بينها لمجرّد اشتراك حروف شائعة، وخرجت ثلاثة صفوف «غامضة» كان الصحيح
+   فيها بيّنًا لعين بشرية:
+
+     63 «مد طيف الرحمن شهاب» — أربعة أسماء تبدأ بـ«مد» فتزاحمت
+     70 «مد شهيد الاسلام»    — «محمد» في السجلّ مقابل «مد» في الكشف
+     71 «شميم حسين»          — السجلّ يحمل «شميم» فعوقب على النقص
+
+   المقياس هنا يعمل على الكلمات لا الحروف، ويطبّع ثلاثة فروق حقيقية في
+   هذه السجلّات: صور الهمزة والتاء المربوطة، و«محمد» ↔ «مد»، وأل
+   التعريف («الرحمن» ↔ «ال رحمن»، «الاسلام» ↔ «اسلام»).
+
+   والقسمة على الاسم الأقصر مقصودة: اسمٌ ناقص في السجلّ («شميم» من
+   «شميم حسين») لا يُعاقَب على نقصه، بينما اسمٌ لا تتطابق كلماته يسقط.
+
+   ملاحظة على التطبيع: لا يُستعمل \b إطلاقًا. حدود الكلمات في JavaScript
+   مبنيّة على محارف ASCII فلا تحدّ كلمة عربية أصلًا — و`\bمحمد\b` لا
+   يطابق شيئًا في نصّ عربي. التقسيم يقع على المسافات صراحةً. */
+
 function foldArabic(s) {
   return String(s || "")
     .normalize("NFKC")
     .replace(/[ً-ْـ]/g, "")   // تشكيل وتطويل
     .replace(/[أإآٱ]/g, "ا").replace(/ى/g, "ي").replace(/ة/g, "ه")
-    .replace(/[^ء-ي]/g, "");
+    .replace(/[^ء-ي ]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
-/* نسبة الحروف المشتركة بين الاسمين، منسوبةً إلى الأقصر — فاسمٌ ناقص
-   («ساجر» مقابل «ساجر احمد») يبقى مرشّحًا قويًا. */
-function similarity(a, b) {
-  const x = foldArabic(a), y = foldArabic(b);
-  if (!x || !y) return 0;
-  const [shortStr, longStr] = x.length <= y.length ? [x, y] : [y, x];
-  if (longStr.includes(shortStr)) return 1;
-  const pool = [...longStr];
-  let hits = 0;
-  for (const ch of shortStr) {
-    const at = pool.indexOf(ch);
-    if (at >= 0) { hits++; pool.splice(at, 1); }
+/* أل التعريف تُحذف من بداية الكلمة حين يبقى بعدها جذر معتبر، فلا
+   يُشوَّه اسم قصير مثل «الي». */
+const stripDefiniteArticle = (t) => (t.length > 3 && t.startsWith("ال") ? t.slice(2) : t);
+
+function nameTokens(s) {
+  return foldArabic(s)
+    .split(" ")
+    .filter((t) => t && t !== "ال")
+    .map((t) => (t === "محمد" ? "مد" : t))   // تطبيع على مستوى الكلمة
+    .map(stripDefiniteArticle)
+    .filter(Boolean);
+}
+
+/* أطول تتابع مشترك — يراعي ترتيب الحروف، فلا يتساوى اسمان لمجرّد
+   اشتراكهما في حروف. */
+function lcsLength(a, b) {
+  const m = a.length, n = b.length;
+  const row = new Array(n + 1).fill(0);
+  for (let i = 1; i <= m; i++) {
+    let prev = 0;
+    for (let j = 1; j <= n; j++) {
+      const tmp = row[j];
+      row[j] = a[i - 1] === b[j - 1] ? prev + 1 : Math.max(row[j], row[j - 1]);
+      prev = tmp;
+    }
   }
-  return hits / shortStr.length;
+  return row[n];
 }
 
-const confidenceOf = (score, rivals) =>
-  rivals > 1 ? "غامض" : score >= 0.95 ? "عالية" : score >= 0.7 ? "متوسطة" : "ضعيفة";
+/* كلمتان تتطابقان إن تساوتا، أو كانت إحداهما بداية الأخرى (اختصار)،
+   أو تقاربتا إملائيًا فوق العتبة (تفيق/توفيق، شاركر/شاركير). ما دون
+   العتبة صفرٌ لا درجة ضعيفة: تراكم درجات ضعيفة هو ما صنع الغموض. */
+const TOKEN_THRESHOLD = 0.7;
+function tokenMatch(a, b) {
+  if (a === b) return 1;
+  if (a.startsWith(b) || b.startsWith(a)) return 0.95;
+  const ratio = lcsLength(a, b) / Math.max(a.length, b.length);
+  return ratio >= TOKEN_THRESHOLD ? ratio : 0;
+}
+
+function similarity(a, b) {
+  const A = nameTokens(a), B = nameTokens(b);
+  if (!A.length || !B.length) return 0;
+  const [shortTokens, longTokens] = A.length <= B.length ? [A, B] : [B, A];
+  const pool = longTokens.slice();
+  let sum = 0;
+  for (const t of shortTokens) {
+    let bestIdx = -1, bestScore = 0;
+    pool.forEach((u, i) => { const sc = tokenMatch(t, u); if (sc > bestScore) { bestScore = sc; bestIdx = i; } });
+    if (bestIdx >= 0) { sum += bestScore; pool.splice(bestIdx, 1); }   // كل كلمة تُستهلك مرّة
+  }
+  return sum / shortTokens.length;
+}
+
+/* ─── التخصيص الأحادي ───
+   اختيار الأفضل لكل صفّ على حدة يسمح بإسناد رقم ضمان واحد إلى رقمَي
+   جسر — وهو خطأ صامت يُنتج مسيرًا فيه موظف مرّتين وآخر غائب. فالتخصيص
+   عالميّ: جشعٌ تنازليًا ثم تحسين بالتبديل الثنائي حتى لا يبقى تبادل
+   يرفع المجموع. عشرة صفوف، فالكلفة لا شيء.
+
+   الحسم لا يُفرض: صفٌّ لا يبلغ عتبة الدرجة، أو لا يفصله فارقٌ واضح عن
+   أقوى منافس له، يخرج «غير محسوم» بلا رقم ضمان. تخمينٌ هنا يعني إثبات
+   تحويل راتب في بطاقة الموظف الخطأ. */
+const DECIDED_MIN_SCORE = 0.6;
+const DECIDED_MIN_MARGIN = 0.2;
+
+function assignOneToOne(rows, employees, nameOf) {
+  const grid = rows.map((r) => employees.map((e) => similarity(nameOf(r), e.name)));
+  const assigned = new Array(rows.length).fill(-1);
+  const taken = new Set();
+
+  const pairs = [];
+  rows.forEach((_, i) => employees.forEach((__, k) => pairs.push([i, k, grid[i][k]])));
+  pairs.sort((a, b) => b[2] - a[2]);
+  for (const [i, k, sc] of pairs) {
+    if (assigned[i] < 0 && !taken.has(k) && sc > 0) { assigned[i] = k; taken.add(k); }
+  }
+  let improved = true;
+  while (improved) {
+    improved = false;
+    for (let i = 0; i < assigned.length; i++) {
+      for (let j = i + 1; j < assigned.length; j++) {
+        const a = assigned[i], b = assigned[j];
+        if (a < 0 || b < 0) continue;
+        if (grid[i][b] + grid[j][a] > grid[i][a] + grid[j][b] + 1e-9) {
+          assigned[i] = b; assigned[j] = a; improved = true;
+        }
+      }
+    }
+  }
+
+  return rows.map((row, i) => {
+    const k = assigned[i];
+    const score = k >= 0 ? grid[i][k] : 0;
+    /* المنافس يُحسب على كل الموظفين لا على غير المُسنَدين وحدهم: أشدّ
+       تحفّظًا، فيخرج «غير محسوم» عند أدنى شكّ. */
+    let rival = 0;
+    employees.forEach((_, x) => { if (x !== k && grid[i][x] > rival) rival = grid[i][x]; });
+    const margin = score - rival;
+    const decided = k >= 0 && score >= DECIDED_MIN_SCORE && margin >= DECIDED_MIN_MARGIN;
+    return { row, employee: decided ? employees[k] : null, score, margin, decided };
+  });
+}
 
 async function propose(runId, d) {
   const run = await d.getRun(runId);
@@ -84,28 +188,32 @@ async function propose(runId, d) {
   const extraction = await d.extractRoster(await d.fetchFile(url));
   if (!extraction.ok) return { ok: false, reason: extraction.reason, extraction, url };
 
-  const employees = await d.listEmployees();
-  const mappings = [];
-  for (const row of extraction.staff) {
-    /* كل المرشّحين فوق العتبة، لا الأفضل وحده: مرشّحان متقاربان يعنيان
-       «غامض» لا اختيارًا اعتباطيًا. */
-    const scored = employees
-      .map((e) => ({ e, score: similarity(row.nameHint, e[F_NAME]) }))
-      .filter((c) => c.score >= 0.7)
-      .sort((a, b) => b.score - a.score);
-    const best = scored[0];
-    const rivals = scored.filter((c) => best && c.score >= best.score - 0.05).length;
-    const confidence = best ? confidenceOf(best.score, rivals) : "لا مرشّح";
-    /* الغامض والضعيف يخرجان بـ null صراحةً — لا يُملأ بتخمين. */
-    const accept = best && (confidence === "عالية" || confidence === "متوسطة");
-    mappings.push({
-      "رقم جسر": row.jisrNo,
-      "رقم ضمان": accept ? String(best.e[F_DAMANAH] || "") : null,
-      "الاسم في الكشف (تقريبي)": row.nameHint,
-      "الاسم في المنصة": accept ? String(best.e[F_NAME] || "") : null,
-      "الثقة": confidence,
-    });
+  const employees = (await d.listEmployees()).map((e) => ({
+    eid: String(e[F_DAMANAH] || "").trim(),
+    name: String(e[F_NAME] || "").trim(),
+  })).filter((e) => e.eid && e.name);
+
+  /* تخصيص عالميّ لا اختيار صفٍّ صفًّا: هو ما يمنع إسناد رقم ضمان واحد
+     إلى رقمَي جسر. وما لا يُحسم يبقى null — لا تخمين إجباري. */
+  const assignment = assignOneToOne(extraction.staff, employees, (r) => r.nameHint);
+
+  const mappings = assignment.map(({ row, employee, score, margin, decided }) => ({
+    "رقم جسر": row.jisrNo,
+    "رقم ضمان": employee ? employee.eid : null,
+    "الاسم في الكشف (تقريبي)": row.nameHint,
+    "الاسم في المنصة": employee ? employee.name : null,
+    "الثقة": decided ? "محسوم" : "غير محسوم",
+    "الدرجة": Number(score.toFixed(2)),
+    "الفارق عن أقوى منافس": Number(margin.toFixed(2)),
+  }));
+
+  /* حارس أخير قبل تسليم الاقتراح: تكرار رقم ضمان هنا يعني عطلًا في
+     التخصيص لا اجتهادًا، فلا يُسلَّم اقتراح فاسد لمراجعة بشرية. */
+  const assignedEids = mappings.map((m) => m["رقم ضمان"]).filter(Boolean);
+  if (new Set(assignedEids).size !== assignedEids.length) {
+    return { ok: false, reason: "duplicate_damanah_in_proposal", mappings };
   }
+
   return { ok: true, runId, sheetUrl: url, mappings, extraction };
 }
 
@@ -214,17 +322,23 @@ async function main() {
 
     console.log(`الكشف: ${r.sheetUrl}`);
     console.log(`تحقّق الاكتمال: ${r.extraction.sumNet.toFixed(2)} = ${r.extraction.totalNet.toFixed(2)} ✅\n`);
-    console.log("  رقم جسر | رقم ضمان | اسم الموظف                  | الثقة");
+    console.log("  رقم جسر | رقم ضمان | اسم الموظف                  | الحالة      | درجة/فارق");
     for (const m of r.mappings) {
       console.log(
         `  ${String(m["رقم جسر"]).padStart(7)} | ${String(m["رقم ضمان"] || "؟").padStart(8)} |` +
-        ` ${String(m["الاسم في المنصة"] || "— (لا مرشّح)").padEnd(27)} | ${m["الثقة"]}`
+        ` ${String(m["الاسم في المنصة"] || "— (غير محسوم)").padEnd(27)} | ${String(m["الثقة"]).padEnd(11)} |` +
+        ` ${m["الدرجة"].toFixed(2)} / ${m["الفارق عن أقوى منافس"].toFixed(2)}`
       );
     }
     const blanks = r.mappings.filter((m) => !m["رقم ضمان"]).length;
     fs.writeFileSync(out, JSON.stringify({ sourceRun: runId, generatedAt: new Date().toISOString(), mappings: r.mappings }, null, 2) + "\n", "utf8");
     console.log(`\nكُتب الاقتراح في ${out} — ملفّ محلّي، لا صفّ في القاعدة.`);
-    if (blanks) console.log(`⚠️  ${blanks} سطرًا بلا رقم ضمان (غامض أو ضعيف) — املأها بيدك.`);
+    if (blanks) {
+      console.log(`⚠️  ${blanks} سطرًا «غير محسوم» بلا رقم ضمان — املأها بيدك بعد التحقّق.`);
+      console.log(`   العتبة: درجة ≥ ${DECIDED_MIN_SCORE} وفارق ≥ ${DECIDED_MIN_MARGIN} عن أقوى منافس.`);
+    } else {
+      console.log("كل الصفوف محسومة، ولا رقم ضمان مُسنَد لأكثر من رقم جسر.");
+    }
     console.log("الأسماء أعلاه للاقتراح والتشخيص فقط؛ الربط النهائي يقع على ما تعتمده أنت.");
     console.log(`\nراجع الملف ثم: node scripts/set-jisr-numbers.js --apply --map ${out} --dry-run`);
     return;
@@ -261,4 +375,8 @@ if (require.main === module) {
   });
 }
 
-module.exports = { propose, validate, apply, similarity, foldArabic };
+module.exports = {
+  propose, validate, apply,
+  similarity, foldArabic, nameTokens, tokenMatch, assignOneToOne,
+  DECIDED_MIN_SCORE, DECIDED_MIN_MARGIN,
+};
