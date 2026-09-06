@@ -818,7 +818,7 @@ fillSelect(fDept,uniq(F.job),"كل المهن");
 fillSelect(fNat,uniq(F.nat),"كل الجنسيات");
 fIq.innerHTML=`<option value="">كل الحالات</option><option value="ok">سارية</option><option value="warn">قريبة الانتهاء</option><option value="bad">منتهية</option>`;
 fLic.innerHTML=`<option value="">كل الحالات</option><option value="ok">سارية</option><option value="warn">قريبة الانتهاء</option><option value="bad">منتهية</option><option value="pending">جاري السداد</option>`;
-sort.innerHTML=`<option value="eid">الرقم الوظيفي</option><option value="name">الاسم (أ-ي)</option><option value="iq">انتهاء الإقامة (الأقرب)</option><option value="lic">انتهاء رخصة العمل (الأقرب)</option><option value="salary">إجمالي الراتب (الأعلى)</option>`;
+sort.innerHTML=`<option value="eid">رقم ضمان</option><option value="name">الاسم (أ-ي)</option><option value="iq">انتهاء الإقامة (الأقرب)</option><option value="lic">انتهاء رخصة العمل (الأقرب)</option><option value="salary">إجمالي الراتب (الأعلى)</option>`;
 ajeerStatus.innerHTML=`<option value="">كل الحالات</option><option value="ok">ساري</option><option value="warn">ينتهي قريبًا</option><option value="today">ينتهي اليوم</option><option value="bad">منتهي</option>`;
 
 /* ---------- KPIs + charts ---------- */
@@ -978,7 +978,7 @@ function matches(e){
   if(state.iq && st_iq!==state.iq)return false;
   if(state.lic && st_lic!==state.lic)return false;
   if(state.q){
-    const hay=[e[F.name],e[F.eid],e[F.iqama],e[F.phone],e[F.email],e[F.job],e[F.benef],e[F.passport]].join(" ").toLowerCase();
+    const hay=[e[F.name],e[F.damanah],e[F.iqama],e[F.phone],e[F.email],e[F.job],e[F.benef],e[F.passport]].join(" ").toLowerCase();
     if(!hay.includes(state.q.toLowerCase()))return false;
   }
   return true;
@@ -986,7 +986,7 @@ function matches(e){
 function sortList(list){
   const s=state.sort;
   const key={
-    eid:(a,b)=>Number(a[F.eid])-Number(b[F.eid]),
+    eid:(a,b)=>Number(a[F.damanah])-Number(b[F.damanah]),
     name:(a,b)=>String(a[F.name]).localeCompare(String(b[F.name]),"ar"),
     iq:(a,b)=>(parseDate(a[F.iqExp])||8e15)-(parseDate(b[F.iqExp])||8e15),
     lic:(a,b)=>(parseDate(a[F.licExp])||8e15)-(parseDate(b[F.licExp])||8e15),
@@ -1006,7 +1006,7 @@ function card(e,i){
           <div class="role">${esc(e[F.job])}</div>
         </div>
       </div>
-      <span class="eid num">#${esc(e[F.eid])}</span>
+      <span class="eid num">#${esc(e[F.damanah])}</span>
     </div>
     <div class="meta">
       <span class="mi"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18"/></svg>إقامة <span class="num">${esc(e[F.iqama])}</span></span>
@@ -1181,7 +1181,7 @@ function ajeerCard(p,i){
         <div class="avatar">${esc(initials(name))}</div>
         <div style="min-width:0">
           <div class="nm">${esc(name)}</div>
-          <div class="role">${esc(p.permit)}${emp?` · #${esc(emp[F.eid])}`:""}</div>
+          <div class="role">${esc(p.permit)}${emp?` · #${esc(emp[F.damanah])}`:""}</div>
         </div>
       </div>
     </div>
@@ -1299,7 +1299,7 @@ function openDrawer(i){
   drawer.innerHTML=`
     <div class="dr-head">
       <button class="dr-close" id="drClose" aria-label="إغلاق">✕</button>
-      <span class="eyebrow">ملف الموظف · #${esc(e[F.eid])}</span>
+      <span class="eyebrow">ملف الموظف · #${esc(e[F.damanah])}</span>
       <h2 id="drName">${esc(e[F.name])}</h2>
       <div class="drole">${esc(e[F.job])} · ${esc(e[F.nat])}</div>
     </div>
@@ -1311,7 +1311,8 @@ function openDrawer(i){
       <div class="dr-alert">${alertBox("الإقامة",iq)}${alertBox("رخصة العمل",lic)}</div>
 
       <div class="dr-group"><div class="gt">الهوية والإقامة</div><div class="dl">
-        ${drRow("الرقم الوظيفي",esc(e[F.eid]),1)}
+        ${drRow("رقم ضمان",esc(e[F.damanah]),1)}
+        ${drRow("رقم جسر",esc(e[F.jisr]),1)}
         ${drRow("رقم الإقامة",esc(e[F.iqama]),1)}
         ${drRow("تاريخ إصدار الإقامة",fmtDate(e[F.iqIssue]))}
         ${drRow("تاريخ انتهاء الإقامة",docDcell(e[F.iqExp],iq))}
@@ -1368,7 +1369,7 @@ function openDrawer(i){
 
       ${e[F.note]?`<div class="dr-group"><div class="gt">ملاحظات</div><div class="dl">${drRow("ملاحظة",AdminUI.esc(e[F.note]))}</div></div>`:""}
 
-      ${employeeTicketsBlock(e[F.eid])}
+      ${employeeTicketsBlock(e[F.damanah])}
     </div>`;
   scrim.classList.add("show");drawer.classList.add("show");document.body.style.overflow="hidden";
   document.getElementById("drClose").onclick=closeDrawer;
@@ -1409,7 +1410,8 @@ const EMP_TABS=[
 ];
 const EMP_FIELD_SPECS={
   general:[
-    {key:"eid",label:"الرقم الوظيفي",type:"text",required:true},
+    {key:"damanah",label:"رقم ضمان",type:"text",required:true,
+     hint:"لا يُعدّل بعد إنشاء السجل لأنه مرتبط بسجلات أخرى"},
     {key:"name",label:"اسم العامل",type:"text",required:true},
     {key:"nat",label:"الجنسية",type:"text"},
     {key:"job",label:"المهنة",type:"text"},
@@ -1420,6 +1422,7 @@ const EMP_FIELD_SPECS={
     {key:"passport",label:"رقم الجواز",type:"text"},
     {key:"passExp",label:"تاريخ انتهاء الجواز",type:"date"},
     {key:"employer",label:"رقم صاحب العمل",type:"text"},
+    {key:"jisr",label:"رقم جسر",type:"text",hint:"رقم الموظف في نظام جسر — يُطابَق به كشف الرواتب"},
     {key:"cStart",label:"بداية العقد",type:"date"},
     {key:"cEnd",label:"نهاية العقد",type:"date"},
     {key:"transfer",label:"حالة النقل",type:"text"},
@@ -1462,7 +1465,11 @@ function fieldInputHtml(spec,value,disabled){
     return `<div class="admin-field"><label for="${id}">${AdminUI.esc(spec.label)}</label><textarea class="in" id="${id}" rows="4">${AdminUI.esc(value==null?"":value)}</textarea></div>`;
   }
   const inputType=spec.type==="date"?"date":(spec.type==="number"?"number":"text");
-  return `<div class="admin-field"><label for="${id}">${AdminUI.esc(spec.label)}${spec.required?" *":""}</label><input class="in" id="${id}" type="${inputType}" value="${AdminUI.esc(value==null?"":value)}" ${disabled?"disabled":""}></div>`;
+  /* التلميح يُرسم تحت الحقل بفئة .hint القائمة في admin-ui.css. حقل رقم
+     ضمان مقفول عند التعديل (disabled) ويُستثنى من الـpatch، والتلميح
+     يشرح السبب بدل أن يبدو القفل عطلًا. */
+  const hint=spec.hint?`<div class="hint">${AdminUI.esc(spec.hint)}</div>`:"";
+  return `<div class="admin-field"><label for="${id}">${AdminUI.esc(spec.label)}${spec.required?" *":""}</label><input class="in" id="${id}" type="${inputType}" value="${AdminUI.esc(value==null?"":value)}" ${disabled?"disabled":""}>${hint}</div>`;
 }
 function readFieldValue(spec){
   const el=document.getElementById(`ef_${spec.key}`);
@@ -1498,7 +1505,7 @@ function openEmployeeForm(existing,notice){
   const data=existing?{...existing}:{};
   const tabsHtml=EMP_TABS.map((t,i)=>`<button class="admin-tab ${i===0?"active":""}" type="button" data-tab="${t.key}">${AdminUI.esc(t.label)}</button>`).join("");
   const panelsHtml=EMP_TABS.map((t,i)=>`<div data-tab-panel="${t.key}" style="${i===0?"":"display:none"}">
-      ${EMP_FIELD_SPECS[t.key].map(spec=>fieldInputHtml(spec,data[fieldKey(spec)],isEdit&&spec.key==="eid")).join("")}
+      ${EMP_FIELD_SPECS[t.key].map(spec=>fieldInputHtml(spec,data[fieldKey(spec)],isEdit&&spec.key==="damanah")).join("")}
       ${isEdit&&EMP_DOC_ROWS[t.key]?empDocRow(EMP_DOC_ROWS[t.key],data[EMP_DOC_ROWS[t.key].field]):""}
     </div>`).join("");
   const modal=AdminUI.openModal(`
@@ -1519,7 +1526,7 @@ function openEmployeeForm(existing,notice){
     const patch={};
     for(const t of EMP_TABS){
       for(const spec of EMP_FIELD_SPECS[t.key]){
-        if(isEdit && spec.key==="eid") continue; // eid never changes after creation
+        if(isEdit && spec.key==="damanah") continue; // رقم ضمان لا يتغيّر بعد الإنشاء: مفتاح ربط عبر أربعة جداول
         const key=fieldKey(spec);
         const val=readFieldValue(spec);
         if(spec.required && (val==null||val==="")){
@@ -1531,9 +1538,9 @@ function openEmployeeForm(existing,notice){
     }
     try{
       if(isEdit){
-        await AdminUI.api("PUT","/api/data/employees",{id:existing[F.eid], ...patch});
+        await AdminUI.api("PUT","/api/data/employees",{id:existing[F.damanah], ...patch});
       }else{
-        patch[F.eid]=document.getElementById("ef_eid").value.trim();
+        patch[F.damanah]=document.getElementById("ef_damanah").value.trim();
         await AdminUI.api("POST","/api/data/employees",patch);
       }
       await refreshEmployees();
@@ -1581,7 +1588,7 @@ function docVerdictMessage(v){
 }
 
 function wireEmployeeDocUploads(modal,employee){
-  const eid=employee[F.eid];
+  const eid=employee[F.damanah];
   modal.querySelectorAll("[data-doc-upload]").forEach(inp=>inp.addEventListener("change",async(ev)=>{
     const file=ev.target.files[0]; if(!file) return;
     const docType=inp.dataset.docUpload;
@@ -1592,7 +1599,7 @@ function wireEmployeeDocUploads(modal,employee){
       /* Reload so the card's status chip and remaining-days countdown recompute
          from the new date straight away — no redeploy, no manual refresh. */
       await refreshEmployees();
-      const fresh=DATA.find(x=>String(x[F.eid])===String(eid))||employee;
+      const fresh=DATA.find(x=>String(x[F.damanah])===String(eid))||employee;
       const msg=up.document?docVerdictMessage(up.document):{kind:"warn",text:"تم رفع الملف."};
       openEmployeeForm(fresh,msg.text);
     }catch(err){ AdminUI.showError(modal,err.message); }
@@ -1602,7 +1609,7 @@ function wireEmployeeDocUploads(modal,employee){
 async function deleteEmployee(e){
   if(!await AdminUI.confirmDanger(`هل أنت متأكد من حذف الموظف "${e[F.name]}"؟ لا يمكن التراجع عن هذا الإجراء.`)) return;
   try{
-    await AdminUI.api("DELETE","/api/data/employees",{id:e[F.eid]});
+    await AdminUI.api("DELETE","/api/data/employees",{id:e[F.damanah]});
     await refreshEmployees();
     closeDrawer();
   }catch(err){
@@ -1840,7 +1847,7 @@ sort.addEventListener("change",e=>{state.sort=e.target.value;render();});
 function exportExcel(){
   const list=sortList(DATA.filter(matches));
   const cols=[
-    ["الرقم الوظيفي",e=>e[F.eid]],["اسم العامل",e=>e[F.name]],["رقم الإقامة",e=>e[F.iqama]],
+    ["رقم ضمان",e=>e[F.damanah]],["رقم جسر",e=>e[F.jisr]],["اسم العامل",e=>e[F.name]],["رقم الإقامة",e=>e[F.iqama]],
     ["الجنسية",e=>e[F.nat]],["المهنة",e=>e[F.job]],["الجنس",e=>e[F.sex]],["تاريخ الميلاد",e=>e[F.dob]],
     ["تاريخ انتهاء الإقامة",e=>e[F.iqExp]],["حالة الإقامة (محسوبة)",e=>statusLabel(statusOf(e[F.iqExp]))],
     ["تاريخ انتهاء رخصة العمل",e=>e[F.licExp]],["حالة رخصة العمل (محسوبة)",e=>statusLabel(licStatus(e))],

@@ -3,6 +3,7 @@ const assert = require("node:assert/strict");
 const { neon } = require("@neondatabase/serverless");
 
 const { STATEMENTS, run } = require("../scripts/setup-payroll-monthly.js");
+const jisrSetup = require("../scripts/setup-jisr-number.js");
 
 /* اختبار انحدار: سكربت التهيئة ينفّذ العبارات فعلًا لا يصفها.
    =========================================================================
@@ -93,6 +94,31 @@ test("فشل عبارة يوقف التشغيل ويرفع الخطأ", async ()
     await assert.rejects(() => run(sql));
     assert.equal(calls, 2, "توقّف عند العبارة الفاشلة ولم يُكمل");
   } finally { globalThis.fetch = originalFetch; }
+});
+
+/* سكربت الفهرس الجديد يمرّ بالحارس نفسه: العطل الذي كان (بناء وصف بدل
+   تنفيذ) يتكرّر في أي سكربت تهيئة يُكتب لاحقًا ما لم يُقَس بالمقياس
+   نفسه — ما يصل إلى السلك. */
+test("سكربت فهرس رقم جسر ينفّذ فعلًا", async () => {
+  const net = neonWithCapturedNetwork();
+  try {
+    const count = await jisrSetup.run(net.sql);
+    assert.equal(count, jisrSetup.STATEMENTS.length);
+    assert.equal(net.requests.length, jisrSetup.STATEMENTS.length, "صفر تعني وصفًا لا تنفيذًا");
+    assert.deepEqual(net.requests.map((r) => r.query), jisrSetup.STATEMENTS.map((s) => s.sql));
+  } finally { net.restore(); }
+});
+
+test("الفهرس فريد وجزئي: لا يتعارض غير المربوطين على NULL", () => {
+  assert.equal(jisrSetup.STATEMENTS.length, 1);
+  const sql = jisrSetup.STATEMENTS[0].sql;
+  assert.match(sql, /CREATE UNIQUE INDEX IF NOT EXISTS/);
+  assert.match(sql, /WHERE .*IS NOT NULL/, "شرط جزئي يستثني غير المربوطين");
+  assert.match(sql, /btrim\(data->>'رقم جسر'\) <> ''/, "والقيمة الفارغة أيضًا");
+  /* لا يمسّ عمودًا ولا يحذف: الحقل يعيش في data (JSONB). */
+  for (const verb of ["DROP", "DELETE", "ALTER TABLE", "TRUNCATE", "UPDATE"]) {
+    assert.ok(!new RegExp(verb).test(sql), `يجب ألّا تظهر ${verb}`);
+  }
 });
 
 /* استيراد السكربت يجب ألّا يشغّله — وإلّا لمس الاختبار قاعدة حقيقية. */

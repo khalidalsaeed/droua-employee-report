@@ -176,7 +176,7 @@ async function loadRefData(){
     fetch("/api/data/employees").then(r=>r.ok?r.json():{ok:false}).catch(()=>({ok:false})),
     fetch("/api/data/users").then(r=>r.ok?r.json():{ok:false}).catch(()=>({ok:false})),
   ]);
-  EMPLOYEES = emp.ok ? emp.items.map(e=>({eid:String(e["الرقم الوظيفي"]),name:e["اسم العامل"],iqama:e["رقم الإقامة"]||""})) : [];
+  EMPLOYEES = emp.ok ? emp.items.map(e=>({eid:String(e["رقم ضمان"]),name:e["اسم العامل"],iqama:e["رقم الإقامة"]||""})) : [];
   USERS = usr.ok ? usr.users.map(u=>({id:u.id,name:u.name})) : [];
 }
 async function loadTickets(){
@@ -333,7 +333,7 @@ function openTicketForm(presetEid){
   const sel=modal.querySelector("#ntEmployee"), info=modal.querySelector("#ntEmpInfo");
   function showEmp(){
     const e=EMPLOYEES.find(x=>x.eid===sel.value);
-    info.textContent=e?`${e.name} · الرقم الوظيفي ${e.eid}${e.iqama?` · الإقامة ${e.iqama}`:""}`:"";
+    info.textContent=e?`${e.name} · رقم ضمان ${e.eid}${e.iqama?` · الإقامة ${e.iqama}`:""}`:"";
   }
   sel.addEventListener("change",showEmp); showEmp();
 
