@@ -16,19 +16,22 @@ const { RUN_ID, backfill, rosterFromEmployees } = require("../scripts/backfill-p
 
 const JULY_SHEET = fs.readFileSync(path.join(__dirname, "..", "payroll", "2026-07.pdf"));
 
+/* الترقيمان مختلفان عمدًا وهذا هو بيت القصيد: المنصّة في المدى 5xx
+   وجسر من مرتبتين — وهو الواقع الفعلي الذي أفشل أول محاولة ربط. أي
+   شيفرة تبحث برقم الكشف في «الرقم الوظيفي» تسقط على هذه العيّنة. */
 const EMPLOYEES = [
-  { "الرقم الوظيفي": "49", "اسم العامل": "شكيب مياه", "المهنة": "سائق" },
-  { "الرقم الوظيفي": "55", "اسم العامل": "الأمين مولا" },
-  { "الرقم الوظيفي": "56", "اسم العامل": "محمد توفيق", "المهنة": "فنّي" },
-  { "الرقم الوظيفي": "59", "اسم العامل": "محمد فرهاد" },
-  { "الرقم الوظيفي": "60", "اسم العامل": "راسل ديوان" },
-  { "الرقم الوظيفي": "63", "اسم العامل": "محمد طيف الرحمن" },
-  { "الرقم الوظيفي": "70", "اسم العامل": "محمد شهيد الإسلام" },
-  { "الرقم الوظيفي": "71", "اسم العامل": "شميم حسين" },
-  { "الرقم الوظيفي": "82", "اسم العامل": "محمد هلال الدين" },
-  { "الرقم الوظيفي": "85", "اسم العامل": "ساجر أحمد" },
-  /* التحق في سبتمبر — ليس من موظفي أغسطس، وليس في كشف أغسطس. */
-  { "الرقم الوظيفي": "91", "اسم العامل": "موظف جديد", "تاريخ المباشرة": "2026-09-15" },
+  { "الرقم الوظيفي": "506", "رقم جسر": "49", "اسم العامل": "شكيب ميا", "المهنة": "سائق" },
+  { "الرقم الوظيفي": "504", "رقم جسر": "55", "اسم العامل": "لامين مولا" },
+  { "الرقم الوظيفي": "502", "رقم جسر": "56", "اسم العامل": "مد تفيق مد حسن", "المهنة": "فنّي" },
+  { "الرقم الوظيفي": "507", "رقم جسر": "59", "اسم العامل": "مد فرهاد علي شاركر" },
+  { "الرقم الوظيفي": "503", "رقم جسر": "60", "اسم العامل": "راسل ديوان" },
+  { "الرقم الوظيفي": "501", "رقم جسر": "63", "اسم العامل": "مد طيف ال رحمن شهاب" },
+  { "الرقم الوظيفي": "505", "رقم جسر": "70", "اسم العامل": "محمد شيدال اسلام" },
+  { "الرقم الوظيفي": "500", "رقم جسر": "71", "اسم العامل": "شميم" },
+  { "الرقم الوظيفي": "509", "رقم جسر": "82", "اسم العامل": "مد هلال مد الدين" },
+  { "الرقم الوظيفي": "508", "رقم جسر": "085", "اسم العامل": "ساجر", "المهنة": "عامل" },
+  /* التحق في سبتمبر — ليس في كشف أغسطس ولا رقم جسر له. */
+  { "الرقم الوظيفي": "591", "اسم العامل": "موظف جديد", "تاريخ المباشرة": "2026-09-15" },
 ];
 
 const RUN = {
@@ -55,22 +58,67 @@ function harness(over = {}) {
 
 /* ── المصدر: الكشف نفسه ── */
 
-test("القائمة تأتي من كشف الرواتب لا من سجلّ الموظفين الحالي", async () => {
+/* اختبار الانحدار الحاسم: يسقط على الشيفرة التي تبحث برقم الكشف في
+   «الرقم الوظيفي» — وهي التي أنتجت «عشرة من عشرة مجهولون». */
+test("الربط يجري عبر «رقم جسر» لا عبر الرقم الوظيفي", async () => {
   const h = harness();
   const r = await backfill(h.opts);
   assert.equal(r.ok, true);
   assert.equal(r.source, "payroll_sheet");
-  assert.deepEqual(r.roster.map((e) => e.eid), ["49", "55", "56", "59", "60", "63", "70", "71", "82", "85"]);
-  /* الموظف 91 التحق في سبتمبر: في السجلّ الحالي لكن ليس في كشف أغسطس. */
-  assert.ok(!r.roster.some((e) => e.eid === "91"), "موظف سبتمبر لا يدخل مسير أغسطس");
+  assert.deepEqual(r.roster.map((e) => e.jisrNo), ["49", "55", "56", "59", "60", "63", "70", "71", "82", "85"]);
+  assert.deepEqual(
+    r.roster.map((e) => e.eid),
+    ["506", "504", "502", "507", "503", "501", "505", "500", "509", "508"],
+    "المُخزَّن هو الرقم الوظيفي للمنصّة"
+  );
+  assert.ok(!r.roster.some((e) => e.eid === "591"), "موظف سبتمبر لا يدخل مسير أغسطس");
+});
+
+test("employee_eid المُدرَج هو الرقم الوظيفي لا رقم جسر", async () => {
+  const h = harness();
+  await backfill(h.opts);
+  const written = h.sql.calls.map((c) => String(c.values[1]));
+  for (const v of written) assert.match(v, /^5\d\d$/, `${v} يجب أن يكون رقمًا وظيفيًا في المدى 5xx`);
+  for (const jisr of ["49", "55", "56", "59", "60", "63", "70", "71", "82", "85"]) {
+    assert.ok(!written.includes(jisr), `رقم جسر ${jisr} يجب ألّا يُكتب في employee_eid`);
+  }
+});
+
+test("رقم جسر مخزَّن بأصفار بادئة يُطابق الكشف", async () => {
+  const r = await backfill(harness().opts);
+  const saajir = r.roster.find((e) => e.eid === "508");
+  assert.ok(saajir, "«085» في السجلّ يُطابق «85» في الكشف");
+  assert.equal(saajir.jisrNo, "85");
 });
 
 test("الأسماء من جدول الموظفين لا من الكشف المشوّه", async () => {
   const r = await backfill(harness().opts);
-  const first = r.roster.find((e) => e.eid === "49");
-  assert.equal(first.name, "شكيب مياه");
+  const first = r.roster.find((e) => e.jisrNo === "49");
+  assert.equal(first.name, "شكيب ميا", "الاسم من السجلّ لا «شكيبميا ه» من الكشف");
   assert.equal(first.jobTitle, "سائق");
-  assert.equal(r.roster.find((e) => e.eid === "55").jobTitle, null, "مهنة غائبة تُخزَّن null لا نصًّا فارغًا");
+  assert.equal(r.roster.find((e) => e.jisrNo === "55").jobTitle, null, "مهنة غائبة تُخزَّن null");
+});
+
+/* الاسم وحده لا يُنشئ رابطًا أبدًا، مهما بلغ التطابق. */
+test("تطابق الاسم تمامًا مع غياب رقم جسر لا يربط: يُرفض", async () => {
+  const noJisr = EMPLOYEES.map(({ "رقم جسر": _drop, ...rest }) => rest);
+  const h = harness({ listEmployees: async () => noJisr });
+  const r = await backfill(h.opts);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, "unknown_jisr_numbers");
+  assert.equal(r.unknown.length, 10, "الأسماء موجودة ومطابقة، والربط مع ذلك مرفوض");
+  assert.equal(h.sql.calls.length, 0);
+});
+
+test("موظفان يحملان رقم جسر نفسه يوقفان العملية", async () => {
+  const clashing = EMPLOYEES.map((e) => (e["الرقم الوظيفي"] === "504" ? { ...e, "رقم جسر": "49" } : e));
+  const h = harness({ listEmployees: async () => clashing });
+  const r = await backfill(h.opts);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, "duplicate_jisr_in_platform");
+  assert.equal(r.jisrNo, "49");
+  assert.deepEqual(r.eids.sort(), ["504", "506"]);
+  assert.equal(h.sql.calls.length, 0);
 });
 
 test("اكتمال الاستخراج مُتحقَّق بمطابقة صف الإجماليات", async () => {
@@ -91,18 +139,36 @@ test("استخراج ناقص يوقف العملية بدل أن يُنتج م�
   assert.equal(h.sql.calls.length, 0, "لا كتابة عند فشل التحقّق");
 });
 
-test("رقم في الكشف بلا سجلّ يوقف العملية إلّا بعلَم صريح", async () => {
-  const partial = EMPLOYEES.filter((e) => e["الرقم الوظيفي"] !== "82");
+test("رقم جسر بلا صاحب يوقف العملية، و--exclude يستثنيه مسمًّى", async () => {
+  const partial = EMPLOYEES.filter((e) => e["الرقم الوظيفي"] !== "509"); // صاحب جسر 82
   const blocked = await backfill(harness({ listEmployees: async () => partial }).opts);
   assert.equal(blocked.ok, false);
-  assert.equal(blocked.reason, "unknown_eids");
-  assert.deepEqual(blocked.unknown.map((u) => u.eid), ["82"]);
+  assert.equal(blocked.reason, "unknown_jisr_numbers");
+  assert.deepEqual(blocked.unknown.map((u) => u.jisrNo), ["82"]);
 
   const h = harness({ listEmployees: async () => partial });
-  const allowed = await backfill({ ...h.opts, skipUnknown: true });
+  const allowed = await backfill({ ...h.opts, exclude: ["82"] });
   assert.equal(allowed.ok, true);
   assert.equal(allowed.roster.length, 9);
-  assert.ok(!allowed.roster.some((e) => e.eid === "82"));
+  assert.deepEqual(allowed.excluded.map((u) => u.jisrNo), ["82"]);
+});
+
+/* الاستثناء مقيَّد بما سمّيتَه: رقمٌ مجهول آخر يظلّ يوقف العملية. */
+test("--exclude لا يتخطّى إلّا ما سُمِّي", async () => {
+  const partial = EMPLOYEES.filter((e) => !["509", "508"].includes(e["الرقم الوظيفي"]));
+  const h = harness({ listEmployees: async () => partial });
+  const r = await backfill({ ...h.opts, exclude: ["82"] });
+  assert.equal(r.ok, false, "جسر 85 ما زال مجهولًا ولم يُسمَّ");
+  assert.deepEqual(r.unknown.map((u) => u.jisrNo), ["85"]);
+  assert.equal(h.sql.calls.length, 0);
+});
+
+test("--exclude يقبل الأصفار البادئة كما يقبلها التطبيع", async () => {
+  const partial = EMPLOYEES.filter((e) => e["الرقم الوظيفي"] !== "509");
+  const h = harness({ listEmployees: async () => partial });
+  const r = await backfill({ ...h.opts, exclude: ["082"] });
+  assert.equal(r.ok, true);
+  assert.equal(r.roster.length, 9);
 });
 
 test("بلا كشف مرفوع: يتوقّف ولا يستعمل السجلّ الحالي صامتًا", async () => {
@@ -118,7 +184,7 @@ test("بلا كشف مرفوع: يتوقّف ولا يستعمل السجلّ ا
 test("--from-employees يُصفّي بتاريخ المباشرة ويُبقي من لا تاريخ له", async () => {
   const r = await rosterFromEmployees({ listEmployees: async () => EMPLOYEES });
   assert.equal(r.source, "employees_table");
-  assert.ok(!r.roster.some((e) => e.eid === "91"), "من التحق بعد أغسطس يُستبعد");
+  assert.ok(!r.roster.some((e) => e.eid === "591"), "من التحق بعد أغسطس يُستبعد");
   assert.equal(r.excluded, 1);
   assert.equal(r.roster.length, 10, "من لا تاريخ مباشرة له يبقى");
 });

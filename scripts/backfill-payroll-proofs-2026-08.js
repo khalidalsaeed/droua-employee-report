@@ -18,6 +18,13 @@
    فتشغيله مرّتين لا يُنتج تكرارًا ولا يمسّ صفًّا موجودًا — وهذا يشمل
    صفًّا رُفع إليه إثبات فعلًا: DO NOTHING لا يمسح file_url.
 
+   ── الربط ──
+   أرقام الكشف هي أرقام نظام جسر لا «الرقم الوظيفي» في المنصّة: جسر من
+   مرتبتين والمنصّة في المدى 5xx. فالربط يجري عبر حقل «رقم جسر» في سجلّ
+   الموظف — مفتاح صريح أُدخل بيد إنسان — لا بمطابقة الأرقام مباشرة ولا
+   بمطابقة الأسماء. الأسماء تُطبع للتشخيص وحده ولا تُنشئ رابطًا أبدًا:
+   «شميم» و«شميم حسين» يبدوان الشخص نفسه ولا يصحّ أن يقرّر ذلك برنامج.
+
    ── مصدر القائمة ──
    الافتراضي هو كشف رواتب أغسطس المرفوع على المسير نفسه: هو الوثيقة
    الوحيدة التي تثبت من صُرف له راتب ذلك الشهر. «قائمة الموظفين الحاليين»
@@ -35,8 +42,10 @@
      --dry-run         يطبع ما سيُكتب ولا يكتب حرفًا. لا INSERT إطلاقًا.
      --from-employees  يتخطّى الكشف ويستعمل سجلّ الموظفين الحالي (يُصفّى
                        بتاريخ المباشرة حتى 2026-08-31 حيث وُجد التاريخ).
-     --skip-unknown    يمضي رغم وجود رقم وظيفي في الكشف لا صفّ له في
-                       employees (موظف غادر وحُذف سجلّه). بدونه يتوقّف. */
+     --exclude 82,85   يستثني أرقام جسر بعينها، مسمّاةً واحدًا واحدًا.
+                       بديلٌ مقصود عن علَمٍ عامٍّ يتخطّى «كل مجهول»: ذاك
+                       كان سيمرّر عشرة من عشرة بضغطة حين يكون الخلل في
+                       الربط نفسه لا في موظف غادر. */
 
 const RUN_ID = "2026-08";
 const MONTH_END = "2026-08-31";
@@ -44,6 +53,7 @@ const F_EID = "الرقم الوظيفي";
 const F_NAME = "اسم العامل";
 const F_JOB = "المهنة";
 const F_START = "تاريخ المباشرة";
+const { F_JISR, normalizeJisr } = require("../lib/data/employees");
 
 const SHEET_ATTACHMENT_KEY = "payroll_sheet";
 
@@ -73,8 +83,26 @@ function sheetUrlOf(run) {
   return (attachment && attachment.fileUrl) || run.fileUrl || null;
 }
 
-/* القائمة من الكشف: أرقام الموظفين من الوثيقة، وأسماؤهم من السجلّ. */
-async function rosterFromSheet(run, d, { skipUnknown }) {
+/* فهرس الموظفين بـ«رقم جسر» المُطبَّع. يرفض إن حمل موظفان الرقم نفسه:
+   دفاعٌ مضاعف فوق الفهرس الفريد في القاعدة — لو عُطّل الفهرس أو أُدخل
+   الصفّان قبل إنشائه، لا يصحّ أن يختار السكربت أحدهما اعتباطًا. */
+function indexByJisr(employees) {
+  const byJisr = new Map();
+  for (const e of employees) {
+    const key = normalizeJisr(e && e[F_JISR]);
+    if (!key) continue;
+    if (byJisr.has(key)) {
+      const first = byJisr.get(key);
+      return { ok: false, reason: "duplicate_jisr_in_platform", jisrNo: key,
+               eids: [String(first[F_EID] || ""), String(e[F_EID] || "")] };
+    }
+    byJisr.set(key, e);
+  }
+  return { ok: true, byJisr };
+}
+
+/* القائمة من الكشف: أرقام جسر من الوثيقة، والهوية من السجلّ عبر «رقم جسر». */
+async function rosterFromSheet(run, d, { exclude }) {
   const url = sheetUrlOf(run);
   if (!url) return { ok: false, reason: "no_sheet_attached" };
 
@@ -82,31 +110,40 @@ async function rosterFromSheet(run, d, { skipUnknown }) {
   const extraction = await d.extractRoster(buffer);
   if (!extraction.ok) return { ok: false, reason: extraction.reason, extraction, url };
 
-  const byEid = new Map();
-  for (const e of await d.listEmployees()) {
-    const eid = String((e && e[F_EID]) || "").trim();
-    if (eid) byEid.set(eid, e);
-  }
+  const index = indexByJisr(await d.listEmployees());
+  if (!index.ok) return { ...index, url, extraction };
 
+  const excludeSet = new Set((exclude || []).map(normalizeJisr).filter(Boolean));
   const roster = [];
   const unknown = [];
+  /* المستثنَون بأمر المستخدم — اسمٌ مستقلّ عن عدّاد الإدراج المتخطّى
+     (ON CONFLICT) في insertRows، فلا يدوس أحدهما الآخر في الردّ. */
+  const excluded = [];
   for (const row of extraction.staff) {
-    const employee = byEid.get(row.eid);
+    const key = normalizeJisr(row.jisrNo);
+    if (excludeSet.has(key)) {
+      excluded.push(row);
+      continue;
+    }
+    const employee = index.byJisr.get(key);
     if (!employee) {
       unknown.push(row);
       continue;
     }
     roster.push({
-      eid: row.eid,
+      /* المُخزَّن هو الرقم الوظيفي للمنصّة لا رقم جسر: جدول الإثباتات
+         مفتاحه (run_id, employee_eid) وهو يعني الرقم الوظيفي. */
+      eid: String(employee[F_EID] || "").trim(),
+      jisrNo: key,
       name: String(employee[F_NAME] || "").trim(),
       jobTitle: String(employee[F_JOB] || "").trim() || null,
     });
   }
 
-  if (unknown.length && !skipUnknown) {
-    return { ok: false, reason: "unknown_eids", unknown, roster, url, extraction };
+  if (unknown.length) {
+    return { ok: false, reason: "unknown_jisr_numbers", unknown, roster, excluded, url, extraction };
   }
-  return { ok: true, roster, unknown, url, source: "payroll_sheet", extraction };
+  return { ok: true, roster, unknown, excluded, url, source: "payroll_sheet", extraction };
 }
 
 /* البديل الصريح: سجلّ الموظفين الحالي، مُصفّى بتاريخ المباشرة حيث وُجد.
@@ -151,21 +188,21 @@ async function insertRows(roster, d, { dryRun }) {
 }
 
 async function backfill(options = {}) {
-  const { dryRun = false, fromEmployees = false, skipUnknown = false, ...overrides } = options;
+  const { dryRun = false, fromEmployees = false, exclude = [], ...overrides } = options;
   const d = deps(overrides);
 
   const run = await d.getRun(RUN_ID);
   if (!run) return { ok: false, reason: "run_not_found", runId: RUN_ID };
 
   const existing = (run.employees || []).length;
-  const resolved = await resolveRoster(run, d, { fromEmployees, skipUnknown });
+  const resolved = await resolveRoster(run, d, { fromEmployees, exclude });
   if (!resolved.ok) return { ok: false, ...resolved, run, existing };
 
   const result = await insertRows(resolved.roster, d, { dryRun });
   return {
     ok: true, runId: RUN_ID, monthLabel: run.monthLabel,
     source: resolved.source, sheetUrl: resolved.url || null,
-    existing, roster: resolved.roster, unknown: resolved.unknown || [],
+    existing, roster: resolved.roster, unknown: resolved.unknown || [], excluded: resolved.excluded || [],
     ...result,
   };
 }
@@ -177,16 +214,27 @@ const REASONS = {
   unreadable_pdf: "تعذّرت قراءة ملفّ الكشف كـPDF (قد يكون صورة).",
   no_employee_rows: "لم يُعثر على صفّ موظف واحد في الكشف — بنيته غير متوقّعة.",
   no_totals_row: "لا صفّ إجماليات في الكشف، فلا سبيل للتحقّق من اكتمال الاستخراج.",
-  duplicate_eid: "رقم وظيفي مكرّر في الكشف — القارئ فسّر شيئًا آخر رقمًا وظيفيًا.",
+  duplicate_jisr_in_sheet: "رقم جسر مكرّر داخل الكشف — القارئ فسّر شيئًا آخر رقم موظف.",
+  duplicate_jisr_in_platform: "موظفان يحملان رقم جسر نفسه في سجلّ الموظفين.",
   totals_mismatch: "مجموع الصوافي المستخرجة لا يطابق صف الإجماليات — الاستخراج ناقص.",
-  unknown_eids: "أرقام في الكشف بلا صفّ في سجلّ الموظفين (موظف غادر وحُذف سجلّه).",
+  unknown_jisr_numbers: "أرقام جسر في الكشف لا يحملها أي موظف في السجلّ.",
 };
 
 async function main() {
   const argv = process.argv.slice(2);
   const dryRun = argv.includes("--dry-run");
   const fromEmployees = argv.includes("--from-employees");
-  const skipUnknown = argv.includes("--skip-unknown");
+  /* --exclude 82,85 — أرقام جسر مسمّاة واحدًا واحدًا، لا علَم يتخطّى
+     «كل مجهول». تجاوز الحاجز يجب أن يكون قرارًا لا سهوًا. */
+  const excludeArg = argv[argv.indexOf("--exclude") + 1];
+  const exclude = argv.includes("--exclude") && excludeArg && !excludeArg.startsWith("--")
+    ? excludeArg.split(",").map((x) => x.trim()).filter(Boolean)
+    : [];
+  if (argv.includes("--skip-unknown")) {
+    console.error("‏--skip-unknown أُزيل. سمِّ الأرقام صراحةً: --exclude 82,85");
+    process.exitCode = 1;
+    return;
+  }
 
   if (!dryRun && !process.env.DATABASE_URL) {
     console.error("DATABASE_URL غير مُهيّأ. صدّره أوّلًا أو شغّل مع --dry-run.");
@@ -205,16 +253,29 @@ async function main() {
     console.log("   هذه قائمة تقريبية: من غادر بعد أغسطس لن يظهر، ومن التحق قبل 2026-08-31 سيظهر\n");
   }
 
-  const r = await backfill({ dryRun, fromEmployees, skipUnknown });
+  if (exclude.length) console.log(`مستثنى بأمرك: أرقام جسر ${exclude.join(", ")}\n`);
+  const r = await backfill({ dryRun, fromEmployees, exclude });
 
   if (!r.ok) {
     console.error(`فشل: ${REASONS[r.reason] || r.reason}`);
     if (r.reason === "totals_mismatch") {
       console.error(`  المستخرج: ${r.extraction.sumNet.toFixed(2)} · المطبوع: ${r.extraction.totalNet.toFixed(2)}`);
     }
-    if (r.reason === "unknown_eids") {
-      for (const u of r.unknown) console.error(`  رقم ${u.eid} (الاسم في الكشف تقريبًا: «${u.nameHint}»)`);
-      console.error("\n  أعِد سجلّ الموظف إلى النظام ثم أعد التشغيل، أو مرّر --skip-unknown لتخطّيه.");
+    if (r.reason === "duplicate_jisr_in_platform") {
+      console.error(`  رقم جسر ${r.jisrNo} عند الموظفَين: ${r.eids.join(" و ")}`);
+    }
+    if (r.reason === "unknown_jisr_numbers") {
+      console.error("");
+      for (const u of r.unknown) console.error(`  رقم جسر ${String(u.jisrNo).padStart(5)} — الاسم في الكشف تقريبًا: «${u.nameHint}»`);
+      console.error(`\n  ${r.unknown.length} من ${r.extraction.staff.length} غير مربوطين.`);
+      if (r.unknown.length === r.extraction.staff.length) {
+        console.error("  الكلّ غير مربوط: الأرجح أن حقل «رقم جسر» لم يُملأ بعد لأي موظف.");
+        console.error("  شغّل أولًا: node scripts/set-jisr-numbers.js --propose --run 2026-08 --out jisr-map.json");
+      } else {
+        console.error("  املأ «رقم جسر» لهؤلاء في سجلّ الموظفين، أو استثنِهم صراحةً:");
+        console.error(`    --exclude ${r.unknown.map((u) => u.jisrNo).join(",")}`);
+      }
+      console.error("\n  الاسم أعلاه للتعرّف وحده — لا يُستعمل للربط إطلاقًا.");
     }
     process.exitCode = 1;
     return;
@@ -226,9 +287,12 @@ async function main() {
     console.log(`تحقّق الاكتمال: مجموع الصوافي ${r.extraction.sumNet.toFixed(2)} = صف الإجماليات ${r.extraction.totalNet.toFixed(2)} ✅`);
   }
   console.log(`صفوف إثبات موجودة مسبقًا: ${r.existing}`);
-  if (r.unknown.length) console.log(`متخطّى (لا سجلّ له): ${r.unknown.map((u) => u.eid).join(", ")}`);
+  if (r.excluded.length) console.log(`مستثنى بأمرك: أرقام جسر ${r.excluded.map((u) => u.jisrNo).join(", ")}`);
   console.log(`\nالموظفون (${r.roster.length}):`);
-  for (const e of r.roster) console.log(`  ${String(e.eid).padStart(5)}  ${e.name}${e.jobTitle ? ` — ${e.jobTitle}` : ""}`);
+  console.log("  رقم جسر → الرقم الوظيفي  الاسم");
+  for (const e of r.roster) {
+    console.log(`  ${String(e.jisrNo).padStart(7)} → ${String(e.eid).padStart(13)}  ${e.name}${e.jobTitle ? ` — ${e.jobTitle}` : ""}`);
+  }
 
   if (dryRun) {
     console.log(`\nسيُحاول إدراج ${r.attempted} صفًّا بـ ON CONFLICT (run_id, employee_eid) DO NOTHING.`);

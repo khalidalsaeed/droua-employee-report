@@ -1312,6 +1312,7 @@ function openDrawer(i){
 
       <div class="dr-group"><div class="gt">الهوية والإقامة</div><div class="dl">
         ${drRow("الرقم الوظيفي",esc(e[F.eid]),1)}
+        ${drRow("رقم جسر",esc(e[F.jisr]),1)}
         ${drRow("رقم الإقامة",esc(e[F.iqama]),1)}
         ${drRow("تاريخ إصدار الإقامة",fmtDate(e[F.iqIssue]))}
         ${drRow("تاريخ انتهاء الإقامة",docDcell(e[F.iqExp],iq))}
@@ -1420,6 +1421,7 @@ const EMP_FIELD_SPECS={
     {key:"passport",label:"رقم الجواز",type:"text"},
     {key:"passExp",label:"تاريخ انتهاء الجواز",type:"date"},
     {key:"employer",label:"رقم صاحب العمل",type:"text"},
+    {key:"jisr",label:"رقم جسر",type:"text"},
     {key:"cStart",label:"بداية العقد",type:"date"},
     {key:"cEnd",label:"نهاية العقد",type:"date"},
     {key:"transfer",label:"حالة النقل",type:"text"},
@@ -1840,7 +1842,7 @@ sort.addEventListener("change",e=>{state.sort=e.target.value;render();});
 function exportExcel(){
   const list=sortList(DATA.filter(matches));
   const cols=[
-    ["الرقم الوظيفي",e=>e[F.eid]],["اسم العامل",e=>e[F.name]],["رقم الإقامة",e=>e[F.iqama]],
+    ["الرقم الوظيفي",e=>e[F.eid]],["رقم جسر",e=>e[F.jisr]],["اسم العامل",e=>e[F.name]],["رقم الإقامة",e=>e[F.iqama]],
     ["الجنسية",e=>e[F.nat]],["المهنة",e=>e[F.job]],["الجنس",e=>e[F.sex]],["تاريخ الميلاد",e=>e[F.dob]],
     ["تاريخ انتهاء الإقامة",e=>e[F.iqExp]],["حالة الإقامة (محسوبة)",e=>statusLabel(statusOf(e[F.iqExp]))],
     ["تاريخ انتهاء رخصة العمل",e=>e[F.licExp]],["حالة رخصة العمل (محسوبة)",e=>statusLabel(licStatus(e))],
