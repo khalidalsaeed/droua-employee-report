@@ -53,6 +53,29 @@ main.block{padding-block:20px}
 .attachment-actions{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
 .mini-btn{border:1px solid var(--hair);background:var(--paper-2);border-radius:8px;padding:7px 14px;font-size:12.5px;color:var(--ink);cursor:pointer;transition:.2s;display:inline-flex;align-items:center;gap:6px;font-family:var(--sans)}
 .mini-btn:hover{border-color:var(--slate);color:var(--slate)}
+/* إثباتات تحويل الرواتب — بطاقة مدمجة داخل صفّ كل موظف.
+   Compact عمدًا: سطر واحد أفقي على سطح المكتب، مكدَّس على الجوال. لا
+   إطار ثانٍ ولا ظلّ ولا عنوان كبير — لأن العدد يساوي عدد الموظفين،
+   فبطاقةٌ ضخمة لكل واحد كانت ستُغرق الصفحة. */
+.proofs-section{margin-top:22px}
+.proofs-head{display:flex;align-items:baseline;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:12px}
+.proofs-title{font-size:13px;font-weight:700;color:var(--ink-soft)}
+.proofs-count{font-size:12px;color:var(--ink-soft)}
+.proofs-list{display:flex;flex-direction:column;gap:8px}
+.emp-row{display:flex;flex-direction:column;gap:10px;
+  background:var(--paper);border:1px solid var(--hair);border-radius:12px;padding:12px 14px}
+@media(min-width:768px){.emp-row{flex-direction:row;align-items:center;justify-content:space-between;gap:16px}}
+.emp-ident{min-width:0}
+.emp-name{font-size:14px;font-weight:600;color:var(--ink);overflow-wrap:anywhere}
+.emp-meta{font-size:11.5px;color:var(--ink-soft);margin-top:2px}
+/* البطاقة الصغيرة نفسها */
+.proof-card{flex:none;border:1px solid var(--hair-2);border-radius:10px;background:var(--paper-2);padding:8px 10px}
+@media(min-width:768px){.proof-card{min-width:300px}}
+.proof-label{font-size:11.5px;font-weight:700;color:var(--ink-soft);line-height:1.5}
+.proof-sub{font-size:11.5px;color:var(--ink-soft);margin-top:1px}
+.proof-file{display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--ok);margin-top:1px;overflow-wrap:anywhere}
+.proof-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.proof-actions .admin-mini-btn,.proof-actions .mini-btn{font-size:11.5px;padding:5px 10px}
 .empty-note{padding:40px 20px;text-align:center;color:var(--ink-soft)}
 .access-denied{text-align:center;padding:56px 20px;color:var(--ink-soft)}
 .num{font-variant-numeric:tabular-nums;direction:ltr;unicode-bidi:embed;display:inline-block}
@@ -277,6 +300,67 @@ function editAttachmentNote(key, currentNote){
     }catch(err){ AdminUI.showError(modal, err.message); }
   });
 }
+/* ─── إثبات تحويل راتب الموظف ───
+   ملف واحد مستقلّ لكل موظف. الرفع يمرّ على نقطة الرفع العامّة نفسها
+   (payroll:upload_files) ببادئة تحمل معرّف المسير والرقم الوظيفي، ثم
+   يُربط بالسجلّ بـPUT يحمل eid صراحةً — والخادم يكتب صفًّا واحدًا
+   مقيَّدًا بـ(run_id, employee_eid) فلا يختلط إثبات بموظف آخر.
+
+   الصيغ المسموحة PDF/JPG/JPEG/PNG. سمة accept هنا للتجربة، والرفض
+   الحقيقي في lib/data/payrollRuns.js على الخادم. */
+const PROOF_ACCEPT="application/pdf,image/jpeg,image/png";
+
+function proofCard(emp, monthLabel){
+  const has=!!(emp.proof && emp.proof.fileUrl);
+  const mayUpload=AdminUI.can("payroll","upload_files");
+  const mayDeleteFile=AdminUI.can("payroll","delete_files");
+  const label=`إثبات تحويل راتب ${emp.name} — ${monthLabel}`;
+  return `<div class="proof-card">
+    <div class="proof-label">إثبات تحويل راتب الموظف</div>
+    ${has
+      ? `<div class="proof-file">
+           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+           مرفق${emp.proof.uploadedAt?` · <span class="num">${fmtDate(emp.proof.uploadedAt)}</span>`:""}
+         </div>`
+      : `<div class="proof-sub">إرفاق إثبات التحويل</div>`}
+    <div class="proof-actions">
+      ${has?`
+        <button class="mini-btn" data-act="proof-preview" data-file="${esc(emp.proof.fileUrl)}" data-label="${esc(label)}">عرض</button>
+        <a class="mini-btn" href="${esc(emp.proof.fileUrl)}" download>تنزيل</a>`:""}
+      ${mayUpload?`<label class="admin-mini-btn" style="cursor:pointer">
+        ${has?"استبدال":"رفع الملف"}
+        <input type="file" accept="${PROOF_ACCEPT}" style="display:none" data-act="proof-upload" data-eid="${esc(emp.eid)}">
+      </label>`:""}
+      ${has&&mayDeleteFile?`<button class="admin-mini-btn danger" data-act="proof-delete" data-eid="${esc(emp.eid)}">حذف</button>`:""}
+    </div>
+  </div>`;
+}
+
+function employeeRow(emp, monthLabel){
+  return `<div class="emp-row">
+    <div class="emp-ident">
+      <div class="emp-name">${esc(emp.name)}</div>
+      <div class="emp-meta">الرقم الوظيفي <span class="num">${esc(emp.eid)}</span>${emp.jobTitle?` · ${esc(emp.jobTitle)}`:""}</div>
+    </div>
+    ${proofCard(emp, monthLabel)}
+  </div>`;
+}
+
+async function uploadProof(eid, file, onProgress){
+  const url=await AdminUI.uploadFile(file, `payroll/${RUN_ID}/proofs/${eid}`, "payroll", onProgress);
+  await AdminUI.api("PUT","/api/data/payroll-runs",{id:RUN_ID, proofs:[{eid, fileUrl:url, fileName:file.name}]});
+  await loadRun();
+  AdminUI.toastOk("تم رفع إثبات التحويل");
+}
+async function deleteProof(eid){
+  if(!await AdminUI.confirmDanger("هل أنت متأكد من حذف إثبات التحويل لهذا الموظف؟ لا يمكن التراجع عن هذا الإجراء.")) return;
+  try{
+    await AdminUI.api("PUT","/api/data/payroll-runs",{id:RUN_ID, proofs:[{eid, fileUrl:null, fileName:null}]});
+    await loadRun();
+    AdminUI.toastOk("تم حذف إثبات التحويل");
+  }catch(err){ AdminUI.toastError(err.message); }
+}
+
 async function uploadMainFile(file, onProgress){
   const url=await AdminUI.uploadFile(file, `payroll/${RUN_ID}`, "payroll", onProgress);
   await AdminUI.api("PUT","/api/data/payroll-runs",{id:RUN_ID, fileUrl:url, attachments:[{key:"payroll_sheet", fileUrl:url, statusKey:"attached", uploadedAt:new Date().toISOString().slice(0,10)}]});
@@ -307,6 +391,11 @@ function renderRun(run){
   document.getElementById("pageStatus").innerHTML = statusBadge(run.statusKey);
 
   const otherAttachments = (run.attachments||[]).filter(att => att.key !== "payroll_sheet");
+
+  /* القسم لا يُرسم إطلاقًا لمسير بلا لقطة موظفين — أي لكل مسير أُنشئ
+     قبل هذه الميزة. المسيرات السابقة تُعرض اليوم كما كانت بالضبط. */
+  const employees = run.employees||[];
+  const attachedCount = employees.filter(e=>e.proof&&e.proof.fileUrl).length;
 
   document.getElementById("detailContent").innerHTML = `
     <div class="payroll-card">
@@ -341,6 +430,16 @@ function renderRun(run){
         ${otherAttachments.map(att=>attachmentCard(att, run.monthLabel)).join("")}
       </div>
     </div>
+    ${employees.length?`
+    <div class="proofs-section">
+      <div class="proofs-head">
+        <div class="proofs-title">إثباتات تحويل الرواتب</div>
+        <div class="proofs-count"><span class="num">${attachedCount}</span> من <span class="num">${employees.length}</span> مرفق</div>
+      </div>
+      <div class="proofs-list">
+        ${employees.map(emp=>employeeRow(emp, run.monthLabel)).join("")}
+      </div>
+    </div>`:""}
   `;
 
   const content = document.getElementById("detailContent");
@@ -369,6 +468,10 @@ function renderRun(run){
   content.querySelectorAll('[data-act="att-upload"]').forEach(inp=>
     AdminUI.wireUpload(inp, inp.closest("label"), (file,onProgress)=>uploadAttachmentFile(inp.dataset.key, file, onProgress)));
   content.querySelectorAll('[data-act="att-delete-file"]').forEach(b=>b.addEventListener("click", ()=>deleteAttachmentFile(b.dataset.key)));
+  content.querySelectorAll('[data-act="proof-preview"]').forEach(b=>b.addEventListener("click", ()=>openPreview(b.dataset.file, b.dataset.label)));
+  content.querySelectorAll('[data-act="proof-upload"]').forEach(inp=>
+    AdminUI.wireUpload(inp, inp.closest("label"), (file,onProgress)=>uploadProof(inp.dataset.eid, file, onProgress)));
+  content.querySelectorAll('[data-act="proof-delete"]').forEach(b=>b.addEventListener("click", ()=>deleteProof(b.dataset.eid)));
   content.querySelectorAll('[data-act="att-edit-note"]').forEach(b=>{
     b.addEventListener("click", ()=>{
       const att=(run.attachments||[]).find(a=>a.key===b.dataset.key);

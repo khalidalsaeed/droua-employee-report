@@ -250,6 +250,38 @@ test("الإشعار التجريبي: الضغط يفتح /expiring.html", asyn
   assert.deepEqual(sw.calls.openWindow, [TARGET]);
 });
 
+/* المطلوب صراحةً في مواصفة مسير الرواتب: الضغط يفتح المسير الجديد
+   مباشرةً لا الصفحة الرئيسية ولا صفحة الوثائق. الرحلة كاملة هنا — من
+   بانية الحمولة على الخادم إلى الوجهة التي يفتحها عامل الخدمة. */
+test("إشعار مسير الرواتب: الضغط يفتح المسير نفسه لا الرئيسية", async () => {
+  const { buildPush } = require("../lib/payroll/notify");
+  const payload = buildPush({ id: "2026-08", monthLabel: "أغسطس 2026" });
+  assert.equal(payload.url, "/payroll/2026-08");
+
+  const sw = loadSw({ windows: [] });
+  const shown = await dispatchPush(sw, payload);
+  assert.equal(shown.title, "مسير رواتب أغسطس 2026");
+  assert.equal(shown.options.body, "تم إنشاء المسير وبانتظار إكمالك له.");
+  assert.equal(shown.options.data.url, "/payroll/2026-08");
+
+  await clickNotification(sw, shown.options.data);
+  assert.deepEqual(sw.calls.openWindow, [`${DEFAULT_ORIGIN}/payroll/2026-08`]);
+  assert.notDeepEqual(sw.calls.openWindow, [TARGET], "ليست وجهة الاحتياط");
+});
+
+/* نافذة مفتوحة على الرئيسية يجب أن تنتقل إلى المسير لا أن تُركَّز مكانها. */
+test("إشعار مسير الرواتب ينقل نافذة مفتوحة إلى صفحة المسير", async () => {
+  const { buildPush } = require("../lib/payroll/notify");
+  const home = makeClient(`${DEFAULT_ORIGIN}/`);
+  const sw = loadSw({ windows: [home] });
+
+  const shown = await dispatchPush(sw, buildPush({ id: "2026-08", monthLabel: "أغسطس 2026" }));
+  await clickNotification(sw, shown.options.data);
+
+  assert.deepEqual(home.navigateCalls, [`${DEFAULT_ORIGIN}/payroll/2026-08`]);
+  assert.equal(home.focusCalls, 1);
+});
+
 test("حمولة بلا url: الإشعار يحمل /expiring.html والضغط يفتحها", async () => {
   const sw = loadSw({ windows: [] });
 
