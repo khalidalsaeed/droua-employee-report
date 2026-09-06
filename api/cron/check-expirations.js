@@ -7,14 +7,22 @@ const { buildEmail } = require("../../lib/notifications/templates");
 const { sendMail } = require("../../lib/notifications/mailer");
 const { runScheduled } = require("../../lib/reports/monthlyReport");
 const { sendExpiryDigest } = require("../../lib/push/notify");
+const { runScheduledPayroll } = require("../../lib/payroll/monthlyRun");
 
 /* The daily expiry scan. Kept as one function on purpose (Hobby caps the
    count), so the monthly report rides along on the same trigger: runScheduled
    decides for itself whether today is a day it should act on, and the database
    claim in monthly_reports guarantees a month is never sent twice.
 
-   The two jobs are isolated from each other — neither one's failure may stop
-   the other, which is why each has its own try/catch and its own key in the
+   إنشاء مسير الرواتب الشهري يركب على المُطلِق نفسه للسبب نفسه: دالّة
+   خادمة ثالثة كانت ستتجاوز سقف الخطّة، والمهمّة لا تحتاج مُطلِقًا خاصًّا
+   بها — runScheduledPayroll تقرّر بنفسها إن كان اليوم يومَها (اليوم
+   الأول من الشهر بتوقيت الرياض، مع خمسة أيام تدارك)، وحاجزا القاعدة
+   (مفتاح payroll_runs الأساسي، وحجز notified_at) يضمنان مسيرًا واحدًا
+   وتنبيهًا واحدًا مهما تكرّر التشغيل.
+
+   The jobs are isolated from each other — neither one's failure may stop
+   the others, which is why each has its own try/catch and its own key in the
    response instead of sharing one. */
 /* المسح مرّة واحدة. القناتان — البريد والدفع — تستهلكان مخرجاته نفسها،
    فلا يوجد في المنصّة تعريفان لِما يستحقّ تنبيهًا. */
@@ -54,7 +62,7 @@ module.exports = async function handler(req, res) {
       return;
     }
   }
-  let alerts = null, expiry, monthly, push;
+  let alerts = null, expiry, monthly, push, payrollRun;
   try {
     alerts = await scanOnce();
   } catch (err) {
@@ -85,7 +93,16 @@ module.exports = async function handler(req, res) {
   } catch (err) {
     monthly = { ran: false, ok: false, error: (err && err.message) || "خطأ داخلي" };
   }
+
+  /* معزول عن الاثنين قبله في الاتجاهين: تعطّل مسح الانتهاءات لا يمنع
+     إنشاء مسير أول الشهر، وتعطّل هذا لا يمنع التقرير الشهري. */
+  try {
+    payrollRun = await runScheduledPayroll(new Date());
+  } catch (err) {
+    payrollRun = { ran: false, ok: false, error: (err && err.message) || "خطأ داخلي" };
+  }
+
   /* 500 only if the expiry scan itself failed — that is what this cron is
      primarily for, and what a red run in Vercel's log should mean. */
-  res.status(expiry.ok ? 200 : 500).json({ ok: expiry.ok, ...expiry, push, monthlyReport: monthly });
+  res.status(expiry.ok ? 200 : 500).json({ ok: expiry.ok, ...expiry, push, monthlyReport: monthly, payrollRun });
 };
