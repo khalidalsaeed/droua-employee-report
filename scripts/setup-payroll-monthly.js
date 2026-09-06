@@ -61,6 +61,28 @@ const STATEMENTS = [
   },
 ];
 
+/* ينفّذ العبارات واحدةً واحدة على `sql` المُمرَّر.
+   =========================================================================
+   sql.query() هي واجهة تنفيذ نصّ استعلام كامل في @neondatabase/serverless.
+   وهذا ليس تفصيلًا أسلوبيًا: sql.unsafe() ليست دالّة تنفيذ أصلًا — تُرجع
+   كائن UnsafeRawSql وصفيًّا ({sql}) معدًّا للتضمين داخل قالب موسوم، فهو
+   ليس Promise. و await على غير Promise يحلّ فورًا بقيمته.
+
+   لذلك كان `await sql.unsafe(s.sql)` يبني وصفًا ويرميه: صفر طلبات إلى
+   القاعدة، ومع ذلك يطبع «تم» بعد كل عبارة ويخرج بنجاح. عطلٌ يكذب: كنّا
+   سنظنّ القاعدة مهيّأة ثم يفشل أول استعلام حقيقي بـ«الجدول غير موجود».
+   لذلك يُثبته اختبار انحدار يعدّ الطلبات الخارجة لا مجرّد النداءات.
+
+   الدالّة تأخذ `sql` معاملًا بدل أن تُنشئه بنفسها كي يستطيع الاختبار
+   تمرير مُشغّل حقيقي بشبكة مُعترَضة. */
+async function run(sql, { onProgress } = {}) {
+  for (const s of STATEMENTS) {
+    await sql.query(s.sql);
+    if (onProgress) onProgress(s);
+  }
+  return STATEMENTS.length;
+}
+
 async function main() {
   const dryRun = process.argv.includes("--dry-run");
   if (dryRun) {
@@ -74,16 +96,21 @@ async function main() {
     return;
   }
   const { getSql } = require("../lib/db");
-  const sql = getSql();
-  for (const s of STATEMENTS) {
-    process.stdout.write(`${s.label} ... `);
-    await sql.unsafe(s.sql);
-    console.log("تم");
-  }
-  console.log("\nاكتملت التهيئة. لم تُمسّ أي بيانات قائمة.");
+  /* التقدّم يُطبع قبل كل عبارة وبعدها، فالتوقّف عند عبارة بعينها ظاهرٌ
+     في المخرجات. وكل عبارة IF NOT EXISTS، فتوقّفٌ في المنتصف يُعالَج
+     بإعادة التشغيل: ما نُفِّذ يُتخطّى وما بقي يُستكمل. */
+  const count = await run(getSql(), {
+    onProgress: (s) => console.log(`${s.label} ... تم`),
+  });
+  console.log(`\nاكتملت التهيئة (${count} عبارة). لم تُمسّ أي بيانات قائمة.`);
 }
 
-main().catch((err) => {
-  console.error("\nفشلت التهيئة:", (err && err.message) || err);
-  process.exitCode = 1;
-});
+/* لا يعمل عند الاستيراد — الاختبار يستورد STATEMENTS و run بلا تنفيذ. */
+if (require.main === module) {
+  main().catch((err) => {
+    console.error("\nفشلت التهيئة:", (err && err.message) || err);
+    process.exitCode = 1;
+  });
+}
+
+module.exports = { STATEMENTS, run };
