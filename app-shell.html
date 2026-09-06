@@ -705,8 +705,8 @@ try{ if(sessionStorage.getItem("droua:welcome")==="1") document.documentElement.
 <script src="/admin-ui.js?v=2"></script>
 <script src="/app-nav.js?v=1"></script>
 <script src="/tickets-ui.js?v=2"></script>
-<!-- منطق حالة الوثائق (SOON و statusOf و isSoon و empDocs …) مشترك مع
-     صفحة /expiring.html. يجب أن يسبق سكربت الصفحة لأن تعريفاته عامّة. -->
+<!-- منطق حالة الوثائق (SOON و statusOf و needsFollowUp و empDocs …) مشترك
+     مع صفحة /expiring.html. يجب أن يسبق سكربت الصفحة لأن تعريفاته عامّة. -->
 <script src="/doc-status.js?v=1"></script>
 <!-- شاشة الترحيب. تُستدعى من initAuthGate() بعد /api/auth/me لا قبله. -->
 <script src="/welcome.js?v=1"></script>
@@ -768,9 +768,11 @@ function statusLabel(st){
     default:        return `سارية · متبقٍّ ${st.n} يوم`;  /* ok & warn */
   }
 }
-/* Card-facing urgency tiers for iqama/license specifically (10 / 6-10 / 1-5 / 0 / overdue) —
-   deliberately separate from statusOf()'s 90-day SOON window, which still drives the
-   executive KPI/charts/"expiring soon" modal and stays unchanged for that purpose. */
+/* Card-facing urgency tiers for iqama/license specifically (6-10 / 1-5 / 0 / overdue).
+   These now sit inside statusOf()'s SOON window rather than beside it: SOON is 10, so
+   `gold` and `red` together are exactly the window, and a card turning amber means the
+   same document is in the follow-up list and its counter. Kept as its own function
+   because the card needs the 5-day split that the counter has no use for. */
 function docStatusOf(expDateStr){
   const n=daysLeft(expDateStr);
   if(n===null) return {key:"na",cls:"na",n:null};
@@ -828,23 +830,26 @@ const cIq=countBy(e=>statusOf(e[F.iqExp]));
 const cLic=countBy(e=>licStatus(e));
 const validIq=cIq.valid, expiredIq=cIq.expired, soonIq=cIq.soon;
 const validLic=cLic.valid, expiredLic=cLic.expired, soonLic=cLic.soon, pendingLic=cLic.pending;
-/* الوثائق قريبة الانتهاء والمنتهية عبر كل موظف وكل وثيقة لها تاريخ
-   انتهاء. الحساب من doc-status.js — وهي الدالّة نفسها التي تستدعيها
-   صفحة /expiring.html، فرقمُ البطاقة وقائمةُ الصفحة لا يمكن أن يختلفا. */
-const soonDocs=DocStatus.collectSoonDocs(DATA);
-const expiredDocs=DocStatus.collectExpiredDocs(DATA);
+/* الوثائق بحاجة إلى متابعة والمنتهية عبر كل موظف وكل وثيقة لها تاريخ
+   انتهاء — الإقامة والرخصة والجواز وتصريح أجير. الحساب من doc-status.js
+   وهي الدالّة نفسها التي تستدعيها صفحة /expiring.html، فرقمُ البطاقة
+   وقائمةُ الصفحة لا يمكن أن يختلفا.
+   AJEER الخام يُمرَّر كما هو: latestPermits داخل doc-status.js تختار
+   الأحدث لكل إقامة بالقاعدة نفسها التي يرسم بها قسم أجير. */
+const followUpDocs=DocStatus.collectFollowUpDocs(DATA,AJEER);
+const expiredDocs=DocStatus.collectExpiredDocs(DATA,AJEER);
 
-/* تنبيه أعلى القسم. يقرأ soonDocs نفسها التي تعطي البطاقة رقمها — لا عدّ
-   ولا شرط قرب انتهاء يُكتب هنا — ولا يظهر إطلاقًا إذا كانت فارغة.
+/* تنبيه أعلى القسم. يقرأ followUpDocs نفسها التي تعطي البطاقة رقمها — لا
+   عدّ ولا شرط متابعة يُكتب هنا — ولا يظهر إطلاقًا إذا كانت فارغة.
    يُخفى أيضًا بلا employees:view، تمامًا كرابط البطاقة، فلا يعرض طريقًا
    مسدودًا (canOpenSoon مُعرَّفة أدناه قبل أول نداء لهذه الدالّة). */
 function soonCountPhrase(n){
   /* العربية تصرّف المعدود: «وثيقة واحدة» و«وثيقتان» و«٣ وثائق» و«١١ وثيقة».
      صياغة «1 وثيقة» صحيحة حسابيًا ورديئة لغويًا. */
-  if(n===1) return "لديك وثيقة واحدة قريبة من الانتهاء";
-  if(n===2) return "لديك وثيقتان قريبتان من الانتهاء";
-  if(n<=10) return `لديك <b class="num">${n}</b> وثائق قريبة من الانتهاء`;
-  return `لديك <b class="num">${n}</b> وثيقة قريبة من الانتهاء`;
+  if(n===1) return "لديك وثيقة واحدة بحاجة إلى متابعة";
+  if(n===2) return "لديك وثيقتان بحاجة إلى متابعة";
+  if(n<=10) return `لديك <b class="num">${n}</b> وثائق بحاجة إلى متابعة`;
+  return `لديك <b class="num">${n}</b> وثيقة بحاجة إلى متابعة`;
 }
 function renderSoonCallout(docs){
   const el=document.getElementById("soonCallout");
@@ -852,7 +857,7 @@ function renderSoonCallout(docs){
   if(!docs.length || !canOpenSoon){ el.innerHTML=""; return; }
   el.innerHTML=`
     <a class="soon-callout" href="/expiring.html"
-       aria-label="عرض قائمة الوثائق قريبة الانتهاء — ${docs.length} وثيقة خلال ${DocStatus.SOON} يومًا">
+       aria-label="عرض قائمة الوثائق بحاجة إلى متابعة — ${docs.length} وثيقة">
       <span class="sc-ico" aria-hidden="true">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
           <path d="M7 2h10M7 22h10"/>
@@ -862,7 +867,7 @@ function renderSoonCallout(docs){
       </span>
       <span class="sc-txt">
         <span class="sc-title">${soonCountPhrase(docs.length)}</span>
-        <span class="sc-sub">راجع الوثائق التي تحتاج إلى إجراء خلال الـ${DocStatus.SOON} يومًا القادمة.</span>
+        <span class="sc-sub">وثائق منتهية أو تنتهي خلال ${DocStatus.SOON} أيام — راجعها واتّخذ الإجراء.</span>
       </span>
       <span class="sc-cta">
         عرض الوثائق
@@ -887,15 +892,19 @@ kpiRow.innerHTML=[
   kpiCard({tone:"feature",lbl:"إجمالي الموظفين",big:DATA.length,cap:"موظف مسجّل في القائمة"}),
   kpiCard({tone:"ok",lbl:"إقامات سارية",big:validIq,cap:soonIq?`منها ${soonIq} قريبة من الانتهاء`:"جميعها غير منتهية"}),
   kpiCard({tone:"warn",href:canOpenSoon?"/expiring.html":null,
-           aria:`عرض الوثائق قريبة الانتهاء — ${soonDocs.length} وثيقة خلال ${DocStatus.SOON} يومًا`,
-           lbl:"وثائق قريبة الانتهاء",big:soonDocs.length,
-           cap:`${DocStatus.summarizeDocs(soonDocs)} — خلال ${DocStatus.SOON} يومًا`,
+           aria:`عرض الوثائق بحاجة إلى متابعة — ${followUpDocs.length} وثيقة`,
+           lbl:"وثائق بحاجة إلى متابعة",big:followUpDocs.length,
+           cap:followUpDocs.length
+                 ? `${DocStatus.summarizeDocs(followUpDocs)} — منتهية أو خلال ${DocStatus.SOON} أيام`
+                 : `لا توجد وثائق منتهية أو تنتهي خلال ${DocStatus.SOON} أيام`,
            hint:canOpenSoon?"عرض القائمة كاملة ←":""}),
-  kpiCard({tone:"bad",lbl:"وثائق منتهية",big:expiredDocs.length,
+  /* المنتهية مجموعة جزئية من البطاقة السابقة لا قائمة موازية لها:
+     تفصيلٌ لِما بلغ الحدّ الأقصى من الإلحاح داخل قائمة المتابعة. */
+  kpiCard({tone:"bad",lbl:"منها وثائق منتهية",big:expiredDocs.length,
            cap:expiredDocs.length?DocStatus.summarizeDocs(expiredDocs):"لا توجد وثائق منتهية"}),
 ].join("");
 /* المصفوفة نفسها التي أعطت البطاقة رقمها */
-renderSoonCallout(soonDocs);
+renderSoonCallout(followUpDocs);
 
 /* SVG donut — offline, no dependency */
 function donut(boxId,rows,legendId){
@@ -924,8 +933,8 @@ donut("chartLicense",[["سارية",validLic,C.ok], pendingLic?["جاري الس
 /* amber "expiring soon" flags below each donut (still valid, need renewal) */
 function soonFlag(id,n){const el=document.getElementById(id);if(!el)return;
   el.innerHTML = n? (canOpenSoon
-                    ? `<a class="soon-flag" href="/expiring.html">⚠️ قريبة الانتهاء خلال ${DocStatus.SOON} يومًا: <b class="num">${n}</b> — عرض القائمة</a>`
-                    : `<span class="soon-flag">⚠️ قريبة الانتهاء خلال ${DocStatus.SOON} يومًا: <b class="num">${n}</b></span>`)
+                    ? `<a class="soon-flag" href="/expiring.html">⚠️ تنتهي خلال ${DocStatus.SOON} أيام: <b class="num">${n}</b> — عرض القائمة</a>`
+                    : `<span class="soon-flag">⚠️ تنتهي خلال ${DocStatus.SOON} أيام: <b class="num">${n}</b></span>`)
                   : `<span class="soon-flag ok">✓ لا توجد وثائق قريبة الانتهاء</span>`;}
 soonFlag("soonIq",soonIq); soonFlag("soonLic",soonLic);
 
@@ -1099,24 +1108,23 @@ document.addEventListener("click",ev=>{
 window.addEventListener("resize",hideHover);
 
 /* ---------- ajeer permits ---------- */
-/* newest issueDate per iqama wins — a re-uploaded permit supersedes the old one instead of stacking */
-function dedupeAjeer(list){
-  const byIqama=new Map();
-  list.forEach(p=>{
-    const cur=byIqama.get(p.iqama);
-    if(!cur||new Date(p.issueDate)>new Date(cur.issueDate))byIqama.set(p.iqama,p);
-  });
-  return [...byIqama.values()];
-}
+/* newest issueDate per iqama wins — a re-uploaded permit supersedes the old one
+   instead of stacking. The rule itself now lives in doc-status.js, because the
+   follow-up list and its counter need the same dedupe and a second copy here
+   would eventually disagree with them; this stays as the array-shaped view of
+   it that the ajeer section renders from. */
+function dedupeAjeer(list){return [...DocStatus.latestPermits(list).values()];}
 let AJEER_LATEST=[];
 function findEmployeeByIqama(iqama){return DATA.find(e=>String(e[F.iqama])===String(iqama));}
 function permitFor(e){return AJEER_LATEST.find(p=>String(p.iqama)===String(e[F.iqama]));}
 let ajeerState={q:"",status:""};
 function ajeerLinked(){return AJEER_LATEST.filter(p=>findEmployeeByIqama(p.iqama));}
 function ajeerUnlinked(){return AJEER_LATEST.filter(p=>!findEmployeeByIqama(p.iqama));}
-/* Ajeer permits use their own tier scheme (5 / 2 / 0 days) instead of the
-   generic 90-day SOON window used for iqama/license — a permit only runs
-   ~1 month, so "31 days left" must read as fully valid (green), not a warning. */
+/* Ajeer permits use their own tier scheme (5 / 2 / 0 days) for the chips and bars in
+   this section — a permit only runs ~1 month, so "31 days left" must read as fully
+   valid (green), not a warning. That is presentation only: for the follow-up list and
+   its counter a permit goes through the same SOON window as every other document,
+   in DocStatus.empDocs(). */
 function ajeerStatusOf(expiryDate){
   const n=daysLeft(expiryDate); // always computed against `NOW` (fresh each page load) — never a stored value
   if(n===null)return{key:"na",cls:"na",n:null};
@@ -1732,6 +1740,10 @@ async function refreshPermits(){
   const j=await AdminUI.api("GET","/api/data/permits");
   AJEER=j.items;
   AJEER_LATEST=dedupeAjeer(AJEER);
+  /* تصاريح أجير تدخل عدّاد المتابعة، فتعديل تاريخ انتهاء تصريح لا بدّ أن
+     يُنقص العدّاد فورًا لا عند إعادة تحميل الصفحة — كما تفعل
+     refreshEmployees() بعد تعديل تواريخ الإقامة والرخصة. */
+  renderDashboardTop();
   renderAjeer();
 }
 document.getElementById("addPermitBtn").addEventListener("click", ()=>openPermitForm(null));
@@ -1787,13 +1799,13 @@ function employeeTicketsBlock(eid){
   </div>`;
 }
 
-/* عرض «الوثائق قريبة الانتهاء» انتقل إلى صفحة مستقلّة: /expiring.html.
+/* عرض «الوثائق بحاجة إلى متابعة» انتقل إلى صفحة مستقلّة: /expiring.html.
    البطاقة وشارات الرسوم البيانية روابط <a> إليها الآن، فلا حاجة إلى حوار
    ولا إلى ربط مستمعين ولا إلى إدارة سجلّ تصفّح — المتصفّح يتكفّل بذلك.
    حُذفت هنا: openSoonModal و closeSoonModal و collectSoon و docIcon
    و syncSoonToHash ومستمعا popstate/hashchange ومفوِّضا النقر ولوحة
    المفاتيح. القائمة نفسها تُبنى الآن في expiring-shell.html من
-   DocStatus.collectSoonDocs — المصدر نفسه الذي يعطي البطاقة رقمها. */
+   DocStatus.collectFollowUpDocs — المصدر نفسه الذي يعطي البطاقة رقمها. */
 
 /* ---------- wiring ---------- */
 function reset(){state={q:"",dept:"",nat:"",iq:"",lic:"",sort:"eid"};
@@ -1901,14 +1913,16 @@ function showSkeletons(){
   }catch(err){
     AdminUI.toastError("تعذّر تحميل البيانات — تحقّق من الاتصال وأعد تحميل الصفحة.");
   }
-  renderDashboardTop();
+  /* قبل renderDashboardTop() لا بعده: العدّاد يقرأ التصاريح الآن، فترتيبٌ
+     معكوس يجعله يحسب مصفوفة فارغة في أول رسم. */
   AJEER_LATEST = dedupeAjeer(AJEER);
+  renderDashboardTop();
   render();
   renderAjeer();
   renderTicketsWidget();
   /* فتح مباشر من الرابط: /#expiring يعرض القائمة فور اكتمال التحميل،
      فيصلح للحفظ في المفضّلة وللمشاركة. يأتي بعد renderDashboardTop()
-     لأن soonDocs لا تُحسب قبله. */
+     لأن followUpDocs لا تُحسب قبله. */
 })();
 </script>
 </body>
