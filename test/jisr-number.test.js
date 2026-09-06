@@ -3,7 +3,7 @@ const assert = require("node:assert/strict");
 const Module = require("node:module");
 
 const { makeFakeSql } = require("./helpers/fake-sql");
-const { normalizeJisr, F_JISR, F_EID, F_NAME } = require("../lib/data/employees");
+const { normalizeJisr, F_JISR, F_DAMANAH, F_NAME } = require("../lib/data/employees");
 const { similarity, foldArabic, validate, apply } = require("../scripts/set-jisr-numbers.js");
 
 /* حقل «رقم جسر»: التطبيع والتفرّد والتوافق مع السجلّات القائمة.
@@ -74,7 +74,7 @@ function loadEmployeesWithFakeDb(rows) {
 
 const EMP = (eid, name, jisr) => ({
   eid, jisr,
-  data: { [F_EID]: eid, [F_NAME]: name, "رقم الإقامة": "2593650357", ...(jisr ? { [F_JISR]: jisr } : {}) },
+  data: { [F_DAMANAH]: eid, [F_NAME]: name, "رقم الإقامة": "2593650357", ...(jisr ? { [F_JISR]: jisr } : {}) },
 });
 
 test("رقم مستعمل عند موظف آخر يُرفض، والرسالة تسمّي المتعارض", async () => {
@@ -115,7 +115,7 @@ test("سجلّ بلا الحقل يُقرأ ويُحدَّث كما هو", async
   try {
     const before = await h.mod.get("500");
     assert.equal(before[F_JISR], undefined, "الحقل غائب لا فارغ");
-    assert.equal(before[F_EID], "500");
+    assert.equal(before[F_DAMANAH], "500");
     await h.mod.update("500", { "المهنة": "عامل" });
     assert.equal(h.sql.matching(/UPDATE employees/).length, 1, "التحديث يعمل بلا الحقل");
   } finally { h.restore(); }
@@ -132,12 +132,12 @@ test("تحديث حقل آخر لا يفحص «رقم جسر» ولا يخترع
   } finally { h.restore(); }
 });
 
-test("إدخال رقم جسر لا يمسّ الرقم الوظيفي ولا اسم العامل", async () => {
+test("إدخال رقم جسر لا يمسّ رقم ضمان ولا اسم العامل", async () => {
   const h = loadEmployeesWithFakeDb([EMP("506", "شكيب ميا", null)]);
   try {
     await h.mod.update("506", { [F_JISR]: "49" });
     const merged = JSON.parse(h.sql.matching(/UPDATE employees/)[0].values[0]);
-    assert.equal(merged[F_EID], "506", "الرقم الوظيفي كما هو");
+    assert.equal(merged[F_DAMANAH], "506", "رقم ضمان كما هو");
     assert.equal(merged[F_NAME], "شكيب ميا");
     assert.equal(merged[F_JISR], "49");
     assert.equal(merged["رقم الإقامة"], "2593650357", "الحقول الأخرى سليمة");
@@ -156,18 +156,18 @@ test("طيّ الاسم العربي يقارب الصيغ المختلفة", ()
 /* ── التحقّق قبل الكتابة ── */
 
 const PLATFORM = [
-  { [F_EID]: "500", [F_NAME]: "شميم" },
-  { [F_EID]: "504", [F_NAME]: "لامين مولا" },
-  { [F_EID]: "506", [F_NAME]: "شكيب ميا" },
+  { [F_DAMANAH]: "500", [F_NAME]: "شميم" },
+  { [F_DAMANAH]: "504", [F_NAME]: "لامين مولا" },
+  { [F_DAMANAH]: "506", [F_NAME]: "شكيب ميا" },
 ];
 const depsFor = (employees, written) => ({
   listEmployees: async () => employees,
   updateEmployee: async (eid, patch) => { written.push({ eid, patch }); },
 });
 
-test("سطر بلا رقم وظيفي (ما زال null) يوقف كل شيء", async () => {
+test("سطر بلا رقم ضمان (ما زال null) يوقف كل شيء", async () => {
   const written = [];
-  const r = await apply([{ "رقم جسر": "49", "الرقم الوظيفي": null }], depsFor(PLATFORM, written), {});
+  const r = await apply([{ "رقم جسر": "49", "رقم ضمان": null }], depsFor(PLATFORM, written), {});
   assert.equal(r.ok, false);
   assert.match(r.errors[0], /ما زال null/);
   assert.equal(written.length, 0);
@@ -176,8 +176,8 @@ test("سطر بلا رقم وظيفي (ما زال null) يوقف كل شيء", 
 test("رقم جسر مكرّر داخل الملف يُرفض", async () => {
   const written = [];
   const r = await apply([
-    { "رقم جسر": "49", "الرقم الوظيفي": "506" },
-    { "رقم جسر": "049", "الرقم الوظيفي": "504" },
+    { "رقم جسر": "49", "رقم ضمان": "506" },
+    { "رقم جسر": "049", "رقم ضمان": "504" },
   ], depsFor(PLATFORM, written), {});
   assert.equal(r.ok, false);
   assert.ok(r.errors.some((e) => /مكرّر داخل الملف/.test(e)));
@@ -185,29 +185,29 @@ test("رقم جسر مكرّر داخل الملف يُرفض", async () => {
 });
 
 test("رقم مملوك لموظف آخر يُرفض حتى مع --overwrite", async () => {
-  const withHolder = [...PLATFORM, { [F_EID]: "509", [F_NAME]: "مد هلال", [F_JISR]: "49" }];
+  const withHolder = [...PLATFORM, { [F_DAMANAH]: "509", [F_NAME]: "مد هلال", [F_JISR]: "49" }];
   const written = [];
-  const r = await apply([{ "رقم جسر": "49", "الرقم الوظيفي": "506" }], depsFor(withHolder, written), { overwrite: true });
+  const r = await apply([{ "رقم جسر": "49", "رقم ضمان": "506" }], depsFor(withHolder, written), { overwrite: true });
   assert.equal(r.ok, false);
   assert.match(r.errors[0], /مستعمل للموظف/);
   assert.equal(written.length, 0);
 });
 
 test("استبدال رقم قائم يحتاج --overwrite", async () => {
-  const withOld = PLATFORM.map((e) => (e[F_EID] === "506" ? { ...e, [F_JISR]: "12" } : e));
-  const blocked = await apply([{ "رقم جسر": "49", "الرقم الوظيفي": "506" }], depsFor(withOld, []), {});
+  const withOld = PLATFORM.map((e) => (e[F_DAMANAH] === "506" ? { ...e, [F_JISR]: "12" } : e));
+  const blocked = await apply([{ "رقم جسر": "49", "رقم ضمان": "506" }], depsFor(withOld, []), {});
   assert.equal(blocked.ok, false);
   assert.match(blocked.errors[0], /--overwrite/);
 
   const written = [];
-  const allowed = await apply([{ "رقم جسر": "49", "الرقم الوظيفي": "506" }], depsFor(withOld, written), { overwrite: true });
+  const allowed = await apply([{ "رقم جسر": "49", "رقم ضمان": "506" }], depsFor(withOld, written), { overwrite: true });
   assert.equal(allowed.ok, true);
   assert.deepEqual(written, [{ eid: "506", patch: { [F_JISR]: "49" } }]);
 });
 
 test("--dry-run يعرض الخطّة ولا يكتب", async () => {
   const written = [];
-  const r = await apply([{ "رقم جسر": "49", "الرقم الوظيفي": "506" }], depsFor(PLATFORM, written), { dryRun: true });
+  const r = await apply([{ "رقم جسر": "49", "رقم ضمان": "506" }], depsFor(PLATFORM, written), { dryRun: true });
   assert.equal(r.ok, true);
   assert.equal(r.dryRun, true);
   assert.equal(r.plan[0].action, "إضافة");
@@ -217,8 +217,8 @@ test("--dry-run يعرض الخطّة ولا يكتب", async () => {
 test("الكتابة تمسّ «رقم جسر» وحده", async () => {
   const written = [];
   const r = await apply([
-    { "رقم جسر": "49", "الرقم الوظيفي": "506" },
-    { "رقم جسر": "71", "الرقم الوظيفي": "500" },
+    { "رقم جسر": "49", "رقم ضمان": "506" },
+    { "رقم جسر": "71", "رقم ضمان": "500" },
   ], depsFor(PLATFORM, written), {});
   assert.equal(r.ok, true);
   assert.equal(r.written, 2);
@@ -227,8 +227,54 @@ test("الكتابة تمسّ «رقم جسر» وحده", async () => {
   }
 });
 
-test("رقم وظيفي غير موجود يُرفض", async () => {
-  const r = await validate([{ "رقم جسر": "49", "الرقم الوظيفي": "999" }], { listEmployees: async () => PLATFORM }, {});
+test("رقم ضمان غير موجود يُرفض", async () => {
+  const r = await validate([{ "رقم جسر": "49", "رقم ضمان": "999" }], { listEmployees: async () => PLATFORM }, {});
   assert.equal(r.ok, false);
-  assert.match(r.errors[0], /لا موظف بالرقم الوظيفي 999/);
+  assert.match(r.errors[0], /لا موظف برقم ضمان 999/);
+});
+
+/* ── التسمية والقفل في الواجهة ──
+   الحارس هنا على ملفّات HTML/JS مباشرةً: التسمية العامّة «الرقم الوظيفي»
+   هي ما سبّب اللبس بين نظامين، ورجوعها إلى شاشة أو تقرير انحدارٌ صامت لا
+   يكشفه أي اختبار يقيس السلوك. */
+const fs = require("node:fs");
+const path = require("node:path");
+const ROOT = path.join(__dirname, "..");
+const read = (p) => fs.readFileSync(path.join(ROOT, p), "utf8");
+
+const USER_FACING = [
+  "app-shell.html", "expiring-shell.html", "tickets-shell.html",
+  "payroll-detail-shell.html", "lib/reports/reportPdf.js", "lib/reports/reportData.js",
+];
+
+test("لا تسمية «الرقم الوظيفي» في أي شاشة أو تقرير", () => {
+  for (const file of USER_FACING) {
+    const src = read(file);
+    /* المفتاح المخزَّن يبقى كما هو داخل lib/، لكن هذه الملفّات لا تلمسه:
+       تصل إليه عبر F.damanah / F_DAMANAH. فأي ظهور نصّي هنا تسمية معروضة. */
+    assert.ok(!src.includes("الرقم الوظيفي"), `${file} ما زال يعرض «الرقم الوظيفي» — استبدلها بـ«رقم ضمان»`);
+  }
+});
+
+test("مفتاح التخزين لم يتغيّر — لا هجرة بيانات", () => {
+  assert.equal(F_DAMANAH, "الرقم الوظيفي", "القيمة المخزَّنة في JSONB تبقى كما هي");
+  assert.equal(read("doc-status.js").includes('damanah:"الرقم الوظيفي"'), true);
+});
+
+test("الرقمان يظهران معًا في صفحة المسير", () => {
+  const src = read("payroll-detail-shell.html");
+  assert.match(src, /رقم ضمان/, "رقم ضمان معروض");
+  assert.match(src, /رقم جسر/, "ورقم جسر بجانبه");
+  assert.match(src, /emp\.jisrNo/, "من طبقة البيانات لا مكتوبًا بيد");
+});
+
+/* الحقل مقفول بطبقتين قائمتين: disabled على المُدخَل، واستثناؤه من
+   الـpatch. الثانية هي الحاسمة — الأولى وحدها يتجاوزها أي تعديل في
+   أدوات المتصفّح. */
+test("رقم ضمان مقفول بعد الإنشاء، ومعه تلميح يشرح السبب", () => {
+  const src = read("app-shell.html");
+  assert.match(src, /isEdit&&spec\.key==="damanah"/, "disabled على الحقل عند التعديل");
+  assert.match(src, /if\(isEdit && spec\.key==="damanah"\) continue;/, "ويُستثنى من الـpatch");
+  assert.match(src, /لا يُعدّل بعد إنشاء السجل لأنه مرتبط بسجلات أخرى/, "والتلميح معروض");
+  assert.match(src, /spec\.hint\?/, "والتلميح يُرسم فعلًا لا يُخزَّن فقط");
 });

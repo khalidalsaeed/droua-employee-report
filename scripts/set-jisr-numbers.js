@@ -24,7 +24,7 @@
      --overwrite  يسمح باستبدال رقم جسر موجود عند موظف. بدونه يتوقّف. */
 
 const fs = require("fs");
-const { F_EID, F_NAME, F_JISR, normalizeJisr } = require("../lib/data/employees");
+const { F_DAMANAH, F_NAME, F_JISR, normalizeJisr } = require("../lib/data/employees");
 
 const F_JOB = "المهنة";
 const SHEET_ATTACHMENT_KEY = "payroll_sheet";
@@ -100,7 +100,7 @@ async function propose(runId, d) {
     const accept = best && (confidence === "عالية" || confidence === "متوسطة");
     mappings.push({
       "رقم جسر": row.jisrNo,
-      "الرقم الوظيفي": accept ? String(best.e[F_EID] || "") : null,
+      "رقم ضمان": accept ? String(best.e[F_DAMANAH] || "") : null,
       "الاسم في الكشف (تقريبي)": row.nameHint,
       "الاسم في المنصة": accept ? String(best.e[F_NAME] || "") : null,
       "الثقة": confidence,
@@ -112,7 +112,7 @@ async function propose(runId, d) {
 /* ─── التحقّق قبل أي كتابة ─── */
 async function validate(mappings, d, { overwrite }) {
   const employees = await d.listEmployees();
-  const byEid = new Map(employees.map((e) => [String(e[F_EID] || "").trim(), e]));
+  const byEid = new Map(employees.map((e) => [String(e[F_DAMANAH] || "").trim(), e]));
   const errors = [];
   const plan = [];
   const seenJisr = new Map();
@@ -120,24 +120,24 @@ async function validate(mappings, d, { overwrite }) {
 
   for (const m of mappings) {
     const jisr = normalizeJisr(m[F_JISR]);
-    const eid = String(m[F_EID] || "").trim();
+    const eid = String(m["رقم ضمان"] || "").trim();
     const where = `رقم جسر ${m[F_JISR] || "—"}`;
 
     if (!jisr) { errors.push(`${where}: رقم جسر فارغ`); continue; }
-    if (!eid) { errors.push(`${where}: الرقم الوظيفي غير مُعبَّأ (ما زال null) — راجع الملف`); continue; }
+    if (!eid) { errors.push(`${where}: رقم ضمان غير مُعبَّأ (ما زال null) — راجع الملف`); continue; }
 
     if (seenJisr.has(jisr)) { errors.push(`رقم جسر ${jisr} مكرّر داخل الملف`); continue; }
     seenJisr.set(jisr, eid);
-    if (seenEid.has(eid)) { errors.push(`الرقم الوظيفي ${eid} مذكور مرّتين في الملف`); continue; }
+    if (seenEid.has(eid)) { errors.push(`رقم ضمان ${eid} مذكور مرّتين في الملف`); continue; }
     seenEid.set(eid, jisr);
 
     const employee = byEid.get(eid);
-    if (!employee) { errors.push(`${where}: لا موظف بالرقم الوظيفي ${eid}`); continue; }
+    if (!employee) { errors.push(`${where}: لا موظف برقم ضمان ${eid}`); continue; }
 
     /* الرقم مملوك لموظف آخر؟ يُرفض دائمًا — حتى مع --overwrite، فذاك
        للاستبدال على صاحبه لا لانتزاعه من غيره. */
-    const holder = employees.find((e) => normalizeJisr(e[F_JISR]) === jisr && String(e[F_EID]).trim() !== eid);
-    if (holder) { errors.push(`رقم جسر ${jisr} مستعمل للموظف ${holder[F_NAME]} (${holder[F_EID]})`); continue; }
+    const holder = employees.find((e) => normalizeJisr(e[F_JISR]) === jisr && String(e[F_DAMANAH]).trim() !== eid);
+    if (holder) { errors.push(`رقم جسر ${jisr} مستعمل للموظف ${holder[F_NAME]} (${holder[F_DAMANAH]})`); continue; }
 
     const current = normalizeJisr(employee[F_JISR]);
     if (current && current !== jisr && !overwrite) {
@@ -176,9 +176,9 @@ const argOf = (argv, name) => {
 };
 
 function printPlan(plan) {
-  console.log("  رقم جسر → الرقم الوظيفي  الإجراء     الاسم");
+  console.log("  رقم جسر | رقم ضمان | الإجراء    | اسم الموظف");
   for (const p of plan) {
-    console.log(`  ${String(p.jisr).padStart(7)} → ${String(p.eid).padStart(13)}  ${p.action.padEnd(10)}  ${p.name}`);
+    console.log(`  ${String(p.jisr).padStart(7)} | ${String(p.eid).padStart(8)} | ${p.action.padEnd(10)} | ${p.name}`);
   }
 }
 
@@ -214,17 +214,17 @@ async function main() {
 
     console.log(`الكشف: ${r.sheetUrl}`);
     console.log(`تحقّق الاكتمال: ${r.extraction.sumNet.toFixed(2)} = ${r.extraction.totalNet.toFixed(2)} ✅\n`);
-    console.log("  رقم جسر  الاسم في الكشف (تقريبي)     ← الرقم الوظيفي  الاسم في المنصة        الثقة");
+    console.log("  رقم جسر | رقم ضمان | اسم الموظف                  | الثقة");
     for (const m of r.mappings) {
       console.log(
-        `  ${String(m["رقم جسر"]).padStart(7)}  ${String(m["الاسم في الكشف (تقريبي)"]).padEnd(26)}` +
-        ` ← ${String(m["الرقم الوظيفي"] || "؟").padStart(13)}  ${String(m["الاسم في المنصة"] || "—").padEnd(22)} ${m["الثقة"]}`
+        `  ${String(m["رقم جسر"]).padStart(7)} | ${String(m["رقم ضمان"] || "؟").padStart(8)} |` +
+        ` ${String(m["الاسم في المنصة"] || "— (لا مرشّح)").padEnd(27)} | ${m["الثقة"]}`
       );
     }
-    const blanks = r.mappings.filter((m) => !m["الرقم الوظيفي"]).length;
+    const blanks = r.mappings.filter((m) => !m["رقم ضمان"]).length;
     fs.writeFileSync(out, JSON.stringify({ sourceRun: runId, generatedAt: new Date().toISOString(), mappings: r.mappings }, null, 2) + "\n", "utf8");
     console.log(`\nكُتب الاقتراح في ${out} — ملفّ محلّي، لا صفّ في القاعدة.`);
-    if (blanks) console.log(`⚠️  ${blanks} سطرًا بلا رقم وظيفي (غامض أو ضعيف) — املأها بيدك.`);
+    if (blanks) console.log(`⚠️  ${blanks} سطرًا بلا رقم ضمان (غامض أو ضعيف) — املأها بيدك.`);
     console.log("الأسماء أعلاه للاقتراح والتشخيص فقط؛ الربط النهائي يقع على ما تعتمده أنت.");
     console.log(`\nراجع الملف ثم: node scripts/set-jisr-numbers.js --apply --map ${out} --dry-run`);
     return;
@@ -251,7 +251,7 @@ async function main() {
     return;
   }
   console.log(`\nحُدِّث: ${r.written} · بلا تغيير: ${r.unchanged}`);
-  console.log("لم يُمسّ الرقم الوظيفي ولا أي حقل آخر.");
+  console.log("لم يُمسّ رقم ضمان ولا أي حقل آخر.");
 }
 
 if (require.main === module) {

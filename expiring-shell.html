@@ -157,7 +157,7 @@ function renderRows(rows,permitsOk){
   const table=`
     <div class="panel u-only-desk"><div class="tk-scroll"><table>
       <thead><tr>
-        <th>الموظف</th><th>الرقم الوظيفي</th><th>نوع الوثيقة</th>
+        <th>الموظف</th><th>رقم ضمان</th><th>نوع الوثيقة</th>
         <th>تاريخ الانتهاء</th><th>المتبقّي</th>
       </tr></thead>
       <tbody>${rows.map(d=>`<tr class="${d.st.key==="bad"?"row-expired":""}">
@@ -180,7 +180,7 @@ function renderRows(rows,permitsOk){
           ${daysChip(d.st)}
         </div>
         <div class="u-dc-rows">
-          <div class="u-dc-row"><span class="k">الرقم الوظيفي</span><span class="v num">${esc(d.emp[DocStatus.F.eid])}</span></div>
+          <div class="u-dc-row"><span class="k">رقم ضمان</span><span class="v num">${esc(d.emp[DocStatus.F.eid])}</span></div>
           <div class="u-dc-row"><span class="k">تاريخ الانتهاء</span><span class="v num">${esc(DocStatus.fmtDate(d.exp))}</span></div>
         </div>
       </div>`).join("")}</div>`;

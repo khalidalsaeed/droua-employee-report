@@ -49,7 +49,13 @@
 
 const RUN_ID = "2026-08";
 const MONTH_END = "2026-08-31";
-const F_EID = "الرقم الوظيفي";
+/* رقم الموظف لدى شركة ضمان (500، 501 …) — معرّفه في هذه المنصّة: عمود
+   employees.eid ومفتاح الربط في التذاكر والتصاريح وإثباتات التحويل.
+   المفتاح المخزَّن يبقى "الرقم الوظيفي" حرفيًا: تغييره هجرةُ JSONB في كل
+   صفّ ومفتاحِ ربطٍ عبر أربعة جداول، بمكسب صفر لأن أحدًا لا يرى مفتاح
+   التخزين. الوضوح يقع في الاسم البرمجي وفيما يُعرض للمستخدم.
+   لا يُخلط برقم جسر (F_JISR) — ترقيمان مستقلّان يُحفظان معًا. */
+const F_DAMANAH = "الرقم الوظيفي";
 const F_NAME = "اسم العامل";
 const F_JOB = "المهنة";
 const F_START = "تاريخ المباشرة";
@@ -94,7 +100,7 @@ function indexByJisr(employees) {
     if (byJisr.has(key)) {
       const first = byJisr.get(key);
       return { ok: false, reason: "duplicate_jisr_in_platform", jisrNo: key,
-               eids: [String(first[F_EID] || ""), String(e[F_EID] || "")] };
+               eids: [String(first[F_DAMANAH] || ""), String(e[F_DAMANAH] || "")] };
     }
     byJisr.set(key, e);
   }
@@ -133,7 +139,7 @@ async function rosterFromSheet(run, d, { exclude }) {
     roster.push({
       /* المُخزَّن هو الرقم الوظيفي للمنصّة لا رقم جسر: جدول الإثباتات
          مفتاحه (run_id, employee_eid) وهو يعني الرقم الوظيفي. */
-      eid: String(employee[F_EID] || "").trim(),
+      eid: String(employee[F_DAMANAH] || "").trim(),
       jisrNo: key,
       name: String(employee[F_NAME] || "").trim(),
       jobTitle: String(employee[F_JOB] || "").trim() || null,
@@ -153,7 +159,7 @@ async function rosterFromEmployees(d) {
   const seen = new Set();
   let excluded = 0;
   for (const e of await d.listEmployees()) {
-    const eid = String((e && e[F_EID]) || "").trim();
+    const eid = String((e && e[F_DAMANAH]) || "").trim();
     const name = String((e && e[F_NAME]) || "").trim();
     if (!eid || !name || seen.has(eid)) continue;
     const start = String((e && e[F_START]) || "").trim();

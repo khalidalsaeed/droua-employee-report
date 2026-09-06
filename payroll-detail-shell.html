@@ -302,7 +302,7 @@ function editAttachmentNote(key, currentNote){
 }
 /* ─── إثبات تحويل راتب الموظف ───
    ملف واحد مستقلّ لكل موظف. الرفع يمرّ على نقطة الرفع العامّة نفسها
-   (payroll:upload_files) ببادئة تحمل معرّف المسير والرقم الوظيفي، ثم
+   (payroll:upload_files) ببادئة تحمل معرّف المسير ورقم ضمان، ثم
    يُربط بالسجلّ بـPUT يحمل eid صراحةً — والخادم يكتب صفًّا واحدًا
    مقيَّدًا بـ(run_id, employee_eid) فلا يختلط إثبات بموظف آخر.
 
@@ -340,7 +340,7 @@ function employeeRow(emp, monthLabel){
   return `<div class="emp-row">
     <div class="emp-ident">
       <div class="emp-name">${esc(emp.name)}</div>
-      <div class="emp-meta">الرقم الوظيفي <span class="num">${esc(emp.eid)}</span>${emp.jobTitle?` · ${esc(emp.jobTitle)}`:""}</div>
+      <div class="emp-meta">رقم ضمان <span class="num">${esc(emp.eid)}</span>${emp.jisrNo?` · رقم جسر <span class="num">${esc(emp.jisrNo)}</span>`:""}${emp.jobTitle?` · ${esc(emp.jobTitle)}`:""}</div>
     </div>
     ${proofCard(emp, monthLabel)}
   </div>`;

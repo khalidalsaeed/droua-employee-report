@@ -60,7 +60,7 @@ function harness(over = {}) {
 
 /* اختبار الانحدار الحاسم: يسقط على الشيفرة التي تبحث برقم الكشف في
    «الرقم الوظيفي» — وهي التي أنتجت «عشرة من عشرة مجهولون». */
-test("الربط يجري عبر «رقم جسر» لا عبر الرقم الوظيفي", async () => {
+test("الربط يجري عبر «رقم جسر» لا عبر رقم ضمان", async () => {
   const h = harness();
   const r = await backfill(h.opts);
   assert.equal(r.ok, true);
@@ -69,16 +69,16 @@ test("الربط يجري عبر «رقم جسر» لا عبر الرقم الو
   assert.deepEqual(
     r.roster.map((e) => e.eid),
     ["506", "504", "502", "507", "503", "501", "505", "500", "509", "508"],
-    "المُخزَّن هو الرقم الوظيفي للمنصّة"
+    "المُخزَّن هو رقم ضمان"
   );
   assert.ok(!r.roster.some((e) => e.eid === "591"), "موظف سبتمبر لا يدخل مسير أغسطس");
 });
 
-test("employee_eid المُدرَج هو الرقم الوظيفي لا رقم جسر", async () => {
+test("employee_eid المُدرَج هو رقم ضمان لا رقم جسر", async () => {
   const h = harness();
   await backfill(h.opts);
   const written = h.sql.calls.map((c) => String(c.values[1]));
-  for (const v of written) assert.match(v, /^5\d\d$/, `${v} يجب أن يكون رقمًا وظيفيًا في المدى 5xx`);
+  for (const v of written) assert.match(v, /^5\d\d$/, `${v} يجب أن يكون رقم ضمان في المدى 5xx`);
   for (const jisr of ["49", "55", "56", "59", "60", "63", "70", "71", "82", "85"]) {
     assert.ok(!written.includes(jisr), `رقم جسر ${jisr} يجب ألّا يُكتب في employee_eid`);
   }

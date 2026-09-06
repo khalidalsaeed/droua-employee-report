@@ -86,7 +86,7 @@ function fakeRunDb() {
   });
 }
 
-test("رفع إثبات لموظف يكتب صفّه وحده، مقيّدًا بالمسير والرقم الوظيفي", async () => {
+test("رفع إثبات لموظف يكتب صفّه وحده، مقيّدًا بالمسير ورقم ضمان", async () => {
   const sql = fakeRunDb();
   const { mod, restore } = loadWithFakeDb(sql);
   try {
