@@ -280,3 +280,93 @@ test("رقم ضمان مقفول بعد الإنشاء، ومعه تلميح ي�
   assert.match(src, /لا يُعدّل بعد إنشاء السجل لأنه مرتبط بسجلات أخرى/, "والتلميح معروض");
   assert.match(src, /spec\.hint\?/, "والتلميح يُرسم فعلًا لا يُخزَّن فقط");
 });
+
+/* ── تطابق قيد القاعدة مع منطق التطبيق ──
+   =========================================================================
+   حماية التطبيق وحدها لا تكفي: كتابة SQL مباشرة أو سباق بين طلبين
+   يتجاوزانها. والفهرس لا ينفع إن بُني على القيمة الخام — عندها يرى "49"
+   و"049" مدخلين مختلفين فيقبلهما لموظفَين، بينما التطبيق يعدّهما الرقم
+   نفسه. فيصير للمنصّة تعريفان متضاربان لهوية واحدة.
+
+   لا Postgres في هذه الاختبارات، فتُحاكى دلالة تعبير الفهرس حرفيًا
+   وتُقارن بـnormalizeJisr على جدول مدخلات. الغرض إثبات أنهما لا
+   يفترقان، وأن أي تعديل على أحدهما وحده يُسقط الاختبار. */
+
+const { JISR_NORMALIZE_SQL } = require("../scripts/setup-jisr-number.js");
+
+/* محاكاة regexp_replace(btrim(x), '^0+(?=[0-9])', '') — النمط نفسه
+   والدلالة نفسها: الاستبدال غير عام والنمط مثبَّت على البداية. */
+function simulatePostgresNormalize(raw) {
+  const trimmed = String(raw === undefined || raw === null ? "" : raw).trim();
+  return trimmed.replace(/^0+(?=[0-9])/, "");
+}
+
+test("الفهرس مبنيّ على الصورة المُطبَّعة لا على القيمة الخام", () => {
+  const indexSql = require("../scripts/setup-jisr-number.js").STATEMENTS[0].sql;
+  assert.match(indexSql, /CREATE UNIQUE INDEX/);
+  assert.ok(indexSql.includes(JISR_NORMALIZE_SQL), "تعبير التطبيع داخل الفهرس نفسه");
+  assert.match(JISR_NORMALIZE_SQL, /regexp_replace/, "تطبيع لا قيمة خام");
+  assert.match(JISR_NORMALIZE_SQL, /\^0\+\(\?=\[0-9\]\)/, "حذف الأصفار البادئة قبل رقم فقط");
+  assert.match(JISR_NORMALIZE_SQL, /btrim/, "مع تشذيب المسافات");
+  /* فهرسٌ على data->>'رقم جسر' وحده هو العطل الذي نحرس منه. */
+  assert.ok(!/\(\(data->>'رقم جسر'\)\)/.test(indexSql), "لا فهرس على القيمة الخام");
+});
+
+test("القيد يرفض 49 و049 كرقمين لموظفين مختلفين", () => {
+  /* مفتاحا الفهرس متطابقان ⇒ INSERT الثاني يخرق UNIQUE ويُرفض. */
+  assert.equal(simulatePostgresNormalize("049"), simulatePostgresNormalize("49"));
+  assert.equal(simulatePostgresNormalize("049"), "49");
+  /* والتطبيق يقول الشيء نفسه — تعريف واحد لا اثنان. */
+  assert.equal(normalizeJisr("049"), normalizeJisr("49"));
+  assert.equal(normalizeJisr("049"), simulatePostgresNormalize("049"));
+});
+
+test("تعبير الفهرس و normalizeJisr لا يفترقان على أي مدخل", () => {
+  const inputs = [
+    "49", "049", "0049", "00049", " 49 ", "\t049\n",
+    "0", "00", "000", "1", "10", "100", "0100",
+    "9999", "085", "85", "506", "0506",
+    "A49", "0A", "49A", "", "   ",
+  ];
+  for (const v of inputs) {
+    const app = normalizeJisr(v);
+    const db = simulatePostgresNormalize(v);
+    /* التطبيق يُرجع null للفارغ، والقاعدة تستثنيه بشرط WHERE — فيُقارَن
+       غير الفارغ وحده، وهو ما يدخل الفهرس فعلًا. */
+    if (app === null) {
+      assert.equal(db, "", `${JSON.stringify(v)}: فارغ في الطرفين`);
+    } else {
+      assert.equal(db, app, `${JSON.stringify(v)}: القاعدة «${db}» ≠ التطبيق «${app}»`);
+    }
+  }
+});
+
+/* بدون النظرة الأمامية يُحذف الصفر من "0A" في القاعدة ولا يُحذف في
+   التطبيق — فيفترق التعريفان في حالة لا يكشفها مدخل رقمي. */
+test("النظرة الأمامية تمنع افتراق التعريفين على مدخل غير رقمي", () => {
+  assert.equal(normalizeJisr("0A"), "0A");
+  assert.equal(simulatePostgresNormalize("0A"), "0A");
+  const naive = "0A".replace(/^0+/, "");
+  assert.notEqual(naive, normalizeJisr("0A"), "التطبيع الساذج كان سيفترق هنا");
+});
+
+test("أرقام مختلفة تبقى مفاتيح مختلفة في الفهرس", () => {
+  const keys = ["49", "55", "56", "59", "60", "63", "70", "71", "82", "085"]
+    .map(simulatePostgresNormalize);
+  assert.equal(new Set(keys).size, 10, "عشرة مفاتيح متمايزة");
+  assert.ok(keys.includes("85"), "«085» يدخل الفهرس بمفتاح «85»");
+});
+
+test("الفهرس جزئيّ: غير المربوطين لا يتعارضون", () => {
+  const indexSql = require("../scripts/setup-jisr-number.js").STATEMENTS[0].sql;
+  assert.match(indexSql, /WHERE .*IS NOT NULL/);
+  assert.match(indexSql, /btrim\(data->>'رقم جسر'\) <> ''/);
+});
+
+test("سكربت الفهرس لا يحمل عبارة إسقاط ولا تعديل بيانات", () => {
+  const { STATEMENTS } = require("../scripts/setup-jisr-number.js");
+  const all = STATEMENTS.map((s) => s.sql).join(" ");
+  for (const verb of ["DROP", "DELETE", "TRUNCATE", "UPDATE", "INSERT", "ALTER TABLE"]) {
+    assert.ok(!new RegExp(verb).test(all), `يجب ألّا تظهر ${verb}`);
+  }
+});
