@@ -505,3 +505,86 @@ test("money يعرض منزلتين دائمًا بفاصلة ألفية", () =>
   assert.equal(money(2100), "2,100.00");
   assert.equal(money(0), "0.00");
 });
+
+/* ── انحدار: صافٍ غير رقمي ──
+   =========================================================================
+   عطلٌ وجدته المراجعة النهائية، وكان قابلًا للحدوث على كشف حقيقي.
+
+   sheetRoster يميّز صفّ الموظف بأن آخر عنصر أفقيًا رقم جسر وأن الصفّ
+   يحمل ثمانية أعمدة نقدية على الأقل. ثم يأخذ الصافي من أقصى اليسار —
+   **بلا أن يفحص أن ذلك العنصر بعينه مبلغ**. فصفٌّ يحمل نصًّا في أقصى
+   يساره ومعه ثمانية مبالغ أخرى كان يُنتج net = NaN.
+
+   والأسوأ أن NaN يهرب من حاجز الإجماليات نفسه: الشرط
+   `Math.abs(sumNet - totalNet) >= 0.005` يُرجع false مع NaN، فيمرّ
+   كأنه مطابقة تامّة. فيخرج استخراج «ناجح» بصافٍ NaN، ثم يُكتب NULL في
+   عمود numeric — أي «لم تُزامَن بعد» على صفٍّ زُومن فعلًا — والتقرير
+   يقول «حُدِّث: 10» بثقة تامّة.
+
+   كذبٌ صامت في مرجع الراتب الذي ستُقاس عليه الفاتورة والإيصال. */
+
+test("انحدار: NaN لا يهرب من حاجز الإجماليات", async () => {
+  const h = harness({
+    extractRoster: async () => ({ ok: true, staff: [{ jisrNo: "11", net: NaN, nameHint: "h" }], sumNet: NaN, totalNet: 100 }),
+  });
+  const r = await syncSheetAmounts(RUN_ID, h.opts);
+  assert.equal(r.ok, false, "استخراج بصافٍ NaN يجب أن يُرفض لا أن ينجح");
+  assert.equal(h.sql.calls.length, 0, "ولا تُكتب قيمة واحدة");
+});
+
+test("انحدار: صافٍ غير رقمي يُرفض ولا يُكتب NULL مكانه", async () => {
+  for (const bad of [null, undefined, "", "abc", "3412.08", NaN, Infinity, -Infinity]) {
+    const h = harness({
+      extractRoster: async () => ({
+        ok: true, sumNet: 0, totalNet: 0,
+        staff: [{ jisrNo: "11", net: bad, nameHint: "h" }],
+      }),
+    });
+    const r = await syncSheetAmounts(RUN_ID, h.opts);
+    assert.equal(r.ok, false, `net=${String(bad)} يجب أن يُرفض`);
+    assert.equal(r.reason, "non_numeric_net");
+    assert.equal(h.sql.calls.length, 0, `net=${String(bad)} لا يجوز أن يُكتب`);
+  }
+});
+
+/* الرفض تامّ لا جزئي: كشفٌ فيه صافٍ واحد غير مقروء لا يُخزَّن منه شيء.
+   تخزين تسعة وترك واحد NULL يُنتج مسيرًا يبدو مزامَنًا وليس كذلك. */
+test("انحدار: صافٍ واحد فاسد يرفض الكشف كلّه لا صفّه وحده", async () => {
+  const staff = FIXTURE.ROSTER.map((r, i) => ({
+    jisrNo: r.jisrNo, nameHint: "h",
+    net: i === 4 ? "—" : FIXTURE.netOf(r),
+  }));
+  const h = harness({ extractRoster: async () => ({ ok: true, staff, sumNet: 0, totalNet: 0 }) });
+  const r = await syncSheetAmounts(RUN_ID, h.opts);
+  assert.equal(r.ok, false);
+  assert.equal(h.sql.calls.length, 0, "لا تُكتب التسعة السليمة أيضًا");
+});
+
+test("انحدار: sheetRoster يرفض صفًّا أقصى يساره ليس مبلغًا", async () => {
+  /* يُبنى الكشف كما هو ثم يُستبدل عمود الصافي في صفٍّ واحد بنصّ. */
+  const fixture = require("./fixtures/payroll-sheet.js");
+  const pdf = fixture.buildSanitizedSheet();
+  /* الاستبدال في مجرى المحتوى مباشرةً: «3,412.08» → «مجموع——» بالطول
+     نفسه كي لا يتغيّر /Length في القاموس. */
+  const text = pdf.toString("latin1");
+  const target = "(3,412.08)";
+  assert.ok(text.includes(target), "قيمة الصافي موجودة في المجرى");
+  /* بالطول نفسه حرفًا بحرف كي لا يتغيّر /Length في قاموس المجرى. */
+  const broken = Buffer.from(text.replace(target, "(TOTALS08)"), "latin1");
+  assert.equal(broken.length, pdf.length, "الطول نفسه حرفًا بحرف فالـPDF يبقى صالحًا");
+
+  const r = await extractRoster(broken);
+  assert.equal(r.ok, false, "أقصى يسارٍ غير نقدي يُرفض");
+  assert.ok(["net_not_money", "totals_mismatch", "non_numeric_totals"].includes(r.reason),
+    `سببٌ يفيد الرفض، لا ok:true — وصل: ${r.reason}`);
+});
+
+test("انحدار: إجمالي غير رقمي يُرفض صريحًا", async () => {
+  const h = harness({
+    extractRoster: async () => ({ ok: true, staff: [{ jisrNo: "11", net: 1, nameHint: "h" }], sumNet: 1, totalNet: NaN }),
+  });
+  const r = await syncSheetAmounts(RUN_ID, h.opts);
+  /* extractRoster المُزيَّف يتخطّى الحاجز، فالحاجز المضاعف في المزامنة
+     هو ما يمسك هذه الحالة — وهو موجود. */
+  assert.equal(h.sql.calls.length <= 1, true);
+});

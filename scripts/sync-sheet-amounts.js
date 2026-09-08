@@ -48,6 +48,9 @@ const REASONS = {
   duplicate_jisr_in_sheet: "رقم جسر مكرّر داخل الكشف — القارئ فسّر شيئًا آخر رقم موظف.",
   duplicate_jisr_in_platform: "موظفان يحملان رقم جسر نفسه في سجلّ الموظفين.",
   totals_mismatch: "مجموع الصوافي المستخرجة لا يطابق صف الإجماليات — الاستخراج ناقص.",
+  net_not_money: "أقصى يسار أحد صفوف الكشف ليس مبلغًا — بنية الكشف غير متوقّعة، ولا يصحّ تخمين الصافي.",
+  non_numeric_totals: "مجموع أو إجمالي غير رقمي — تعذّرت قراءة الكشف قراءةً موثوقة.",
+  non_numeric_net: "صافٍ غير رقمي في الكشف — رُفض الكشف كلّه، ولم يُخزَّن منه رقم واحد.",
 };
 
 const money = (n) => Number(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
