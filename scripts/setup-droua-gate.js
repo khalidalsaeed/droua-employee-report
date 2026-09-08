@@ -72,6 +72,13 @@ const STATEMENTS = [
     label: "فهرس droua_gate_audit(ts)",
     sql: `CREATE INDEX IF NOT EXISTS idx_droua_gate_audit_ts ON droua_gate_audit (ts DESC)`,
   },
+  {
+    label: "فهرس droua_gate_audit(event, ip_hash, ts) — لكتم تكرار أحداث الاستكشاف",
+    // يخدم مسند NOT EXISTS في lib/droua/audit.js:logThrottled. بلا هذا
+    // الفهرس يصير فحصُ الكتم مسحًا كاملًا يثقل كلّما كبر الجدول — فينقلب
+    // الحدُّ الذي وُضع لحماية القاعدة عبئًا عليها.
+    sql: `CREATE INDEX IF NOT EXISTS idx_droua_gate_audit_dedup ON droua_gate_audit (event, ip_hash, ts DESC)`,
+  },
 ];
 
 /* sql.query() هي واجهة تنفيذ نصٍّ كامل في @neondatabase/serverless.

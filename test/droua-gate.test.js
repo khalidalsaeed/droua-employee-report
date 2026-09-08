@@ -622,8 +622,57 @@ test("البوابة: استكشاف القسم يُسجَّل ببصمة جها
     const rows = sql.matching(/INSERT INTO droua_gate_audit/);
     assert.equal(rows.length, 1, "الرفض المستحقّ يجب أن يُسجَّل");
     assert.equal(rows[0].values[0], "access_denied");
-    const ipHash = rows[0].values[rows[0].values.length - 1];
-    assert.match(String(ipHash), /^[0-9a-f]{16}$/, "بصمة مقطوعة لا عنوان");
+    /* البصمة تظهر مرّتين في العبارة المحروسة: في المُدرَج وفي مسند الكتم. */
+    const hashes = rows[0].values.filter((v) => /^[0-9a-f]{16}$/.test(String(v)));
+    assert.equal(hashes.length, 2, "بصمة مقطوعة في المُدرَج وفي حرس النافذة");
     assert.ok(!JSON.stringify(rows[0].values).includes("203.0.113.9"), "العنوان الخام يجب ألّا يُخزَّن");
+  });
+});
+
+test("التدقيق: كتابة أحداث الاستكشاف مقيَّدة بنافذة — لا صفّ لكل طلب", async () => {
+  /* انحدار: أي مستخدم مسجَّل يستطيع طرق مسار القسم في حلقة. صفٌّ لكل طلب
+     يملأ جدول التدقيق ويستهلك القاعدة، ويُغرق الإشارة الحقيقية في ضجيج —
+     وسجلٌّ لا يُقرأ لكثرته سجلٌّ معطَّل. */
+  await withEnv(fullEnv(), async () => {
+    const other = userRow({ id: OTHER_ID, email: "other@example.test" });
+    const sql = fakeDb({ users: [other] });
+    for (let i = 0; i < 5; i++) await call({ sql, actor: other, kind: "page", ip: "203.0.113.9" });
+
+    const writes = sql.matching(/INSERT INTO droua_gate_audit/);
+    assert.equal(writes.length, 5, "خمسة طلبات = خمس عبارات");
+    for (const w of writes) {
+      /* الحدّ في القاعدة لا في التطبيق: عبارة واحدة ذرّية تُدرج فقط إن لم
+         يوجد صفّ مطابق داخل النافذة — فلا سباق يكتب صفّين. */
+      assert.match(w.text, /WHERE NOT EXISTS/, "الكتابة يجب أن تكون محروسة");
+      assert.match(w.text, /ip_hash IS NOT DISTINCT FROM/, "طلبٌ بلا عنوان معروف يجب ألّا يفلت");
+      assert.match(w.text, /ts > \?/, "الحرس يجب أن يكون مقيَّدًا بنافذة زمنية");
+    }
+  });
+});
+
+test("التدقيق: نافذة الكتم عشر دقائق، والحدث والبصمة معًا مفتاحها", () => {
+  const audit = require("../lib/droua/audit");
+  assert.equal(audit.THROTTLE_MS, 10 * 60 * 1000);
+  const calls = [];
+  const fake = (strings, ...values) => { calls.push({ text: strings.join("?"), values }); return Promise.resolve([]); };
+  fake.unsafe = (x) => x;
+  const now = 1_700_000_000_000;
+  return audit.logThrottled(fake, { event: "access_denied", ip: "198.51.100.4", secret: "s".repeat(40), now }).then(() => {
+    const v = calls[0].values;
+    assert.equal(v[0], "access_denied");
+    assert.ok(v.includes(new Date(now - audit.THROTTLE_MS).toISOString()), "حدّ النافذة يجب أن يُمرَّر معاملًا");
+    assert.ok(!JSON.stringify(v).includes("198.51.100.4"), "العنوان الخام يجب ألّا يُمرَّر");
+  });
+});
+
+test("التدقيق: أحداث الفتح ليست مقيَّدة — حدّها هو القفل نفسه", async () => {
+  /* gate_unlock_failed محدود أصلًا بالقفل (عشرات في الساعة على الأكثر)،
+     وكل واحد منها ذو معنى. تقييده كان سيُخفي محاولاتٍ يجب أن تُرى. */
+  await withEnv(fullEnv(), async () => {
+    const sql = fakeDb({ users: [OWNER_ROW()] });
+    await call({ sql, actor: OWNER_ROW(), kind: "api", apiPath: "secure-audit/gate/unlock", method: "POST", body: { password: "wrong" } });
+    const writes = sql.matching(/INSERT INTO droua_gate_audit/);
+    assert.equal(writes.length, 1);
+    assert.ok(!/WHERE NOT EXISTS/.test(writes[0].text), "أحداث الفتح تُسجَّل كلّها");
   });
 });
