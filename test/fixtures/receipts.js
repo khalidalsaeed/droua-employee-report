@@ -68,6 +68,37 @@ function receipt(o) {
   return ops.join("\n");
 }
 
+/* ⚠️ التخطيط الحقيقي: جزآ الـIBAN تفرّقهما أسطرٌ أخرى.
+   =========================================================================
+   قيسَ إيصال راتب فعلي فوُجد الجزء الأول عند (x=217, y=422) بطول 16،
+   والثاني عند (x=291, y=407) بطول 8 — وبينهما في ترتيب الأسطر سطرا اسم
+   المستفيد واسم البنك، لأن الأعمدة الثلاثة تُطبع جنبًا إلى جنب فيُخرجها
+   القارئ أسطرًا منفصلة بحسب y.
+
+   فالجزآن ليسا متجاورين نصًّا ولا في العمود نفسه: الثاني أُزيح يمينًا
+   أربعًا وسبعين نقطة. وعيّنةٌ تضعهما على سطرين متتاليين تختبر تخطيطًا
+   لا وجود له، وتُخفي أن المحلّل يفشل على كل إيصال حقيقي.
+
+   الإحداثيات هنا منقولة من القياس حرفيًا. */
+function realLayoutReceipt(o) {
+  const ib = o.iban;
+  return [
+    textOp(60, 780, "TRANSACTION DETAILS", 11),
+    textOp(60, 555, `DATE: ${o.date || "2026-08-13"}`),
+    /* الجزء الأول من الـIBAN */
+    textOp(217, 422, ib.slice(0, 16)),
+    /* ثم اسم المستفيد واسم البنك — بينهما في ترتيب الأسطر */
+    textOp(60, 418, o.beneficiary || "BENEFICIARY XX"),
+    textOp(60, 412, o.bank || "SANITIZED BANK"),
+    /* ثم الجزء الثاني، مُزاحًا يمينًا كما في المستند الحقيقي */
+    textOp(291, 407, ib.slice(16)),
+    textOp(60, 300, `REFERENCE NO: ${o.reference || "TBC2608130000099"}`),
+    textOp(60, 280, `VALUE DATE: 13-08-2026`),
+    textOp(60, 260, `AMOUNT: ${o.amountText || "1,234.56 SAR"}`),
+    textOp(60, 60, "SANITIZED FIXTURE - REAL LAYOUT, FAKE DATA", 7),
+  ].join("\n");
+}
+
 /* صفحة تكملة: تحمل بقية تفاصيل الإيصال السابق وتخلو من أي IBAN.
    قاعدة التقسيم المعتمدة مؤقّتًا تعدّها تكملةً لا إيصالًا جديدًا. */
 function continuationPage(n) {
@@ -131,6 +162,21 @@ const twoIbans = () => buildPdf([receipt({
   ibans: [iban(7), iban(8)], amountText: "1,100.00 SAR", reference: "TBC2608130000007",
 })]);
 
+/* بالتخطيط الحقيقي: جزآ الـIBAN تفرّقهما أسطر أخرى */
+const realLayout = () => buildPdf([realLayoutReceipt({ iban: iban(31), amountText: "3,412.08 SAR" })]);
+
+/* بالتخطيط الحقيقي، ومعه ذيلٌ ثانٍ بطول مختلف: لا يُكمل الطول فلا يُلصَق */
+const realLayoutDecoy = () => buildPdf([
+  realLayoutReceipt({ iban: iban(32), amountText: "500.00 SAR" }) +
+  "\n" + textOp(291, 395, "123456"),
+]);
+
+/* بالتخطيط الحقيقي، ومعه ذيلان يُكملان الطول: أيّهما الذيل؟ لا يُخمَّن */
+const realLayoutAmbiguous = () => buildPdf([
+  realLayoutReceipt({ iban: iban(33), amountText: "600.00 SAR" }) +
+  "\n" + textOp(400, 407, "99999999"),
+]);
+
 /* مجمّع: صفحة لكل إيصال */
 function bundle(count = 10) {
   const pages = [];
@@ -173,10 +219,11 @@ const truncated = () => single().slice(0, 200);
 
 const FIXTURES = {
   single, wholeIban, noIban, badAmount, conflictingAmounts, repeatedAmount,
-  twoIbans, bundle, bundleWithSpan, bundleLeadingOrphan, malformed, truncated,
+  twoIbans, realLayout, realLayoutDecoy, realLayoutAmbiguous,
+  bundle, bundleWithSpan, bundleLeadingOrphan, malformed, truncated,
 };
 
-module.exports = { ...FIXTURES, iban, receipt, continuationPage, SENDER, BANK, IBAN_Y1, IBAN_Y2 };
+module.exports = { ...FIXTURES, iban, receipt, realLayoutReceipt, continuationPage, SENDER, BANK, IBAN_Y1, IBAN_Y2 };
 
 if (require.main === module) {
   const fs = require("node:fs");

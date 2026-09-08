@@ -434,3 +434,93 @@ test("الموسوم بالتحويل يُقدَّم على رقمٍ بلا وس
   assert.equal(g.amount, null);
   assert.ok(g.issues.includes("amount_conflict"));
 });
+
+/* ═══ انحدار: التخطيط الحقيقي — جزآ الـIBAN تفرّقهما أسطر ═══
+   =========================================================================
+   أخطر عطل في 2.2، ولم تكشفه عيّنةٌ واحدة من الاثنتي عشرة: كل عيّناتي
+   وضعت جزأي الـIBAN على سطرين متتاليين، وهو تخطيط لا وجود له.
+
+   قِيس إيصال راتب فعلي فوُجد الجزء الأول عند (x=217, y=422) بطول 16
+   والثاني عند (x=291, y=407) بطول 8 — وبينهما سطرا اسم المستفيد واسم
+   البنك، لأن الأعمدة تُطبع جنبًا إلى جنب. فالجزآن ليسا متجاورين نصًّا
+   ولا في العمود نفسه.
+
+   ونتيجة ذلك أن المحلّل كان يرفض **كل** إيصال راتب حقيقي: صفر IBAN
+   مكتمل وبادئة متبقّية واحدة ⇒ iban_layout_unexpected. حاجزٌ آمن (لا
+   يخترع) لكن بلا فائدة — كل إيصال يذهب للمراجعة اليدوية.
+
+   فالتجميع صار على الإحداثيات: بادئة SA يُلحَق بها العنصر الرقمي الذي
+   يقع تحتها بفارق رأسي صغير **ويُكمل الطول إلى 24 بالضبط**. وإكمال
+   الطول هو الحاجز: عنصرٌ بطول آخر لا يُلصَق. */
+
+const { ibanScanItems } = require("../lib/payroll/receiptFields");
+
+test("انحدار: IBAN بالتخطيط الحقيقي يُعاد تجميعه", async () => {
+  const r = await parseReceiptDocument(F.realLayout());
+  assert.equal(r.ok, true, r.reason);
+  const f = first(r).fields;
+  assert.equal(f.iban, F.iban(31), "الجزآن يفرّقهما سطران ومع ذلك يُجمعان");
+  assert.equal(f.iban.length, 24);
+  assert.deepEqual(f.issues, []);
+  /* والنصّ يُثبت أن الجزأين غير متجاورين — فالتجميع ليس تحصيل حاصل. */
+  const lines = first(r).text.split("\n");
+  const at = lines.findIndex((l) => /SA\d/.test(l));
+  assert.ok(at >= 0);
+  assert.ok(!/SA\d{22}/.test((lines[at] + lines[at + 1]).replace(/\s+/g, "")),
+    "لصق السطرين المتجاورين لا يجده — وهو ما كان يُفشل المحلّل");
+});
+
+test("انحدار: ذيلٌ بطول لا يُكمل 24 لا يُلصَق", async () => {
+  const r = await parseReceiptDocument(F.realLayoutDecoy());
+  const f = first(r).fields;
+  /* رقمٌ آخر تحت البادئة بطول 6 — لا يُكمل، فالذيل الصحيح وحده يُلصَق. */
+  assert.equal(f.iban, F.iban(32));
+  assert.deepEqual(f.issues, []);
+});
+
+test("انحدار: ذيلان يُكملان الطول ⇒ التباس، لا تخمين", async () => {
+  const r = await parseReceiptDocument(F.realLayoutAmbiguous());
+  const f = first(r).fields;
+  assert.equal(f.iban, null, "أيّهما الذيل؟ التخمين يُنتج حسابًا لم يُطبع");
+  assert.ok(f.issues.includes("iban_layout_unexpected"));
+  assert.equal(hasHardKey(f), false);
+});
+
+test("ibanScanItems: الفارق الرأسي الكبير ليس تتمّة", () => {
+  const pre = { x: 217, y: 422, str: "SA91000100010001" };
+  /* تحتها بفارق 15 نقطة — تتمّة. */
+  const near = ibanScanItems([pre, { x: 291, y: 407, str: "00010001" }]);
+  assert.equal(near.ibans.length, 1);
+  assert.equal(near.suspicious, false);
+  /* وتحتها بفارق 200 نقطة — عنصرٌ آخر في المستند لا تتمّة. */
+  const far = ibanScanItems([pre, { x: 291, y: 222, str: "00010001" }]);
+  assert.deepEqual(far.ibans, []);
+  assert.equal(far.suspicious, true);
+});
+
+test("ibanScanItems: التتمّة تحت البادئة لا فوقها", () => {
+  const pre = { x: 217, y: 422, str: "SA91000100010001" };
+  const above = ibanScanItems([pre, { x: 291, y: 437, str: "00010001" }]);
+  assert.deepEqual(above.ibans, [], "ما فوق البادئة ليس تتمّتها");
+  assert.equal(above.suspicious, true);
+});
+
+/* فخّ lastIndex: الregex العالمي يحفظ موضعه بين النداءات، فـ.test عليه
+   يُرجع نتائج متبدّلة لنفس المدخل — كان IBAN متّصل يُقرأ مرّةً ويُهمَل
+   مرّةً بحسب ترتيب العناصر. */
+test("انحدار: IBAN متّصل يُقرأ في كل نداء لا في نداءٍ ومرّة", () => {
+  const one = { x: 60, y: 422, str: "SA9200020002000200020002" };
+  for (let i = 0; i < 5; i++) {
+    const s = ibanScanItems([one]);
+    assert.equal(s.ibans.length, 1, `النداء ${i + 1} يجب أن يجده`);
+    assert.equal(s.suspicious, false);
+  }
+});
+
+test("ibanScanItems على صفحة بلا شيء لا ينهار", () => {
+  for (const v of [[], null, undefined, [{ x: null, y: null, str: "x" }]]) {
+    const s = ibanScanItems(v);
+    assert.deepEqual(s.ibans, []);
+    assert.equal(s.suspicious, false, "لا بادئة ⇒ لا شبهة");
+  }
+});
