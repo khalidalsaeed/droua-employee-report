@@ -15,8 +15,8 @@ const { similarity, foldArabic, validate, apply } = require("../scripts/set-jisr
 /* ── التطبيع ── */
 
 test("الأصفار البادئة والمسافات لا تُنتج موظفًا «غير موجود»", () => {
-  for (const v of ["49", " 49 ", "049", "0049", "\t49\n"]) {
-    assert.equal(normalizeJisr(v), "49", `${JSON.stringify(v)} يجب أن يُطبَّع إلى 49`);
+  for (const v of ["11", " 11 ", "011", "0011", "\t11\n"]) {
+    assert.equal(normalizeJisr(v), "11", `${JSON.stringify(v)} يجب أن يُطبَّع إلى 11`);
   }
 });
 
@@ -27,11 +27,11 @@ test("الفراغ بكل صوره يعني «غير مربوط»", () => {
 test("الصفر قيمة لا فراغ، ولا يُطابق رقمًا آخر", () => {
   assert.equal(normalizeJisr("0"), "0");
   assert.equal(normalizeJisr("00"), "0");
-  assert.notEqual(normalizeJisr("0"), normalizeJisr("49"));
+  assert.notEqual(normalizeJisr("0"), normalizeJisr("11"));
 });
 
 test("أرقام مختلفة تبقى مختلفة بعد التطبيع", () => {
-  const keys = ["49", "55", "56", "59", "60", "63", "70", "71", "82", "85"].map(normalizeJisr);
+  const keys = ["11", "12", "13", "14", "15", "16", "17", "18", "19", "20"].map(normalizeJisr);
   assert.equal(new Set(keys).size, 10, "لا يجوز أن يتصادم رقمان");
 });
 
@@ -72,20 +72,25 @@ function loadEmployeesWithFakeDb(rows) {
   }
 }
 
+/* رقم إقامة مُختلَق بيّن: 2 ثم أصفار. كانت النسخة الأولى تحمل رقم
+   إقامة موظف حقيقي — والسياسة المعتمدة لا تُبقي بيان هوية في Git، فأي
+   رقم يؤدّي الغرض ما دام شكله شكل الإقامة. */
+const IQAMA_SAMPLE = "2000000501";
+
 const EMP = (eid, name, jisr) => ({
   eid, jisr,
-  data: { [F_DAMANAH]: eid, [F_NAME]: name, "رقم الإقامة": "2593650357", ...(jisr ? { [F_JISR]: jisr } : {}) },
+  data: { [F_DAMANAH]: eid, [F_NAME]: name, "رقم الإقامة": IQAMA_SAMPLE, ...(jisr ? { [F_JISR]: jisr } : {}) },
 });
 
 test("رقم مستعمل عند موظف آخر يُرفض، والرسالة تسمّي المتعارض", async () => {
-  const h = loadEmployeesWithFakeDb([EMP("506", "شكيب ميا", "49"), EMP("504", "لامين مولا", null)]);
+  const h = loadEmployeesWithFakeDb([EMP("906", "نديم راش", "11"), EMP("904", "لامجد نوري", null)]);
   try {
     await assert.rejects(
-      () => h.mod.update("504", { [F_JISR]: "49" }),
+      () => h.mod.update("904", { [F_JISR]: "11" }),
       (err) => {
         assert.match(err.message, /مستعمل بالفعل/);
-        assert.match(err.message, /شكيب ميا/, "تسمّي الموظف المتعارض");
-        assert.match(err.message, /506/);
+        assert.match(err.message, /نديم راش/, "تسمّي الموظف المتعارض");
+        assert.match(err.message, /906/);
         return true;
       }
     );
@@ -94,16 +99,16 @@ test("رقم مستعمل عند موظف آخر يُرفض، والرسالة �
 });
 
 test("الصورة المُطبَّعة تحكم: «049» يتعارض مع «49»", async () => {
-  const h = loadEmployeesWithFakeDb([EMP("506", "شكيب ميا", "49"), EMP("504", "لامين مولا", null)]);
+  const h = loadEmployeesWithFakeDb([EMP("906", "نديم راش", "11"), EMP("904", "لامجد نوري", null)]);
   try {
-    await assert.rejects(() => h.mod.update("504", { [F_JISR]: "049" }), /مستعمل بالفعل/);
+    await assert.rejects(() => h.mod.update("904", { [F_JISR]: "011" }), /مستعمل بالفعل/);
   } finally { h.restore(); }
 });
 
 test("إعادة الرقم نفسه إلى صاحبه تمرّ", async () => {
-  const h = loadEmployeesWithFakeDb([EMP("506", "شكيب ميا", "49")]);
+  const h = loadEmployeesWithFakeDb([EMP("906", "نديم راش", "11")]);
   try {
-    await h.mod.update("506", { [F_JISR]: "49" });
+    await h.mod.update("906", { [F_JISR]: "11" });
     assert.equal(h.sql.matching(/UPDATE employees/).length, 1);
   } finally { h.restore(); }
 });
@@ -111,20 +116,20 @@ test("إعادة الرقم نفسه إلى صاحبه تمرّ", async () => {
 /* ── التوافق مع السجلّات القائمة ── */
 
 test("سجلّ بلا الحقل يُقرأ ويُحدَّث كما هو", async () => {
-  const h = loadEmployeesWithFakeDb([EMP("500", "شميم", null)]);
+  const h = loadEmployeesWithFakeDb([EMP("900", "بشير", null)]);
   try {
-    const before = await h.mod.get("500");
+    const before = await h.mod.get("900");
     assert.equal(before[F_JISR], undefined, "الحقل غائب لا فارغ");
-    assert.equal(before[F_DAMANAH], "500");
-    await h.mod.update("500", { "المهنة": "عامل" });
+    assert.equal(before[F_DAMANAH], "900");
+    await h.mod.update("900", { "المهنة": "عامل" });
     assert.equal(h.sql.matching(/UPDATE employees/).length, 1, "التحديث يعمل بلا الحقل");
   } finally { h.restore(); }
 });
 
 test("تحديث حقل آخر لا يفحص «رقم جسر» ولا يخترعه", async () => {
-  const h = loadEmployeesWithFakeDb([EMP("500", "شميم", null), EMP("506", "شكيب ميا", "49")]);
+  const h = loadEmployeesWithFakeDb([EMP("900", "بشير", null), EMP("906", "نديم راش", "11")]);
   try {
-    await h.mod.update("500", { "المهنة": "عامل تحميل" });
+    await h.mod.update("900", { "المهنة": "عامل تحميل" });
     const lookups = h.sql.matching(/WHERE data->>.* IS NOT NULL/);
     assert.equal(lookups.length, 0, "لا استعلام تفرّد حين لا يُذكر الحقل");
     const write = h.sql.matching(/UPDATE employees/)[0];
@@ -133,14 +138,14 @@ test("تحديث حقل آخر لا يفحص «رقم جسر» ولا يخترع
 });
 
 test("إدخال رقم جسر لا يمسّ رقم ضمان ولا اسم العامل", async () => {
-  const h = loadEmployeesWithFakeDb([EMP("506", "شكيب ميا", null)]);
+  const h = loadEmployeesWithFakeDb([EMP("906", "نديم راش", null)]);
   try {
-    await h.mod.update("506", { [F_JISR]: "49" });
+    await h.mod.update("906", { [F_JISR]: "11" });
     const merged = JSON.parse(h.sql.matching(/UPDATE employees/)[0].values[0]);
-    assert.equal(merged[F_DAMANAH], "506", "رقم ضمان كما هو");
-    assert.equal(merged[F_NAME], "شكيب ميا");
-    assert.equal(merged[F_JISR], "49");
-    assert.equal(merged["رقم الإقامة"], "2593650357", "الحقول الأخرى سليمة");
+    assert.equal(merged[F_DAMANAH], "906", "رقم ضمان كما هو");
+    assert.equal(merged[F_NAME], "نديم راش");
+    assert.equal(merged[F_JISR], "11");
+    assert.equal(merged["رقم الإقامة"], IQAMA_SAMPLE, "الحقول الأخرى سليمة");
   } finally { h.restore(); }
 });
 
@@ -149,18 +154,18 @@ test("إدخال رقم جسر لا يمسّ رقم ضمان ولا اسم ال�
 /* التغطية الكاملة للمطابقة بالكلمات في test/jisr-name-match.test.js —
    هذا فحص سلامة رقيق يثبت أن الاقتراح ما زال موصولًا بها. */
 test("الاقتراح بالاسم يقارب الصيغ المختلفة ويفرّق المختلفة", () => {
-  assert.equal(foldArabic("الأمين مولا"), foldArabic("الامين مولا"));
-  assert.ok(similarity("شكيب مياه", "شكيب ميا") >= 0.95, "بادئة ناقصة تبقى مرشّحًا قويًا");
-  assert.equal(similarity("ساجر احمد", "ساجر"), 1, "اسم مختصر لا يُعاقَب على نقصه");
-  assert.equal(similarity("شكيب مياه", "ساجر"), 0, "اسمان مختلفان لا يتقاربان إطلاقًا");
+  assert.equal(foldArabic("الأمجد نوري"), foldArabic("الامجد نوري"));
+  assert.ok(similarity("نديم راشة", "نديم راش") >= 0.95, "بادئة ناقصة تبقى مرشّحًا قويًا");
+  assert.equal(similarity("فهد احمد", "فهد"), 1, "اسم مختصر لا يُعاقَب على نقصه");
+  assert.equal(similarity("نديم راشة", "فهد"), 0, "اسمان مختلفان لا يتقاربان إطلاقًا");
 });
 
 /* ── التحقّق قبل الكتابة ── */
 
 const PLATFORM = [
-  { [F_DAMANAH]: "500", [F_NAME]: "شميم" },
-  { [F_DAMANAH]: "504", [F_NAME]: "لامين مولا" },
-  { [F_DAMANAH]: "506", [F_NAME]: "شكيب ميا" },
+  { [F_DAMANAH]: "900", [F_NAME]: "بشير" },
+  { [F_DAMANAH]: "904", [F_NAME]: "لامجد نوري" },
+  { [F_DAMANAH]: "906", [F_NAME]: "نديم راش" },
 ];
 const depsFor = (employees, written) => ({
   listEmployees: async () => employees,
@@ -169,7 +174,7 @@ const depsFor = (employees, written) => ({
 
 test("سطر بلا رقم ضمان (ما زال null) يوقف كل شيء", async () => {
   const written = [];
-  const r = await apply([{ "رقم جسر": "49", "رقم ضمان": null }], depsFor(PLATFORM, written), {});
+  const r = await apply([{ "رقم جسر": "11", "رقم ضمان": null }], depsFor(PLATFORM, written), {});
   assert.equal(r.ok, false);
   assert.match(r.errors[0], /ما زال null/);
   assert.equal(written.length, 0);
@@ -178,8 +183,8 @@ test("سطر بلا رقم ضمان (ما زال null) يوقف كل شيء", as
 test("رقم جسر مكرّر داخل الملف يُرفض", async () => {
   const written = [];
   const r = await apply([
-    { "رقم جسر": "49", "رقم ضمان": "506" },
-    { "رقم جسر": "049", "رقم ضمان": "504" },
+    { "رقم جسر": "11", "رقم ضمان": "906" },
+    { "رقم جسر": "011", "رقم ضمان": "904" },
   ], depsFor(PLATFORM, written), {});
   assert.equal(r.ok, false);
   assert.ok(r.errors.some((e) => /مكرّر داخل الملف/.test(e)));
@@ -187,29 +192,29 @@ test("رقم جسر مكرّر داخل الملف يُرفض", async () => {
 });
 
 test("رقم مملوك لموظف آخر يُرفض حتى مع --overwrite", async () => {
-  const withHolder = [...PLATFORM, { [F_DAMANAH]: "509", [F_NAME]: "مد هلال", [F_JISR]: "49" }];
+  const withHolder = [...PLATFORM, { [F_DAMANAH]: "909", [F_NAME]: "مد هيثم", [F_JISR]: "11" }];
   const written = [];
-  const r = await apply([{ "رقم جسر": "49", "رقم ضمان": "506" }], depsFor(withHolder, written), { overwrite: true });
+  const r = await apply([{ "رقم جسر": "11", "رقم ضمان": "906" }], depsFor(withHolder, written), { overwrite: true });
   assert.equal(r.ok, false);
   assert.match(r.errors[0], /مستعمل للموظف/);
   assert.equal(written.length, 0);
 });
 
 test("استبدال رقم قائم يحتاج --overwrite", async () => {
-  const withOld = PLATFORM.map((e) => (e[F_DAMANAH] === "506" ? { ...e, [F_JISR]: "12" } : e));
-  const blocked = await apply([{ "رقم جسر": "49", "رقم ضمان": "506" }], depsFor(withOld, []), {});
+  const withOld = PLATFORM.map((e) => (e[F_DAMANAH] === "906" ? { ...e, [F_JISR]: "13" } : e));
+  const blocked = await apply([{ "رقم جسر": "11", "رقم ضمان": "906" }], depsFor(withOld, []), {});
   assert.equal(blocked.ok, false);
   assert.match(blocked.errors[0], /--overwrite/);
 
   const written = [];
-  const allowed = await apply([{ "رقم جسر": "49", "رقم ضمان": "506" }], depsFor(withOld, written), { overwrite: true });
+  const allowed = await apply([{ "رقم جسر": "11", "رقم ضمان": "906" }], depsFor(withOld, written), { overwrite: true });
   assert.equal(allowed.ok, true);
-  assert.deepEqual(written, [{ eid: "506", patch: { [F_JISR]: "49" } }]);
+  assert.deepEqual(written, [{ eid: "906", patch: { [F_JISR]: "11" } }]);
 });
 
 test("--dry-run يعرض الخطّة ولا يكتب", async () => {
   const written = [];
-  const r = await apply([{ "رقم جسر": "49", "رقم ضمان": "506" }], depsFor(PLATFORM, written), { dryRun: true });
+  const r = await apply([{ "رقم جسر": "11", "رقم ضمان": "906" }], depsFor(PLATFORM, written), { dryRun: true });
   assert.equal(r.ok, true);
   assert.equal(r.dryRun, true);
   assert.equal(r.plan[0].action, "إضافة");
@@ -219,8 +224,8 @@ test("--dry-run يعرض الخطّة ولا يكتب", async () => {
 test("الكتابة تمسّ «رقم جسر» وحده", async () => {
   const written = [];
   const r = await apply([
-    { "رقم جسر": "49", "رقم ضمان": "506" },
-    { "رقم جسر": "71", "رقم ضمان": "500" },
+    { "رقم جسر": "11", "رقم ضمان": "906" },
+    { "رقم جسر": "18", "رقم ضمان": "900" },
   ], depsFor(PLATFORM, written), {});
   assert.equal(r.ok, true);
   assert.equal(r.written, 2);
@@ -230,7 +235,7 @@ test("الكتابة تمسّ «رقم جسر» وحده", async () => {
 });
 
 test("رقم ضمان غير موجود يُرفض", async () => {
-  const r = await validate([{ "رقم جسر": "49", "رقم ضمان": "999" }], { listEmployees: async () => PLATFORM }, {});
+  const r = await validate([{ "رقم جسر": "11", "رقم ضمان": "999" }], { listEmployees: async () => PLATFORM }, {});
   assert.equal(r.ok, false);
   assert.match(r.errors[0], /لا موظف برقم ضمان 999/);
 });
@@ -284,8 +289,8 @@ test("رقم ضمان مقفول بعد الإنشاء، ومعه تلميح ي�
 /* ── تطابق قيد القاعدة مع منطق التطبيق ──
    =========================================================================
    حماية التطبيق وحدها لا تكفي: كتابة SQL مباشرة أو سباق بين طلبين
-   يتجاوزانها. والفهرس لا ينفع إن بُني على القيمة الخام — عندها يرى "49"
-   و"049" مدخلين مختلفين فيقبلهما لموظفَين، بينما التطبيق يعدّهما الرقم
+   يتجاوزانها. والفهرس لا ينفع إن بُني على القيمة الخام — عندها يرى "11"
+   و"011" مدخلين مختلفين فيقبلهما لموظفَين، بينما التطبيق يعدّهما الرقم
    نفسه. فيصير للمنصّة تعريفان متضاربان لهوية واحدة.
 
    لا Postgres في هذه الاختبارات، فتُحاكى دلالة تعبير الفهرس حرفيًا
@@ -314,18 +319,18 @@ test("الفهرس مبنيّ على الصورة المُطبَّعة لا عل
 
 test("القيد يرفض 49 و049 كرقمين لموظفين مختلفين", () => {
   /* مفتاحا الفهرس متطابقان ⇒ INSERT الثاني يخرق UNIQUE ويُرفض. */
-  assert.equal(simulatePostgresNormalize("049"), simulatePostgresNormalize("49"));
-  assert.equal(simulatePostgresNormalize("049"), "49");
+  assert.equal(simulatePostgresNormalize("011"), simulatePostgresNormalize("11"));
+  assert.equal(simulatePostgresNormalize("011"), "11");
   /* والتطبيق يقول الشيء نفسه — تعريف واحد لا اثنان. */
-  assert.equal(normalizeJisr("049"), normalizeJisr("49"));
-  assert.equal(normalizeJisr("049"), simulatePostgresNormalize("049"));
+  assert.equal(normalizeJisr("011"), normalizeJisr("11"));
+  assert.equal(normalizeJisr("011"), simulatePostgresNormalize("011"));
 });
 
 test("تعبير الفهرس و normalizeJisr لا يفترقان على أي مدخل", () => {
   const inputs = [
-    "49", "049", "0049", "00049", " 49 ", "\t049\n",
+    "11", "011", "0049", "00049", " 49 ", "\t049\n",
     "0", "00", "000", "1", "10", "100", "0100",
-    "9999", "085", "85", "506", "0506",
+    "9999", "085", "85", "906", "0506",
     "A49", "0A", "49A", "", "   ",
   ];
   for (const v of inputs) {
@@ -351,7 +356,7 @@ test("النظرة الأمامية تمنع افتراق التعريفين ع�
 });
 
 test("أرقام مختلفة تبقى مفاتيح مختلفة في الفهرس", () => {
-  const keys = ["49", "55", "56", "59", "60", "63", "70", "71", "82", "085"]
+  const keys = ["11", "55", "56", "59", "60", "63", "70", "71", "82", "085"]
     .map(simulatePostgresNormalize);
   assert.equal(new Set(keys).size, 10, "عشرة مفاتيح متمايزة");
   assert.ok(keys.includes("85"), "«085» يدخل الفهرس بمفتاح «85»");
