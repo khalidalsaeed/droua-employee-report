@@ -1,129 +1,133 @@
 # Droua Payroll Audit — تصميم الأمان والمعمارية
 
-> **حالة المستند:** مقترح للاعتماد. لم يُكتب أي كود بعد، ولم تُنشأ أي جداول،
-> ولم تُضبط أي متغيّرات بيئة، ولم يُنشر شيء. لم يُمسّ مسير أجير الحالي بحرف.
->
-> **بُني على فحص فعلي للمشروع** (لا افتراضات): `middleware.mjs`، `api/app.js`،
-> `lib/auth/*`، `lib/db.js`، `lib/blob.js`، `lib/data/registry.js`،
-> `lib/payroll/*`، `lib/data/payrollRuns.js`، `vercel.json`، `sw.js`،
-> `app-nav.js`، `scripts/setup-*.js`، ومجلد `test/`.
+> **النسخة 2** — بعد اعتمادك المبدئي وتعديلاتك السبعة.
+> **حالة المستند:** معتمد مبدئيًا. لم يُكتب كود، ولم تُنشأ جداول، ولم تُضبط
+> أسرار، ولم يُنشر شيء، ولم يُمسّ مسير أجير بحرف.
 
 ---
 
-## 0. ما وجدته في المنصّة الحالية (الأساس الذي بُني عليه كل قرار)
+## ما تغيّر في هذه النسخة
 
-| الجانب | الواقع الحالي | أثره على التصميم |
+| # | قرارك | أثره |
 |---|---|---|
-| **Auth** | كوكي `session` يحمل توكن HMAC-SHA256 يدويًا (`lib/auth/tokens.js`)، حمولته `{sub, email, role, remember, iat, exp}`، موقّع بـ`SESSION_SECRET`. | نعيد استخدام آلية التوقيع نفسها لجلسة القسم — لكن **بسرّ مستقلّ**. |
-| **الكوكي** | `HttpOnly; Secure; SameSite=Lax; Path=/`، مهلة خمول 30 دقيقة أو 30 يومًا مع «تذكّرني». | `SameSite=Lax` **لا يكفي** ضد CSRF على POST؛ كوكي القسم سيكون `Strict`. |
-| **التحقّق في كل مسار** | `requireUser(req)` يقرأ الكوكي ثم يقرأ المستخدم من Neon ويتحقّق `status === 'active'` — **لا يثق بأي هيدر من الوسيط**. | ممتاز؛ نبني فوقه بالضبط. |
-| **Middleware** | `matcher: ["/((?!api/cron).*)"]` — كل شيء عدا الكرون. يمرّر من عنده جلسة صالحة، ويردّ 401 على `/api/*` أو 302 إلى `/login.html` على الصفحات. | مسارات ذروة ستمرّ به تلقائيًا كطبقة أولى، وهذا **يخفي وجود القسم عن غير المسجَّلين** لأن كل مسار غير موجود يتصرّف بالطريقة نفسها. |
-| **Roles / Permissions** | كتالوج `SECTIONS` في `lib/auth/permissions.js`. **`owner` يُرجع `true` لكل شيء دائمًا** (`hasPermission`: `if (user.role === "owner") return true`). | ⚠️ **هذا وحده يُبطل أي حماية قائمة على صلاحية**. لذلك الحصر سيكون **allowlist صريحة بهوية المستخدم**، لا صلاحية ولا دور. |
-| **API routing** | دالّة خادمة واحدة `api/app.js` تستقبل كل شيء عبر rewrites في `vercel.json`، وتوزّع على `auth/data/files/reports/push`. | ذروة تحصل على **دالّة خادمة مستقلّة** لعزل حقيقي في مستوى الشيفرة. |
-| **Data layer** | `lib/data/registry.js` يربط `/api/data/:resource` بوحدات CRUD عامّة، والحارس فيها `hasPermission(actor, mod.section, action)`. | ⚠️ **ممنوع منعًا باتًا تسجيل ذروة في هذا الـregistry** — التسجيل وحده يجعلها قابلة للوصول بصلاحية عامّة. |
-| **Neon** | `lib/db.js` singleton كسول على `DATABASE_URL`. لا نظام migrations — الجداول تُنشأ بسكربتات `scripts/setup-*.js` كلّها `IF NOT EXISTS` وقابلة لإعادة التشغيل، مع `--dry-run`. | نتبع النمط نفسه حرفيًا: `scripts/setup-droua-payroll.js`. |
-| **Vercel Blob** | `lib/blob.js` يستعمل `access: "public"` + `addRandomSuffix` ويخزّن **الرابط** في القاعدة. | ⚠️ روابط عامّة: من يملك الرابط يفتح الملف بلا جلسة. **غير مقبول لذروة إطلاقًا.** |
-| **إصدار الـSDK** | `@vercel/blob@2.8.0`. فحصت تعريفات الأنواع فعليًا: `BlobAccessType = 'public' \| 'private'`، و`put(..., {access:'private'})` مدعوم، و`get(pathname, {access:'private'})` يُرجع stream، و`presignUrl()` موجود. | ✅ **التخزين الخاص متاح في الـSDK المثبَّت.** يبقى التحقّق من تفعيله على المتجر الفعلي (خطوة نشر، ليست الآن). |
-| **Audit** | جدول `audit_log` مشترك (`type, actor_email, actor_id, target_id, meta jsonb, ts`)، و`readLog` **بلا أي مستدعٍ** — لا واجهة تعرضه. | ذروة تحصل على **جدول تدقيق مستقلّ** كي لا يكشف وجودها لمن يقرأ الجدول المشترك. |
-| **Rate limiting** | **لا يوجد إطلاقًا** في المنصّة. `login_failed` يُسجَّل فقط، بلا عدّ ولا قفل. | يجب بناؤه من الصفر لبوابة ذروة، وفي Neon لا في الذاكرة. |
-| **Service Worker** | `sw.js` فيه `push` و`notificationclick` فقط — **لا `fetch` handler ولا cache**. | ✅ لا خطر تخزين مؤقّت لأي استجابة ذروة في المتصفّح عبر الـSW. |
-| **Nav** | `app-nav.js` يبني القائمة من مصفوفة `DEST` بمفتاح `perm`. | ذروة **لا تُضاف إليها إطلاقًا**، وصفحات ذروة لا تُحمّل `app-nav.js` أصلًا. |
-| **عدد الدوالّ** | 2 فقط (`api/app.js`, `api/cron/check-expirations.js`). سقف Hobby = 12. | إضافة دالّة ثالثة آمنة تمامًا. |
+| 1 | **لا اعتماد على `owner` كحماية** — أضِف Protected User صريحًا | **قسم 4 أُعيدت كتابته بالكامل** + وحدة جديدة `lib/auth/protectedUsers.js` + ثابت يربط الحمايتين |
+| 2 | الجلسة 15 د خمول / 60 د سقف مطلق | ✅ مثبّت (كان توصيتي، صار قرارًا) |
+| 3 | مسار محايد `/secure-audit` بلا `payroll` ولا `droua` | **الأقسام 3 و7 و9 و15** + قاعدة جديدة: تضمين CSS/JS داخل الصفحة كي لا يتسرّب الاسم في رابط أصل |
+| 4 | IBAN: آخر 4 + HMAC فقط، والكامل داخل الملف المشفَّر | **قسم 2** — حُذف خيار «عمود مشفَّر للرقم الكامل» نهائيًا |
+| 5 | دعم PDF وExcel معًا من البداية، بلا مكتبة قبل العيّنات | **قسم 8 جديد** — طبقة قُرّاء بكاشف صيغة، وقارئ Excel كـstub |
+| 6 | افحص دور `hr-manager@droua.com` بلا تغييره | ⚠️ **لا أستطيع** — لا `DATABASE_URL` في هذه الجلسة. التفصيل والـSQL في قسم 4.6 |
+| 7 | الرقم الوظيفي مفتاحًا إن ثبت، وإلا اقترح بديلًا ثابتًا | **قسم 2.6 جديد** — جدول هوية داخلية + عمود `person_id` يُبنى الآن ويُملأ عند الحاجة |
+
+**اكتشاف جديد أثناء تنفيذ التعديل الأول** (قسم 4.4): `lib/data/registry.js`
+يحمل مسارًا ثانيًا كامنًا إلى `updateUser`/`deleteUser`. لا يمكن بلوغه اليوم،
+لكنه موجود — **ولهذا انتقل الحارس من الموزّع إلى طبقة البيانات**.
 
 ---
 
-## 1. كيف نضمن الفصل التام عن أجير
+## 0. ما وجدته في المنصّة الحالية
 
-الفصل ليس نيّة، بل **قواعد قابلة للفحص**. هذه القائمة هي عقد المشروع:
+| الجانب | الواقع | أثره |
+|---|---|---|
+| **Auth** | كوكي `session` بتوقيع HMAC-SHA256 يدوي (`lib/auth/tokens.js`)، حمولته `{sub,email,role,remember,iat,exp}`، بسرّ `SESSION_SECRET`. | نعيد استعمال آلية التوقيع بسرّ **مستقلّ**. |
+| **الكوكي** | `HttpOnly; Secure; SameSite=Lax; Path=/` | `Lax` لا يكفي ضد CSRF على POST؛ كوكي القسم `Strict`. |
+| **كل مسار** | `requireUser(req)` يقرأ الكوكي ثم يقرأ المستخدم من Neon ويتحقّق `status==='active'` — لا يثق بأي هيدر من الوسيط. | نبني فوقه. |
+| **Middleware** | `matcher: ["/((?!api/cron).*)"]` — 401 على `/api/*` و302 على الصفحات. | يخفي وجود القسم عن غير المسجَّلين مجّانًا. |
+| **Permissions** | `hasPermission`: `if (user.role === "owner") return true` **قبل أي فحص**. | ⚠️ أي حارس بصلاحية = مفتوح لكل مالك. |
+| **API routing** | دالّة واحدة `api/app.js` عبر rewrites. | ذروة تأخذ دالّة **مستقلّة**. |
+| **Data layer** | `lib/data/registry.js` يربط `/api/data/:resource` بحارس `hasPermission(actor, mod.section, action)`. | ⛔ ممنوع تسجيل ذروة فيه. |
+| **Neon** | `lib/db.js` singleton كسول. لا migrations — سكربتات `IF NOT EXISTS` + `--dry-run`. | نتبع النمط حرفيًا. |
+| **Blob** | `lib/blob.js` بـ`access:"public"` ويخزّن **الرابط**. | ⛔ غير مقبول لذروة. |
+| **`@vercel/blob@2.8.0`** | فحصت تعريفات الأنواع: `BlobAccessType='public'\|'private'`، `put(..,{access:'private'})`، `get(pathname,{access:'private'})→stream`، `presignUrl()`. | ✅ الخصوصية متاحة في الـSDK. |
+| **Audit** | `audit_log` مشترك، و`readLog` **بلا أي مستدعٍ**. | جدول مستقلّ لذروة. |
+| **Rate limiting** | **لا يوجد إطلاقًا**. | يُبنى من الصفر، في Neon. |
+| **Service Worker** | `push` و`notificationclick` فقط — **لا `fetch` ولا cache**. | ✅ لا تخزين مؤقّت لأي استجابة. |
+| **Nav** | `app-nav.js` يبني القائمة من `DEST` بمفتاح `perm`. | لا يُضاف إليه شيء، وصفحاتنا لا تُحمّله. |
+| **الدوالّ** | 2 من سقف Hobby 12. | إضافة ثالثة آمنة. |
 
-### ملفات جديدة بالكامل (لا يلمسها أجير ولا تلمسه)
+---
+
+## 1. الفصل التام عن أجير
+
+### ملفات جديدة بالكامل
 
 ```
-api/droua.js                         ← دالّة خادمة مستقلّة
-lib/droua/access.js                  ← الحارس الموحّد (allowlist + بوابة)
-lib/droua/gateToken.js               ← توقيع/تحقّق جلسة القسم (سرّ مستقلّ)
-lib/droua/gatePassword.js            ← تحقّق كلمة المرور الثانية
+api/secure-audit.js                  ← دالّة خادمة مستقلّة (اسم محايد)
+lib/droua/access.js                  ← الحارس الموحّد
+lib/droua/gateToken.js               ← توقيع/تحقّق جلسة القسم
+lib/droua/gatePassword.js            ← كلمة المرور الثانية
 lib/droua/rateLimit.js               ← عدّ المحاولات والقفل
-lib/droua/audit.js                   ← التدقيق المستقلّ + مُنقّي الحقول
-lib/droua/storage.js                 ← Blob خاصّ + تشفير + بثّ عبر الخادم
-lib/droua/runs.js                    ← أشهر المسير
-lib/droua/files.js                   ← الملفات الأربعة
-lib/droua/employees.js               ← صفوف الموظفين لكل شهر
-lib/droua/notes.js                   ← الملاحظات
-lib/droua/parse/{cash,full,transfer,roster}.js
-lib/droua/review/engine.js           ← محرّك المقارنة والملاحظات
-droua-audit-shell.html               ← قائمة الأشهر
-droua-audit-month-shell.html         ← صفحة الشهر
-droua-audit-gate-shell.html          ← شاشة كلمة المرور
-droua-audit.css / droua-audit.js     ← واجهة مستقلّة
-scripts/setup-droua-payroll.js       ← تهيئة الجداول (IF NOT EXISTS + --dry-run)
-test/droua-*.test.js                 ← اختبارات مستقلّة
+lib/droua/audit.js                   ← التدقيق + مُنقّي الحقول
+lib/droua/storage.js                 ← Blob خاصّ + تشفير + بثّ
+lib/droua/runs.js  files.js  employees.js  notes.js  identity.js
+lib/droua/parse/{detect,pdf,xlsx,csv}.js  +  parse/{cash,full,transfer,roster}.js
+lib/droua/review/engine.js
+droua-audit-*-shell.html             ← صفحات مكتفية ذاتيًا (CSS/JS مضمّنان)
+scripts/setup-droua-payroll.js       ← IF NOT EXISTS + --dry-run
+test/droua-*.test.js
 ```
 
-### ما يُعاد استعماله — وهو **utilities عامّة بلا أي منطق أجير**
+**قاعدة التسمية المعتمدة:** *الاسم صريح داخل المستودع، محايد في الـURL.*
+الجداول `droua_*` وملفات `lib/droua/**` صريحة لمنع الالتباس كما طلبت أصلًا؛
+وكل ما يظهر في شريط العنوان أو في لوجّات Vercel محايد (`/secure-audit`).
 
-| الوحدة | لماذا الاستعمال آمن |
-|---|---|
-| `lib/db.js` | مجرّد `neon(DATABASE_URL)` singleton. لا يعرف جدولًا واحدًا. |
-| `lib/auth/requireAuth.js` | يتحقّق من **هوية المنصّة** فقط. لا يقرّر صلاحية ولا يمسّ بيانات. |
-| `lib/auth/tokens.js` (`sign`/`verify`) | تشفير خالص. سنستعمله **بسرّ مختلف** — ولذلك لن يُقبل توكن أحدهما في الآخر. |
-| `lib/auth/passwords.js` | scrypt خالص. (سأغلّفه بمعاملات أقوى لبوابة ذروة.) |
-| `ui.css` + `assets/fonts/*` | أنماط وخطوط. صفر بيانات. |
+### وحدة مشتركة جديدة (ليست ذروية، ولا تذكر ذروة)
 
-### ما هو **ممنوع** صراحةً (كل بند منها ثغرة فعلية لو خولف)
+```
+lib/auth/protectedUsers.js           ← حماية الحساب — قسم 4
+```
 
-1. ❌ **ممنوع** تسجيل أي وحدة ذروة في `lib/data/registry.js`.
-   السبب: التسجيل وحده يجعلها قابلة للنداء عبر `/api/data/<name>` تحت حارس
-   `hasPermission(actor, mod.section, action)` — أي حامل صلاحية عامّة يصل.
-2. ❌ **ممنوع** إضافة قسم `droua` إلى `SECTIONS` في `lib/auth/permissions.js`.
-   السبب: الكتالوج يُرسل كاملًا إلى مودال «إدارة الصلاحيات» لكل من يملك
-   `users:manage` — فيرى اسم القسم ووجوده.
-3. ❌ **ممنوع** إضافة مفتاح إلى `PAGE_PERMISSION` أو `PAGE_FILES` في `api/app.js`.
-4. ❌ **ممنوع** إضافة عنصر إلى `DEST` في `app-nav.js`، أو أي شارة/عدّاد/إشعار.
-5. ❌ **ممنوع** الكتابة في `payroll_runs` أو `payroll_attachments` أو
-   `payroll_transfer_proofs` أو `audit_log` أو `employees`.
-6. ❌ **ممنوع** استعمال `lib/blob.js` (لأنه `access: "public"`).
-7. ❌ **ممنوع** استعمال `lib/push/*` أو `lib/notifications/*` —
-   إشعار على شاشة القفل أو بريد في صندوق مشترك يكشف وجود القسم ومحتواه.
-8. ❌ **ممنوع** استعمال `SESSION_SECRET` لتوقيع جلسة القسم.
-9. ❌ **ممنوع** وضع أي مسار ذروة تحت `/api/cron/` (الوسيط يستثنيه من الفحص).
+### ما يُعاد استعماله (utilities عامّة بلا منطق أجير)
 
-### الملفات المشتركة التي سنلمسها — القائمة كاملة وبصدق
+`lib/db.js` · `lib/auth/requireAuth.js` · `lib/auth/tokens.js` (بسرّ مختلف) ·
+`lib/auth/passwords.js` · `lib/reports/period.js` (أسماء الشهور العربية) ·
+`ui.css` + الخطوط.
+
+### الممنوعات (كل بند ثغرة فعلية لو خولف)
+
+1. ⛔ تسجيل أي وحدة ذروة في `lib/data/registry.js`.
+2. ⛔ إضافة قسم `droua` إلى `SECTIONS` في `lib/auth/permissions.js`.
+3. ⛔ مفتاح في `PAGE_PERMISSION` أو `PAGE_FILES`.
+4. ⛔ عنصر في `DEST` داخل `app-nav.js`، أو أي شارة أو عدّاد.
+5. ⛔ الكتابة في `payroll_runs` / `payroll_attachments` / `payroll_transfer_proofs` / `audit_log` / `employees`.
+6. ⛔ استعمال `lib/blob.js` (عام).
+7. ⛔ استعمال `lib/push/*` أو `lib/notifications/*`.
+8. ⛔ استعمال `SESSION_SECRET` لجلسة القسم.
+9. ⛔ أي مسار تحت `/api/cron/` (الوسيط يستثنيه).
+10. ⛔ **ملف CSS أو JS منفصل لصفحات القسم** — انظر قسم 9.3.
+
+### الملفات المشتركة التي سنلمسها — القائمة كاملة
 
 | الملف | التغيير | أثره على أجير |
 |---|---|---|
-| `vercel.json` | **إضافة** 3 rewrites + مدخل `functions` لـ`api/droua.js` | صفر — إضافة بحتة، لا تعديل سطر قائم |
-| `api/app.js` | **سطر واحد اختياري**: عند `logout` يُمسح كوكي البوابة أيضًا | صفر — سلوك الخروج لا يتغيّر |
-| `package.json` | ربما مكتبة قراءة Excel واحدة (حسب صيغة ملفاتك) | صفر |
+| `vercel.json` | **إضافة** 3 rewrites + مدخل `functions` | صفر — إضافة بحتة |
+| `lib/auth/users.js` | استدعاء حارس Protected User في `updateUser`/`deleteUser`/`createUser` | صفر لكل حساب غير محميّ — نفس السلوك بايتًا |
+| `api/app.js` | 403 واضح في `handleUsers` + مسح كوكي البوابة عند الخروج | صفر على أي مسار رواتب |
+| `package.json` | ربما قارئ Excel — **بعد العيّنات فقط** | صفر |
 
-**لا شيء غير ذلك.** ولو فضّلت، حتى السطر في `api/app.js` يمكن إسقاطه: جلسة
-البوابة عديمة الأثر أصلًا بلا جلسة منصّة صالحة (الحارس يتحقّق من الاثنتين معًا).
+> **مهم:** التغيير في `lib/auth/users.js` و`api/app.js` يقع في **إدارة
+> المستخدمين** حصرًا. **لا سطر واحد** في أي مسار رواتب أو مسير أو مرفقات.
 
-### حاجز آلي يمنع الانزلاق مستقبلًا
+### حاجز آلي في CI
 
-اختبار `test/droua-isolation.test.js` يقرأ ملفات `lib/droua/**` و`api/droua.js`
-نصًّا ويفشل لو ظهر فيها أيّ من: `payroll_runs`، `payroll_transfer_proofs`،
-`payroll_attachments`، `audit_log`، `data/registry`، `auth/permissions`،
-`lib/blob`، `lib/push`، `lib/notifications`. واختبار مقابل يفشل لو ظهرت كلمة
-`droua` في `permissions.js` أو `registry.js` أو `app-nav.js`.
-**الفصل يصير مفروضًا في CI لا موثوقًا به في المراجعة.**
+`test/droua-isolation.test.js` يقرأ `lib/droua/**` و`api/secure-audit.js`
+نصًّا ويفشل عند ظهور: `payroll_runs`, `payroll_transfer_proofs`,
+`payroll_attachments`, `audit_log`, `data/registry`, `auth/permissions`,
+`lib/blob`, `lib/push`, `lib/notifications`.
+واختبار مقابل يفشل لو ظهرت `droua` في `permissions.js` أو `registry.js`
+أو `app-nav.js`. **الفصل مفروض في CI لا موثوق به في المراجعة.**
 
 ---
 
-## 2. نموذج البيانات المقترح (Data Model)
+## 2. نموذج البيانات
 
-كل الأسماء ببادئة `droua_`. لا مفتاح أجنبي واحد نحو أي جدول قائم.
-
-### `droua_payroll_runs` — شهر واحد لكل صفّ
+### 2.1 `droua_payroll_runs`
 
 ```sql
 CREATE TABLE IF NOT EXISTS droua_payroll_runs (
-  id             text PRIMARY KEY,           -- 'YYYY-MM' مثل '2026-09'
-  month_label    text NOT NULL,              -- 'سبتمبر 2026' (من lib/reports/period.js)
-  status         text NOT NULL DEFAULT 'draft',
-                 -- draft | files_complete | reviewed
-  review_summary jsonb,                      -- أرقام لوحة المعلومات فقط، بلا أسماء ولا مبالغ فردية
-                 -- {employees:45, unchanged:39, changed:4, openNotes:2, reviewedAt:'...'}
+  id             text PRIMARY KEY,          -- 'YYYY-MM'
+  month_label    text NOT NULL,             -- 'سبتمبر 2026'
+  status         text NOT NULL DEFAULT 'draft',   -- draft|files_complete|reviewed
+  review_summary jsonb,   -- أرقام اللوحة فقط: {employees,unchanged,changed,openNotes}
   created_at     timestamptz NOT NULL DEFAULT now(),
   created_by     text NOT NULL,
   updated_at     timestamptz NOT NULL DEFAULT now(),
@@ -131,45 +135,44 @@ CREATE TABLE IF NOT EXISTS droua_payroll_runs (
 );
 ```
 
-### `droua_payroll_files` — أربعة ملفات لكل شهر
+### 2.2 `droua_payroll_files`
 
 ```sql
 CREATE TABLE IF NOT EXISTS droua_payroll_files (
-  id             bigserial PRIMARY KEY,
-  run_id         text NOT NULL REFERENCES droua_payroll_runs(id) ON DELETE CASCADE,
-  kind           text NOT NULL,   -- cash | full | transfer | roster
-  -- ⚠️ نُخزّن pathname لا URL. لا يوجد في القاعدة كلّها رابط قابل للفتح.
-  blob_pathname  text NOT NULL,
-  file_name      text NOT NULL,
-  content_type   text NOT NULL,
-  size_bytes     bigint NOT NULL,
-  sha256         text NOT NULL,   -- سلامة + كشف رفع الملف نفسه مرّتين
-  enc_algo       text,            -- 'aes-256-gcm' حين يُشفَّر قبل الرفع
-  enc_iv         text,
-  enc_tag        text,
-  uploaded_at    timestamptz NOT NULL DEFAULT now(),
-  uploaded_by    text NOT NULL,
-  parse_status   text NOT NULL DEFAULT 'pending',  -- pending | ok | failed
-  parsed_at      timestamptz,
-  parse_error    text,            -- سبب مختصر بلا أي محتوى من الملف
-  -- أربع خانات لا غير: الاستبدال UPDATE لا صفّ ثانٍ
-  UNIQUE (run_id, kind)
+  id            bigserial PRIMARY KEY,
+  run_id        text NOT NULL REFERENCES droua_payroll_runs(id) ON DELETE CASCADE,
+  kind          text NOT NULL,     -- cash | full | transfer | roster
+  -- pathname لا URL: لا يوجد في القاعدة كلّها رابط قابل للفتح
+  blob_pathname text NOT NULL,
+  file_name     text NOT NULL,
+  content_type  text NOT NULL,
+  format        text NOT NULL,     -- pdf | xlsx | xls | csv  (من البايتات لا الامتداد)
+  size_bytes    bigint NOT NULL,
+  sha256        text NOT NULL,
+  enc_algo      text,              -- 'aes-256-gcm'
+  enc_iv        text,
+  enc_tag       text,
+  uploaded_at   timestamptz NOT NULL DEFAULT now(),
+  uploaded_by   text NOT NULL,
+  parse_status  text NOT NULL DEFAULT 'pending',  -- pending|ok|failed|unsupported_format
+  parsed_at     timestamptz,
+  parse_error   text,              -- سبب مختصر بلا أي محتوى من الملف
+  UNIQUE (run_id, kind)            -- أربع خانات؛ الاستبدال UPDATE لا صفّ ثانٍ
 );
 ```
 
-**`kind`:** `cash` = مسير الرواتب كاش · `full` = مسير الرواتب كامل ·
-`transfer` = مسير الرواتب تحويل · `roster` = تقرير قائمة الموظفين.
-
-### `droua_payroll_employees` — لقطة صفوف الموظفين لكل شهر ولكل ملف
+### 2.3 `droua_payroll_employees`
 
 ```sql
 CREATE TABLE IF NOT EXISTS droua_payroll_employees (
   id               bigserial PRIMARY KEY,
   run_id           text NOT NULL REFERENCES droua_payroll_runs(id) ON DELETE CASCADE,
-  source           text NOT NULL,     -- cash | full | transfer | roster
-  row_no           integer NOT NULL,  -- رقم السطر في الملف — للتتبّع عند الخطأ
+  source           text NOT NULL,     -- cash|full|transfer|roster
+  row_no           integer NOT NULL,
   emp_no           text,              -- الرقم الوظيفي في ذروة
+  person_id        bigint,            -- الهوية الداخلية الثابتة — قسم 2.6
   full_name        text,
+  full_name_norm   text,              -- مطبَّع للمطابقة والتحقّق
   job_title        text,
   basic            numeric(12,2),
   housing          numeric(12,2),
@@ -181,41 +184,78 @@ CREATE TABLE IF NOT EXISTS droua_payroll_employees (
   advance          numeric(12,2),     -- سلفة
   gross            numeric(12,2),
   net              numeric(12,2),
-  pay_method       text,              -- cash | transfer | unknown
+  pay_method       text,              -- cash|transfer|unknown
   bank_name        text,
-  iban_last4       text,              -- آخر أربعة فقط
-  iban_hash        text,              -- HMAC للمقارنة بين الشهور بلا تخزين الرقم
-  raw              jsonb,             -- بقية الأعمدة كما قُرئت
+  -- ── IBAN: قرارك 4 ──────────────────────────────────────────────
+  iban_last4       text,              -- للعرض فقط
+  iban_hmac        text,              -- HMAC-SHA256 بعد التطبيع — للمقارنة
+  -- لا عمود للرقم الكامل. لا مشفَّرًا ولا غير مشفَّر. البتّة.
+  -- ───────────────────────────────────────────────────────────────
+  national_id_hmac text,              -- HMAC لرقم الهوية/الإقامة إن وُجد
+  raw              jsonb,             -- بقية الأعمدة، بعد إسقاط أي حقل حسّاس
   created_at       timestamptz NOT NULL DEFAULT now()
 );
-CREATE INDEX IF NOT EXISTS idx_droua_emp_run_src  ON droua_payroll_employees (run_id, source);
-CREATE INDEX IF NOT EXISTS idx_droua_emp_run_emp  ON droua_payroll_employees (run_id, emp_no);
+CREATE INDEX IF NOT EXISTS idx_droua_emp_run_src ON droua_payroll_employees (run_id, source);
+CREATE INDEX IF NOT EXISTS idx_droua_emp_run_emp ON droua_payroll_employees (run_id, emp_no);
+CREATE INDEX IF NOT EXISTS idx_droua_emp_person  ON droua_payroll_employees (person_id);
 ```
 
-**قراران يستحقّان التوقّف عندهما:**
+**لا `UNIQUE (run_id, source, emp_no)` عمدًا.** أنت طلبت «تكرار موظف» كملاحظة؛
+قيد الفرادة كان سيُفشل الاستيراد بدل أن يُنتج الملاحظة — أي أن الحاجز يبتلع
+النتيجة المطلوبة. **الملف دليل يُخزَّن كما هو، والتكرار يُكتشف في المراجعة.**
 
-1. **لا `UNIQUE (run_id, source, emp_no)` عمدًا.** أنت طلبت «تكرار موظف»
-   كملاحظة. لو وضعنا قيد فرادة، لفشل الاستيراد بدل أن يُنتج الملاحظة —
-   أي أن الحاجز يبتلع النتيجة المطلوبة. **الملف دليل يُخزَّن كما هو،
-   والتكرار يُكتشف في المراجعة.**
-2. **لا `IBAN` كاملًا افتراضيًا.** التخزين `iban_last4` للعرض و`iban_hash`
-   للمقارنة بين الشهور يكفي لكل ملاحظاتك، ويقلّل الضرر جذريًا لو تسرّبت
-   القاعدة. لو احتجت الرقم كاملًا لاحقًا نضيف عمودًا مشفَّرًا بمفتاح منفصل.
+### 2.4 معالجة الـIBAN — قرارك 4
 
-### `droua_payroll_notes` — الملاحظات
+```js
+// lib/droua/identity.js  (توضيحي)
+function normalizeIban(raw) {
+  return String(raw || "").toUpperCase().replace(/[^A-Z0-9]/g, "");   // SA03 8000… → SA038000…
+}
+function ibanHmac(raw) {
+  const n = normalizeIban(raw);
+  if (n.length < 8) return null;
+  return crypto.createHmac("sha256", process.env.DROUA_IBAN_HMAC_KEY).update(n).digest("hex");
+}
+function ibanLast4(raw) {
+  const n = normalizeIban(raw);
+  return n.length >= 4 ? n.slice(-4) : null;
+}
+```
+
+| ما نخزّنه | لماذا |
+|---|---|
+| `iban_last4` | العرض في الواجهة والتمييز البصري |
+| `iban_hmac` | كل ما تحتاجه ملاحظة `iban_changed`: مقارنة شهر بشهر |
+| **الرقم الكامل** | **داخل الملف الأصلي المشفَّر فقط** — يُقرأ عند فتح الملف للتدقيق، ولا يُكتب في القاعدة أبدًا |
+
+**لماذا HMAC بمفتاح سرّي لا SHA-256 مجرّدًا:** فضاء الآيبان السعودي ضيّق
+(`SA` + رقمَي فحص + 22 رقمًا، ورمز البنك يضيّقه أكثر). هاش بلا مفتاح
+**قابل للكسر بالقوة الغاشمة offline** لمن يسرّب القاعدة. مع
+`DROUA_IBAN_HMAC_KEY` يصير الكسر مستحيلًا بلا المفتاح — والمفتاح في
+متغيّر بيئة لا في القاعدة، فتسريب القاعدة وحده لا يكفي.
+
+**نفس المعالجة لرقم الهوية/الإقامة** (`national_id_hmac`) إن ظهر في الملفات.
+
+**تنظيف `raw`:** عمود `raw jsonb` يحفظ بقية الأعمدة كما قُرئت — ويمرّ على
+مصفاة تُسقط أي مفتاح يطابق `/iban|حساب|bank.?account|هوية|إقامة|national/i`
+**قبل** الكتابة. بلا هذه المصفاة يعود الآيبان الكامل من الباب الخلفي.
+يفرضه اختبار.
+
+### 2.5 `droua_payroll_notes`
 
 ```sql
 CREATE TABLE IF NOT EXISTS droua_payroll_notes (
   id             bigserial PRIMARY KEY,
   run_id         text NOT NULL REFERENCES droua_payroll_runs(id) ON DELETE CASCADE,
-  code           text NOT NULL,       -- انظر الجدول أدناه
-  severity       text NOT NULL,       -- info | warn | critical
+  code           text NOT NULL,
+  severity       text NOT NULL,       -- info|warn|critical
   title          text NOT NULL,       -- العنوان
   emp_no         text,                -- الموظف
+  person_id      bigint,
   emp_name       text,
-  current_month  text NOT NULL,       -- الشهر الحالي  'YYYY-MM'
-  previous_month text,                -- الشهر السابق  'YYYY-MM'
-  field          text,                -- الحقل المتغيّر (net/basic/housing/...)
+  current_month  text NOT NULL,       -- الشهر الحالي
+  previous_month text,                -- الشهر السابق
+  field          text,
   old_value      text,                -- القيمة السابقة
   new_value      text,                -- القيمة الجديدة
   delta          numeric(12,2),       -- مقدار الفرق
@@ -223,10 +263,9 @@ CREATE TABLE IF NOT EXISTS droua_payroll_notes (
   status         text NOT NULL DEFAULT 'needs_review',
                  -- needs_review | verified | approved_change | needs_correction
   user_note      text,                -- ملاحظة المستخدم
-  -- بصمة ثابتة = hash(run_id, code, emp_no, field) — الحاجز الذي يجعل
-  -- إعادة تشغيل المراجعة تُحدِّث الملاحظة ولا تُنشئ ثانية ولا تمحو حالتي.
-  fingerprint    text NOT NULL,
+  fingerprint    text NOT NULL,       -- hash(run_id, code, emp_no|person_id, field)
   detector_ver   integer NOT NULL DEFAULT 1,
+  is_stale       boolean NOT NULL DEFAULT false,
   created_at     timestamptz NOT NULL DEFAULT now(),
   updated_at     timestamptz NOT NULL DEFAULT now(),
   resolved_at    timestamptz,
@@ -235,19 +274,17 @@ CREATE TABLE IF NOT EXISTS droua_payroll_notes (
 );
 ```
 
-**نقطة تصميم جوهرية:** «تشغيل المراجعة» يجب أن يكون **idempotent**. إعادة
-تشغيله بعد أسبوع — بعد أن أكون قد وضعت «تم التحقق» على ثلاث ملاحظات —
-يجب ألّا تعود الحالات إلى «تحتاج مراجعة». الآلية:
-`INSERT ... ON CONFLICT (run_id, fingerprint) DO UPDATE SET` الحقول
-المحسوبة فقط (`old_value`, `new_value`, `delta`, `description`, `updated_at`)،
-و**`status` و`user_note` لا تُلمسان إطلاقًا**. وملاحظة اختفت من نتيجة
-التشغيل الجديد تُوسم `stale` بدل أن تُحذف.
+**«تشغيل المراجعة» يجب أن يكون idempotent.** إعادة تشغيله بعد أسبوع —
+وقد وضعتَ «تم التحقق» على ثلاث ملاحظات — يجب ألّا تُرجع الحالات إلى
+«تحتاج مراجعة». الآلية: `ON CONFLICT (run_id, fingerprint) DO UPDATE SET`
+الحقول **المحسوبة** فقط، و**`status` و`user_note` لا تُلمسان إطلاقًا**.
+وملاحظة اختفت من التشغيل الجديد تُوسم `is_stale=true` بدل أن تُحذف.
 
-**كتالوج رموز الملاحظات** (مطابق لقائمتك حرفًا بحرف):
+**كتالوج الرموز** (مطابق لقائمتك):
 
 | `code` | المعنى | `severity` |
 |---|---|---|
-| `new_employee` | موظف جديد لم يكن في الشهر السابق | info |
+| `new_employee` | موظف جديد | info |
 | `missing_employee` | موظف اختفى عن الشهر السابق | warn |
 | `net_changed` | تغيّر صافي الراتب | warn |
 | `basic_changed` | تغيّر الأساسي | warn |
@@ -257,361 +294,440 @@ CREATE TABLE IF NOT EXISTS droua_payroll_notes (
 | `deduction_changed` | تغيّرت الخصومات | warn |
 | `absence_changed` | تغيّر الغياب | info |
 | `advance_changed` | تغيّرت السلفة | warn |
-| `full_vs_transfer_mismatch` | اختلاف بين مسير كامل ومسير تحويل | critical |
+| `full_vs_transfer_mismatch` | اختلاف بين كامل وتحويل | critical |
 | `in_roster_not_in_payroll` | في قائمة الموظفين وغير موجود في المسير | critical |
-| `in_payroll_not_in_roster` | في المسير وغير موجود في قائمة الموظفين | critical |
-| `cash_placement_mismatch` | موجود في Cash وغير موجود حيث يجب | critical |
-| `duplicate_employee` | تكرار موظف داخل الملف نفسه | critical |
-| `pay_method_changed` | تغيّر وسيلة الصرف Cash ↔ Transfer | warn |
-| `iban_changed` | تغيّر حساب التحويل (بمقارنة `iban_hash`) | critical |
+| `in_payroll_not_in_roster` | في المسير وغير موجود في القائمة | critical |
+| `cash_placement_mismatch` | في Cash وغير موجود حيث يجب | critical |
+| `duplicate_employee` | تكرار موظف | critical |
+| `pay_method_changed` | تغيّر Cash ↔ Transfer | warn |
+| `iban_changed` | تغيّر حساب التحويل (بمقارنة `iban_hmac`) | critical |
 | `totals_mismatch` | مجموع الصفوف ≠ إجمالي الملف | critical |
-| `name_number_conflict` | الاسم نفسه برقم وظيفي مختلف (أو العكس) | warn |
-| `inconsistency` | أي فرق أو تعارض آخر بين الملفات | warn |
+| `name_number_conflict` | الاسم نفسه برقم مختلف أو العكس | warn |
+| `inconsistency` | أي فرق أو تعارض آخر | warn |
 
-**مطابقة الموظف بين الشهور:** المفتاح الأساسي `emp_no`. المطابقة بالاسم
-تُستعمل **للتحقّق فقط** لا للربط — وهذا مقصود: الربط بالاسم هو المصدر
-الأول لملاحظات «موظف جديد» + «موظف اختفى» الكاذبة (المتلازمتين). لو اختلف
-الرقم مع تطابق الاسم نُخرج `name_number_conflict` بدل أن نخمّن.
+### 2.6 مفتاح المطابقة الشهرية — قرارك 7
 
-### `droua_payroll_audit` — التدقيق المستقلّ
+**الأساس:** `emp_no` هو المفتاح، **إن ثبت أنه ثابت بين الشهور**.
+
+**كيف نُثبت ذلك قبل البرمجة** — سكربت تحقّق لمرّة واحدة يعمل على العيّنات
+محلّيًا (لا قاعدة، لا شبكة):
+```
+node scripts/check-emp-no-stability.js sept.pdf aug.pdf
+```
+يُخرج ثلاثة أرقام: كم رقمًا ظهر في الشهرين باسم مطابق (✅ ثابت) · كم رقمًا
+تغيّر اسمه (⚠️) · كم اسمًا تغيّر رقمه (⛔ غير ثابت). **قرار المفتاح يُبنى
+على هذا الرقم لا على افتراض.**
+
+**البديل الثابت — يُبنى الآن ويُملأ عند الحاجة:**
+
+```sql
+CREATE TABLE IF NOT EXISTS droua_employee_identity (
+  person_id        bigserial PRIMARY KEY,   -- المعرّف الداخلي الثابت
+  national_id_hmac text,                    -- الأقوى إن توفّر في الملفات
+  emp_no_current   text,
+  emp_no_history   jsonb NOT NULL DEFAULT '[]'::jsonb,
+  full_name_norm   text,
+  first_seen_run   text,
+  last_seen_run    text,
+  merged_into      bigint,   -- عند اكتشاف أن هويتين شخص واحد
+  created_at       timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_droua_ident_nid ON droua_employee_identity (national_id_hmac);
+CREATE INDEX IF NOT EXISTS idx_droua_ident_emp ON droua_employee_identity (emp_no_current);
+```
+
+**ترتيب الحسم عند الربط:**
+1. `national_id_hmac` — إن وُجد رقم هوية/إقامة في الملفات (الأقوى قطعًا).
+2. `emp_no` — المفتاح الافتراضي.
+3. `full_name_norm` — **لا يربط تلقائيًا أبدًا**، بل يُخرج ملاحظة
+   `name_number_conflict` تُقرّرها أنت.
+
+> **لماذا نبني الجدول والعمود الآن رغم أننا قد لا نحتاجهما:** `person_id`
+> عمود nullable وجدول فارغ = صفر تكلفة اليوم. أمّا إضافتهما بعد تراكم ستّة
+> أشهر من الملاحظات فهجرة بيانات وإعادة حساب بصمات — أي إعادة بناء
+> الملاحظات كلّها. **نبني الباب الآن ونفتحه إن لزم.**
+
+**الربط بالاسم هو المصدر الأول لملاحظات «موظف جديد» + «موظف اختفى» الكاذبة
+(المتلازمتين).** لذلك لا يربط تلقائيًا بحال.
+
+### 2.7 `droua_payroll_audit` · `droua_gate_attempts` · `droua_gate_sessions`
 
 ```sql
 CREATE TABLE IF NOT EXISTS droua_payroll_audit (
-  id           bigserial PRIMARY KEY,
-  ts           timestamptz NOT NULL DEFAULT now(),
-  event        text NOT NULL,
-  actor_id     text,
-  actor_email  text,
-  run_id       text,
-  target       text,        -- kind الملف / معرّف الملاحظة / emp_no
-  meta         jsonb NOT NULL DEFAULT '{}'::jsonb,
-  ip_hash      text,        -- HMAC(ip, DROUA_AUDIT_HASH_KEY) — لا IP خام
-  ua_hash      text
+  id bigserial PRIMARY KEY, ts timestamptz NOT NULL DEFAULT now(),
+  event text NOT NULL, actor_id text, actor_email text,
+  run_id text, target text, meta jsonb NOT NULL DEFAULT '{}'::jsonb,
+  ip_hash text, ua_hash text
 );
 CREATE INDEX IF NOT EXISTS idx_droua_audit_ts ON droua_payroll_audit (ts DESC);
-```
 
-### `droua_gate_attempts` — عدّ محاولات كلمة المرور
-
-```sql
 CREATE TABLE IF NOT EXISTS droua_gate_attempts (
-  id        bigserial PRIMARY KEY,
-  actor_id  text NOT NULL,
-  ip_hash   text,
-  outcome   text NOT NULL,   -- fail | success
-  ts        timestamptz NOT NULL DEFAULT now()
+  id bigserial PRIMARY KEY, actor_id text NOT NULL, ip_hash text,
+  outcome text NOT NULL, ts timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_droua_attempts ON droua_gate_attempts (actor_id, ts DESC);
-```
 
-### `droua_gate_sessions` — جلسات القسم (لتمكين الإبطال الفعلي)
-
-```sql
 CREATE TABLE IF NOT EXISTS droua_gate_sessions (
-  sid          text PRIMARY KEY,        -- jti عشوائي 32 بايت
-  user_id      text NOT NULL,
-  issued_at    timestamptz NOT NULL DEFAULT now(),
+  sid text PRIMARY KEY, user_id text NOT NULL,
+  issued_at timestamptz NOT NULL DEFAULT now(),
   last_seen_at timestamptz NOT NULL DEFAULT now(),
-  absolute_exp timestamptz NOT NULL,    -- السقف المطلق — لا يُمدَّد أبدًا
-  revoked_at   timestamptz,
-  ua_hash      text
+  absolute_exp timestamptz NOT NULL,   -- السقف المطلق — لا يُمدَّد أبدًا
+  revoked_at timestamptz, ua_hash text
 );
 ```
 
-**لماذا هذا الجدول ضروري:** توكن HMAC وحده **لا يمكن إبطاله**. بلا صفّ في
-القاعدة، «قفل القسم» يمسح الكوكي من متصفّحي فقط — ونسخة مسروقة منه تبقى
-صالحة حتى انتهائها. مع `sid` يصير الإبطال حقيقيًا وفوريًا.
+**لماذا `droua_gate_sessions` ضروري:** توكن HMAC وحده **لا يُبطَل**. بلا صفّ
+في القاعدة، «قفل القسم» يمسح الكوكي من متصفّحي فقط، ونسخة مسروقة تبقى صالحة
+حتى انتهائها. مع `sid` يصير الإبطال حقيقيًا وفوريًا.
 
 ---
 
-## 3. المسارات (Routes)
+## 3. المسارات — أسماء محايدة (قرارك 3)
 
 ### الصفحات
 
 | المسار | ما يُقدَّم |
 |---|---|
-| `GET /droua-audit.html` | قائمة الأشهر — أو **شاشة كلمة المرور** إن لم تكن البوابة مفتوحة |
-| `GET /droua-audit/:month` | صفحة الشهر (`2026-09`) — أو شاشة كلمة المرور |
+| `GET /secure-audit` | قائمة الأشهر — أو **شاشة كلمة المرور** إن كانت البوابة مقفلة |
+| `GET /secure-audit/:month` | صفحة الشهر (`2026-09`) — أو شاشة كلمة المرور |
 
-شاشة كلمة المرور **ليست مسارًا مستقلًّا** بل تُعرَض من نفس المسار. السبب:
-مسار `/droua-unlock.html` مستقلّ يصير سطحًا إضافيًا يمكن استهدافه ورصده،
-بلا أي مكسب.
+شاشة كلمة المرور **ليست مسارًا مستقلًّا**: مسار `unlock` منفصل سطحٌ إضافي
+يُرصد ويُستهدف، بلا مكسب.
 
-### الـAPI — كلّها تحت `/api/droua/*`
+### الـAPI — تحت `/api/secure-audit/*`
 
-| الفعل | المسار | البوابة مطلوبة؟ |
+| الفعل | المسار | البوابة؟ |
 |---|---|---|
-| `GET` | `/api/droua/gate/status` | ❌ (allowlist فقط) |
-| `POST` | `/api/droua/gate/unlock` | ❌ (allowlist فقط) |
-| `POST` | `/api/droua/gate/lock` | ❌ (allowlist فقط) |
-| `GET` | `/api/droua/runs` | ✅ |
-| `POST` | `/api/droua/runs` | ✅ |
-| `GET` | `/api/droua/runs/:month` | ✅ |
-| `POST` | `/api/droua/files?month=&kind=` | ✅ |
-| `GET` | `/api/droua/files/:id/download` | ✅ |
-| `DELETE` | `/api/droua/files/:id` | ✅ |
-| `POST` | `/api/droua/review?month=` | ✅ |
-| `GET` | `/api/droua/notes?month=` | ✅ |
-| `PUT` | `/api/droua/notes/:id` | ✅ |
+| `GET` | `/api/secure-audit/gate/status` | ❌ (allowlist فقط) |
+| `POST` | `/api/secure-audit/gate/unlock` | ❌ |
+| `POST` | `/api/secure-audit/gate/lock` | ❌ |
+| `GET` `POST` | `/api/secure-audit/runs` | ✅ |
+| `GET` | `/api/secure-audit/runs/:month` | ✅ |
+| `POST` | `/api/secure-audit/files?month=&kind=` | ✅ |
+| `GET` | `/api/secure-audit/files/:id/download` | ✅ |
+| `DELETE` | `/api/secure-audit/files/:id` | ✅ |
+| `POST` | `/api/secure-audit/review?month=` | ✅ |
+| `GET` | `/api/secure-audit/notes?month=` | ✅ |
+| `PUT` | `/api/secure-audit/notes/:id` | ✅ |
 
 **كل واحد منها — بلا استثناء — أول سطر فيه `requireDrouaAccess(req)`.**
-لا وراثة، ولا حارس على مستوى الموزّع وحده، ولا افتراض «الوسيط تكفّل».
 
 ### إضافات `vercel.json` (إضافة بحتة)
 
 ```json
-{ "source": "/droua-audit.html",  "destination": "/api/droua?kind=page&page=list" },
-{ "source": "/droua-audit/:month","destination": "/api/droua?kind=page&page=month&month=:month" },
-{ "source": "/api/droua/:path*",  "destination": "/api/droua?kind=api&apiPath=:path*" }
+{ "source": "/secure-audit",        "destination": "/api/secure-audit?kind=page&page=list" },
+{ "source": "/secure-audit/:month", "destination": "/api/secure-audit?kind=page&page=month&month=:month" },
+{ "source": "/api/secure-audit/:path*", "destination": "/api/secure-audit?kind=api&apiPath=:path*" }
 ```
-
 ```json
 "functions": {
-  "api/app.js":   { "includeFiles": "{*-shell.html,assets/fonts/*.ttf}" },
-  "api/droua.js": { "includeFiles": "droua-audit*.html" }
+  "api/app.js":          { "includeFiles": "{*-shell.html,assets/fonts/*.ttf}" },
+  "api/secure-audit.js": { "includeFiles": "droua-audit-*-shell.html" }
 }
 ```
 
+لاحظ: **لا `payroll` ولا `droua`** في أي مسار يراه المتصفّح أو تراه لوجّات
+Vercel. الملفات على القرص تحتفظ بالاسم الصريح.
+
 ---
 
-## 4. آلية حصر الدخول على يوزري أنا وحدي
+## 4. حصر الدخول: Protected User + Allowlist (قرارك 1)
 
-### أقوى مُعرّف مستقرّ في نظام الدخول الحالي: `users.id`
+### 4.1 لماذا `owner` وحده لا يكفي — وأنت محقّ تمامًا
 
-فحصت الخيارات الثلاثة في `lib/auth/users.js`:
+في `lib/auth/permissions.js`:
+```js
+function hasPermission(user, section, action) {
+  if (user.role === "owner") return true;        // قبل أي فحص
+```
+الاعتماد على `owner` يعني أن أماني مرهون بأمرين خارجَي سيطرة القسم:
+أن يبقى دور حسابي `owner`، وأن يبقى عدد المالكين واحدًا. **كلاهما قابل
+للتغيير من واجهة إدارة المستخدمين.** فالحماية القائمة عليه بناء على رمل.
+
+### 4.2 أقوى مُعرّف مستقرّ: `users.id`
 
 | المُعرّف | صالح؟ | لماذا |
 |---|---|---|
-| `user.role` | ❌ | `owner` يُرجع `true` لكل صلاحية. وأي admin يستطيع تغيير الأدوار. |
-| `user.email` | ⚠️ ليس وحده | **قابل للتغيير**: أي حامل `users:edit` ينفّذ `PUT /api/data/users` بـ`{email}` — فيستطيع تسمية حسابه ببريدي وينتحل الـallowlist. |
-| `user.id` | ✅ **الأقوى** | UUID يولّده الخادم بـ`crypto.randomUUID()` عند الإنشاء. `updateUser` يكتب كل عمود **عدا `id`** (`WHERE id = ${id}`) — فلا مسار في التطبيق كلّه يغيّره أو يحدّده. غير قابل للتخمين وغير قابل للتزوير. |
+| `role` | ❌ | `owner` يتجاوز كل شيء، وقابل للتغيير |
+| `email` | ⚠️ ليس وحده | **قابل للتغيير** بصلاحية `users:edit` |
+| **`user.id`** | ✅ | UUID يولّده الخادم بـ`crypto.randomUUID()`، و`updateUser` يكتب كل عمود **عداه** (`WHERE id = ${id}`) — لا مسار في التطبيق كلّه يغيّره أو يحدّده |
 
-### القرار: `user.id` أساسًا + `email` تأكيدًا (يجب تطابق الاثنين)
+### 4.3 وحدة الحماية `lib/auth/protectedUsers.js`
+
+وحدة **عامّة للمنصّة** لا تذكر ذروة إطلاقًا، ولا تعرف بوجود القسم.
 
 ```js
-// lib/droua/access.js  (توضيحي)
-const ALLOWED_IDS    = (process.env.DROUA_AUDIT_USER_IDS || "").split(",").map(s=>s.trim()).filter(Boolean);
-const ALLOWED_EMAILS = (process.env.DROUA_AUDIT_EMAILS  || "").split(",").map(s=>s.trim().toLowerCase()).filter(Boolean);
+// توضيحي
+const IDS    = (process.env.PROTECTED_USER_IDS    || "").split(",").map(s=>s.trim()).filter(Boolean);
+const EMAILS = (process.env.PROTECTED_USER_EMAILS || "").split(",").map(s=>s.trim().toLowerCase()).filter(Boolean);
 
+const isConfigured   = () => IDS.length > 0 && EMAILS.length > 0;
+const isProtectedId  = (id)    => IDS.includes(String(id));
+const isProtectedMail= (email) => EMAILS.includes(String(email||"").trim().toLowerCase());
+
+/* الحقول: من يجوز له تعديل ماذا على حساب محميّ. */
+const SYSTEM_FIELDS = new Set(["lastLogin"]);                      // النظام — دائمًا
+const SELF_ONLY     = new Set(["name", "jobTitle", "passwordHash"]); // هو وحده
+const FROZEN        = new Set(["email", "role", "status", "permissions"]);
+                    // لا أحد — ولا هو نفسه. تغييرها قرار خارج التطبيق.
+```
+
+### 4.4 ⚠️ أين يوضع الحارس — والسبب الذي غيّر التصميم
+
+كنت سأضعه في `handleUsers` داخل `api/app.js`. الفحص أظهر مسارًا ثانيًا:
+
+```js
+// lib/data/registry.js
+const usersAdapter = {
+  update: (id, patch) => users.updateUser(id, patch),
+  remove: (id) => users.deleteUser(id),
+};
+```
+
+هذا المسار **غير قابل للبلوغ اليوم** — `handleData` يحوّل `users` إلى
+`handleUsers` في السطر 286 قبل الوصول إلى `getResource` في 289. **لكنه
+موجود**، وسطر واحد يُعاد ترتيبه مستقبلًا يفتحه.
+
+> **القرار: الحارس في `lib/auth/users.js` نفسه — لا في الموزّع.**
+> `updateUser` و`deleteUser` و`createUser` ترمي عند ملامسة حساب محميّ.
+> فأي مُنادٍ — اليوم أو بعد سنة، من الموزّع أو من الـadapter أو من سكربت —
+> يصطدم بالحارس. الموزّع يضيف فوقه 403 برسالة عربية واضحة، لكنه **ليس**
+> خطّ الدفاع.
+
+```js
+// lib/auth/users.js — توضيحي
+async function updateUser(id, patch, opts = {}) {
+  if (protectedUsers.isProtectedId(id)) {
+    for (const field of Object.keys(patch)) {
+      if (protectedUsers.SYSTEM_FIELDS.has(field)) continue;                 // lastLogin
+      if (protectedUsers.FROZEN.has(field)) throw new Error("هذا الحقل غير قابل للتعديل على هذا الحساب");
+      if (protectedUsers.SELF_ONLY.has(field) && !opts.selfEdit) throw new Error("هذا الحساب محميّ ولا يمكن تعديله من أدوات الإدارة");
+      if (!protectedUsers.SELF_ONLY.has(field)) throw new Error("هذا الحساب محميّ");   // fail-closed لأي حقل جديد
+    }
+  }
+  /* ... بقية الدالّة كما هي حرفًا بحرف ... */
+}
+```
+
+**`fail-closed` على الحقول الجديدة مقصود:** حقل يُضاف إلى المستخدمين بعد
+سنة يكون **ممنوعًا افتراضيًا** على الحساب المحميّ حتى يُصنَّف صراحةً. قائمة
+مسموح لا قائمة ممنوع — نفس مبدأ مُنقّي التدقيق.
+
+**`touchLastLogin` يبقى يعمل**: يمرّر `lastLogin` وحده، وهو في `SYSTEM_FIELDS`.
+
+### 4.5 ما يمنعه الحارس بالضبط
+
+| المحاولة | النتيجة |
+|---|---|
+| Admin/Owner آخر يغيّر **بريد** الحساب المحميّ | ⛔ مرفوض (مجمَّد للجميع) |
+| Admin/Owner آخر يغيّر **كلمة مرور** الحساب المحميّ | ⛔ مرفوض |
+| Admin/Owner آخر يغيّر **دور** الحساب المحميّ | ⛔ مرفوض (مجمَّد) |
+| Admin/Owner آخر **يعطّل** الحساب (`status`) | ⛔ مرفوض (مجمَّد) |
+| Admin/Owner آخر يغيّر **صلاحيات** الحساب | ⛔ مرفوض (مجمَّد) |
+| Admin/Owner آخر **يحذف** الحساب | ⛔ مرفوض |
+| **الحساب نفسه** يغيّر اسمه أو مسمّاه الوظيفي | ✅ مسموح |
+| **الحساب نفسه** يغيّر كلمة مروره | ✅ مسموح **بشرط تقديم كلمة المرور الحالية** |
+| **الحساب نفسه** يغيّر بريده أو دوره أو حالته | ⛔ مرفوض — قرار خارج التطبيق |
+| إنشاء حساب جديد ببريد الحساب المحميّ (بأي حالة أحرف) | ⛔ مرفوض |
+| تسجيل آخر دخول (`lastLogin`) | ✅ مسموح (النظام) |
+
+**لماذا البريد مجمَّد حتى عليّ:** الـallowlist تشترط تطابق البريد. تغييره من
+الواجهة يقفل القسم في وجهي فورًا — قفل ذاتي بلا وسيلة استرجاع من داخل
+التطبيق. تجميده يمنع الحادث ويمنع كذلك مَن سرق جلستي من نقل الحساب.
+
+**لماذا كلمة المرور الحالية مطلوبة لتغييرها:** مسار `PUT` الحالي **لا يطلب
+كلمة المرور القديمة**. فمن يسرق كوكي جلستي يستطيع تغيير كلمة مروري وإقصائي.
+هذا الشرط يقع **على الحسابات المحميّة فقط** — سلوك كل حساب آخر لا يتغيّر بحرف.
+
+### 4.6 ⚠️ ثغرة إضافية وجدتها: تصادم البريد باختلاف حالة الأحرف
+
+`findByEmailRaw` يبحث بـ`lower(email) = lower($1)`، بينما قيد الفرادة على
+عمود `email` **قد يكون حسّاسًا لحالة الأحرف** (لا أستطيع التحقّق — لا وصول
+إلى القاعدة، و`/db/` مستثنى من Git).
+
+إن كان حسّاسًا، يستطيع admin إنشاء `HR-Manager@droua.com` بجانب
+`hr-manager@droua.com`، فيصير في الجدول صفّان يطابقان استعلام الدخول —
+و`rows[0]` **غير محدَّد أيّهما**.
+
+* **أثره على القسم:** لا شيء — الـallowlist تفحص `user.id` أيضًا، وصفّ
+  المنتحل معرّفه مختلف. ✅
+* **أثره على المنصّة:** حقيقي — التباس هوية عند تسجيل الدخول.
+* **العلاج المضمَّن:** الحارس يرفض إنشاء أو تعديل أي حساب يطابق بريده
+  المُصغَّر بريدَ حساب محميّ.
+* **يبقى للتحقّق منك:** هل الفهرس على `email` حسّاس لحالة الأحرف؟
+  ```sql
+  SELECT indexdef FROM pg_indexes WHERE tablename = 'users';
+  ```
+  إن كان حسّاسًا، فتوصيتي فهرس فريد على `lower(email)` — **إصلاح منصّة عام،
+  خارج نطاق هذا القسم، وقرارك متى نعمله.**
+
+### 4.7 الثابت الذي يربط الحمايتين
+
+```js
+// lib/droua/access.js — توضيحي
 function isAllowlisted(user) {
   if (!ALLOWED_IDS.length || !ALLOWED_EMAILS.length) return false;   // fail-closed
+  // الحماية شرطٌ لوجود القسم لا إضافةٌ إليه:
+  if (!protectedUsers.isConfigured()) return false;
+  if (!ALLOWED_IDS.every(protectedUsers.isProtectedId)) return false;
+  if (!ALLOWED_EMAILS.every(protectedUsers.isProtectedMail)) return false;
   return ALLOWED_IDS.includes(user.id)
       && ALLOWED_EMAILS.includes(String(user.email).toLowerCase());
 }
 ```
 
-الشرطان معًا يغلقان الاتجاهين: من يبدّل بريده لا ينفع لأن `id` مختلف،
-ولو تسرّب `id` بطريقة ما لا ينفع لأن البريد مختلف. و**الفشل المغلق**
-(`fail-closed`) مقصود: بيئة بلا المتغيّرين لا تفتح القسم لأحد.
+> **نزع الحماية يقفل القسم تلقائيًا.** من يحذف `PROTECTED_USER_IDS` طمعًا في
+> إضعاف الحساب لا يحصل على قسم مكشوف، بل على قسم **لا يفتح لأحد**. الحماية
+> والوصول شيء واحد لا شيئان متجاوران.
 
-### الحارس الموحّد — تسلسل ستّ خطوات
+### 4.8 شروط الدخول الستّة — كلّها معًا
 
 ```
-requireDrouaAccess(req, res, { needGate })
-  1) طريقة HTTP ضمن المسموح لهذا المسار      → 404 وإلا
-  2) requireUser(req)  (جلسة منصّة + active)  → 404 وإلا
-  3) isAllowlisted(user)                      → 404 وإلا  + تدقيق access_denied
-  4) needGate ? جلسة بوابة صالحة : تخطَّ      → 401 gate_required وإلا
-  5) Origin / Sec-Fetch-Site على الطرق الكاتبة → 403 وإلا
-  6) رؤوس الأمان + no-store على كل استجابة
+1. جلسة منصّة صالحة و status='active'      (requireUser)
+2. Protected User مضبوط ومتّسق مع الـallowlist   ← قرارك 1
+3. تطابق users.id                            ← قرارك 1
+4. تطابق البريد المتوقّع                      ← قرارك 1
+5. نجاح كلمة مرور البوابة الثانية             ← قرارك 1
+6. جلسة قسم صالحة (غير منتهية وغير مُبطَلة)    ← قرارك 1
+```
+الأربعة الأخيرة هي ما طلبته نصًّا؛ والأولان هما أرضيّتها.
+
+### 4.9 دور `hr-manager@droua.com` — قرارك 6
+
+**لا أستطيع فحصه، وأقولها صراحة بدل التخمين:** لا `DATABASE_URL` في هذه
+الجلسة إطلاقًا (تحقّقت)، وأنت منعت لمس قاعدة الإنتاج في هذه المرحلة —
+وحتى `SELECT` للقراءة اتّصالٌ بالإنتاج.
+
+**استعلام للقراءة فقط، تُشغّله أنت متى شئت:**
+```sql
+SELECT id, email, role, status FROM users WHERE lower(email) = 'hr-manager@droua.com';
 ```
 
-الخطوة 3 تُرجع **404** لا 403 — سبب ذلك في القسم 9.
-الخطوة 4 تُرجع 401 لا 404 لأننا هنا **نعرف أنه أنا**، فإخفاء وجود القسم
-عن صاحبه بلا معنى؛ والواجهة تحتاج إشارة واضحة لتعرض شاشة كلمة المرور.
+* **الدور** (`role`) — أخبرني به، فهو يؤثّر في نصّ الحارس فقط.
+* **المعرّف** (`id`) — **ضعه أنت مباشرة في متغيّر البيئة. لا ترسله لي ولا
+  تكتبه في المستودع.** لا حاجة بي إليه إطلاقًا لكتابة الكود.
 
-### ⚠️ ثغرة حقيقية وجدتها — يجب أن تعرفها قبل الاعتماد
-
-في `api/app.js` مسار `PUT /api/data/users`:
-
-```js
-if (password) patch.passwordHash = hashPassword(password);
-```
-
-و`canManageUser(actorRole, targetRole)` يحمي **حسابات `owner` فقط**.
-
-**النتيجة:** لو كان حسابي **ليس** `owner`، فأي مستخدم يملك `users:edit`
-يستطيع تصفير كلمة مروري والدخول بحسابي — بنفس `id` ونفس البريد — فيجتاز
-الـallowlist كاملة.
-
-**العلاج (ثلاث طبقات):**
-1. **حسابي يجب أن يكون `role = 'owner'`** — عندها `canManageUser` يمنع أي
-   admin من لمسه. (تأكّد أيضًا أن عدد حسابات `owner` في المنصّة = 1.)
-2. **كلمة مرور القسم هي الحاجز المستقلّ**: لا توجد في القاعدة ولا في الكود،
-   فمن ينتحل حسابي يقف عندها.
-3. **تدقيق + إشعار سلوكي**: `gate_unlock_success` من `ua_hash` جديد يُسجَّل
-   بوضوح كي يُرى في المراجعة.
-
-> **سؤال لك:** ما دور حسابك الحالي `hr-manager@droua.com` في المنصّة؟
-> لو لم يكن `owner`، هذه أول خطوة قبل أي كود.
+> **وأهم ما في هذا التعديل:** بعد Protected User **لم يعد الدور يقرّر
+> شيئًا**. لو كان `hr` أو `viewer` فالحماية قائمة كما هي. أنت طلبت ألّا
+> نعتمد على `owner` — والنتيجة أننا لم نعد نحتاج معرفة الدور أصلًا،
+> ولا تغييره. **فلن أغيّره، ولن أطلب تغييره.**
 
 ---
 
-## 5. آلية كلمة المرور الثانية
+## 5. كلمة المرور الثانية
 
-### التخزين — لا كلمة مرور في أي مكان
+### التخزين
 
 ```
 DROUA_AUDIT_PASSWORD_HASH = "scrypt$17$8$1$<salt-hex>$<hash-hex>"
 DROUA_AUDIT_PEPPER        = "<32 بايت عشوائية>"
 ```
-
-* المتغيّران **Environment Variables في Vercel** (Production فقط، مع
-  Sensitive مفعّلة كي لا تُقرأ من اللوحة بعد الحفظ).
-* الهاش يُولَّد **على جهازك** بسكربت محلّي `scripts/hash-droua-password.js`
-  (يقرأ من stdin بلا echo، يطبع الهاش فقط، ولا يتّصل بشبكة ولا بقاعدة).
-  **أنا لا أرى كلمة المرور ولا الهاش في أي لحظة.**
-* ❌ ليست في الكود · ❌ ليست في Git · ❌ ليست في Neon · ❌ ليست plaintext في أي مكان.
-* الـ**pepper** المستقلّ يُدمج `HMAC-SHA256(password, PEPPER)` **قبل** الـscrypt.
-  الفائدة: من يسرّب الهاش وحده (تسريب لقطة شاشة، نسخة قديمة من متغيّرات
-  البيئة) لا يستطيع مهاجمته offline بلا الـpepper أيضًا.
+* متغيّرا بيئة في Vercel، Production فقط، بخاصية **Sensitive**.
+* الهاش يُولَّد **على جهازك** بـ`scripts/hash-droua-password.js` (يقرأ من
+  stdin بلا echo، يطبع الهاش فقط، بلا شبكة وبلا قاعدة).
+  **لا أرى كلمة المرور ولا الهاش في أي لحظة.**
+* ❌ ليست في الكود · ❌ ليست في Git · ❌ ليست في Neon · ❌ لا plaintext في أي مكان.
+* **الـpepper المستقلّ** يُدمج `HMAC-SHA256(password, PEPPER)` **قبل** الـscrypt:
+  من يسرّب الهاش وحده لا يهاجمه offline بلا الـpepper أيضًا.
 
 ### التحقّق
 
 ```js
-// lib/droua/gatePassword.js  (توضيحي)
 function verifyGatePassword(input) {
   const stored = process.env.DROUA_AUDIT_PASSWORD_HASH;
-  if (!stored) return false;                                  // fail-closed
+  if (!stored) return false;                                   // fail-closed
   const [scheme, N, r, p, salt, hash] = stored.split("$");
   if (scheme !== "scrypt") return false;
   const peppered = crypto.createHmac("sha256", process.env.DROUA_AUDIT_PEPPER).update(input).digest();
   const candidate = crypto.scryptSync(peppered, Buffer.from(salt,"hex"), 64,
                       { N: 1<<Number(N), r: Number(r), p: Number(p), maxmem: 256*1024*1024 });
   const expected = Buffer.from(hash, "hex");
-  return candidate.length === expected.length
-      && crypto.timingSafeEqual(candidate, expected);          // مقارنة ثابتة الزمن
+  return candidate.length === expected.length && crypto.timingSafeEqual(candidate, expected);
 }
 ```
+`timingSafeEqual` لا `===`. و`N=2^17` (أقوى من افتراضي المنصّة `2^14`)
+≈ 300ms للمحاولة — يجعل التخمين الآلي مكلفًا، ومقبول لعملية تقع مرّة في اليوم.
+`maxmem` مضبوط صراحةً وإلّا رمى Node عند `N` كبير.
 
-* **`timingSafeEqual`** لا `===` — نفس ما تفعله `lib/auth/passwords.js` أصلًا.
-* **`N = 2^17`** (أقوى من افتراضي المنصّة `2^14`): ≈ 300ms لكل محاولة على
-  الخادم. هذا وحده يجعل التخمين الآلي مكلفًا جدًا، وهو مقبول تمامًا لعملية
-  تحدث مرّة أو مرّتين في اليوم.
-* **`maxmem`** مضبوط صراحةً وإلّا رمى Node عند `N` كبير.
-
-### عدم التسريب في اللوجّات ولا في الردّ
+### لا تسريب في اللوجّات ولا في الردّ
 
 | القاعدة | التنفيذ |
 |---|---|
-| لا تُسجَّل كلمة المرور | الحقل يُقرأ في متغيّر محلّي ويُستهلك فورًا؛ **ممنوع** `console.log(body)` أو `JSON.stringify(req.body)` في كامل الوحدة، ويفحصه اختبار نصّي |
-| لا تُسجَّل في التدقيق | `sanitizeMeta()` بقائمة مفاتيح **مسموحة** (whitelist) — انظر القسم 10 |
-| لا تفاصيل في الردّ | الفشل دائمًا `{ ok:false, error:"تعذّر فتح القسم" }` — لا «كلمة المرور قصيرة» ولا «حرف خاطئ» ولا أي تمييز |
-| لا فرق بين «خطأ» و«غير مضبوطة» | البيئة بلا `DROUA_AUDIT_PASSWORD_HASH` تعطي **الردّ نفسه** |
-| لا تسريب زمني | زمن `scryptSync` ثابت أساسًا؛ ويُضاف حدّ أدنى ثابت ≈400ms على المسار كلّه (ناجحًا كان أو فاشلًا) قبل الردّ |
+| لا تُسجَّل كلمة المرور | متغيّر محلّي يُستهلك فورًا؛ **ممنوع** `console.log(body)` في الوحدة كلّها، يفحصه اختبار نصّي |
+| لا تُسجَّل في التدقيق | `sanitizeMeta()` بقائمة مفاتيح مسموحة — قسم 11 |
+| لا تفاصيل في الردّ | الفشل دائمًا `{ok:false, error:"تعذّر فتح القسم"}` بلا أي تمييز |
+| لا فرق بين «خطأ» و«غير مضبوطة» | البيئة بلا الهاش تعطي الردّ نفسه |
+| لا تسريب زمني | حدّ أدنى ثابت ≈400ms على المسار كلّه، ناجحًا كان أو فاشلًا |
 
-### الحماية من brute force
+### القفل التصاعدي
 
-| العدّاد | النافذة | الإجراء |
+| المحاولات الفاشلة | النافذة | القفل |
 |---|---|---|
-| 5 محاولات فاشلة | 15 دقيقة | قفل 15 دقيقة |
-| 10 محاولات فاشلة | ساعة | قفل ساعة |
-| 15 محاولة فاشلة | 24 ساعة | قفل 24 ساعة + `severity: critical` في التدقيق |
+| 5 | 15 دقيقة | 15 دقيقة |
+| 10 | ساعة | ساعة |
+| 15 | 24 ساعة | 24 ساعة + `severity: critical` |
 
-* العدّ في **Neon** لا في الذاكرة. سبب حاسم: كل طلب على Vercel قد يقع على
-  نسخة دالّة جديدة أو متوازية — **عدّاد في الذاكرة ليس ضابطًا، بل وهم ضابط**.
-* القفل **لكل `actor_id`**. ولا خطر «حجب الخدمة عنّي» من غريب: كل من ليس في
-  الـallowlist يتلقّى 404 **قبل** أن يبلغ المُتحقّق أصلًا، فلا يستطيع رفع
-  عدّادي.
-* نجاح واحد يمسح العدّاد. وكل `unlock` ينظّف صفوف أقدم من 30 يومًا (تقليم
-  دون كرون).
-* في حالة القفل الردّ يذكر `retryAfterSeconds` — هذا مقبول لأن الوصول إلى
-  هذه النقطة يعني أنه أنا بالفعل.
+العدّ في **Neon** لا في الذاكرة: كل طلب على Vercel قد يقع على نسخة دالّة
+جديدة أو متوازية — **عدّاد في الذاكرة ليس ضابطًا بل وهم ضابط**.
+والقفل لكل `actor_id`؛ ولا خطر حجب خدمة من غريب لأن كل من ليس في الـallowlist
+يتلقّى 404 **قبل** بلوغ المُتحقّق. ونجاح واحد يمسح العدّاد، وكل `unlock`
+ينظّف ما تجاوز 30 يومًا.
 
 ---
 
-## 6. تصميم جلسة القسم (Session Design)
-
-### الكوكي
+## 6. جلسة القسم (قرارك 2)
 
 ```
 Set-Cookie: droua_gate=<token>; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=900
 ```
 
-| السمة | القيمة | لماذا |
-|---|---|---|
-| `HttpOnly` | ✅ | لا يصل إليه JavaScript إطلاقًا — يحيّد XSS كمسار سرقة |
-| `Secure` | ✅ | HTTPS فقط |
-| `SameSite` | **`Strict`** | أقوى من `Lax` المستعمل في كوكي المنصّة: طلب قادم من أي موقع آخر **لا يحمل الكوكي أصلًا**، فينهار CSRF قبل أن يبدأ |
-| `Path` | `/` | تحتاجه الصفحات والـAPI معًا |
-| `Max-Age` | 900 ثانية | ينتهي في المتصفّح، والخادم لا يعتمد عليه على أي حال |
+| السمة | لماذا |
+|---|---|
+| `HttpOnly` | لا يصل إليه JavaScript إطلاقًا — يحيّد XSS كمسار سرقة |
+| `Secure` | HTTPS فقط |
+| **`SameSite=Strict`** | أقوى من `Lax` في كوكي المنصّة: طلب من موقع آخر **لا يحمله**، فينهار CSRF قبل أن يبدأ |
+| `Max-Age=900` | ينتهي في المتصفّح، والخادم لا يعتمد عليه على أي حال |
 
-### الحمولة
+**الحمولة:** `{ sub: user.id, sid, iat, exp, aexp }` موقّعة بـ
+**`DROUA_GATE_SECRET`** — مستقلّ تمامًا عن `SESSION_SECRET`، فتوكن أحدهما
+لا يُقبل في الآخر.
 
-```js
-{ sub: user.id, sid: "<32 بايت عشوائية>", iat, exp, aexp }
-```
-موقّعة بـ**`DROUA_GATE_SECRET`** — سرّ **مستقلّ تمامًا** عن `SESSION_SECRET`.
-النتيجة: تسريب أحدهما لا يفتح الآخر، وتوكن منصّة لا يُقبل كتوكن بوابة والعكس.
+**أربعة قيود متزامنة في كل طلب:**
+1. `payload.sub === user.id` للمستخدم الحالي.
+2. `isAllowlisted(user)` تُعاد كل مرّة — لا تُخزَّن في التوكن.
+3. صفّ `droua_gate_sessions` موجود و`revoked_at IS NULL`.
+4. `now() < absolute_exp` **و** `now() - last_seen_at < 15 دقيقة`.
 
-### الارتباط بهويتي (أربعة قيود متزامنة)
+### المدّة — **معتمدة**
 
-1. `payload.sub === user.id` للمستخدم **الحالي** في هذا الطلب.
-2. `isAllowlisted(user)` تُعاد في كل طلب — لا تُخزَّن في التوكن.
-3. صفّ `droua_gate_sessions` بـ`sid` موجود و`revoked_at IS NULL`.
-4. `now() < absolute_exp` **و** `now() - last_seen_at < IDLE`.
+> ## خمول **15 دقيقة** · سقف مطلق **60 دقيقة**
 
-**النتيجة العملية:** لو خرجتُ من المنصّة ودخل شخص آخر في المتصفّح نفسه،
-كوكي البوابة يبقى موجودًا لكنه **عديم الأثر** — لأن `sub` لن يطابق هويّته،
-ولأن الخطوة 3 في الحارس ستردّه بـ404 قبل ذلك أصلًا.
-
-### المدّة المقترحة
-
-> ## ✅ **التوصية: خمول 15 دقيقة · سقف مطلق 60 دقيقة**
-
-| الخيار | خمول | سقف | متى يناسب |
-|---|---|---|---|
-| متشدّد | 10 د | 45 د | لو راجعت من جهاز مشترك أو مكتب مفتوح |
-| **موصى به** | **15 د** | **60 د** | مراجعة مركّزة تستغرق عادة 20–40 دقيقة |
-| متساهل | 30 د | 120 د | لا أنصح به لبيانات رواتب |
-
-**المنطق:** مراجعة مسير شهر عمل مركّز ينتهي في جلسة واحدة. 15 دقيقة خمول
-تعني أن ابتعادك عن المكتب يقفل القسم تلقائيًا. والسقف المطلق 60 دقيقة يعني
-أن جلسة مسروقة — حتى لو ظلّت «نشطة» صناعيًا — تموت خلال ساعة كحدّ أقصى ولا
-تُمدَّد إلى الأبد. **السقف المطلق لا يُمدَّد أبدًا؛ الخمول وحده ينزلق.**
-
-الانزلاق يقع على **الطلبات المصادَق عليها فقط** (`UPDATE last_seen_at`)،
-ولا يتجاوز `absolute_exp` بحال.
+الانزلاق على الطلبات المصادَق عليها فقط (`UPDATE last_seen_at`)،
+و**`absolute_exp` لا يُمدَّد أبدًا**. جلسة مسروقة تموت خلال ساعة كحدّ أقصى
+مهما بدت نشطة.
 
 ### انتهاء الجلسة والخروج
 
 | الحدث | الأثر |
 |---|---|
-| مرور 15 د بلا نشاط | الطلب التالي → 401 → شاشة كلمة المرور |
-| مرور 60 د من الفتح | نفس الشيء، حتمًا |
-| `POST /api/droua/gate/lock` | `revoked_at = now()` + مسح الكوكي |
-| تسجيل الخروج من المنصّة | الجلسة تصير عديمة الأثر تلقائيًا (الخطوة 2 في الحارس) — وإن أضفنا السطر الاختياري في `api/app.js` يُمسح الكوكي أيضًا |
-| تعطيل حسابي (`status ≠ active`) | `requireUser` يردّ null → 404 |
+| 15 د بلا نشاط | الطلب التالي → 401 → شاشة كلمة المرور |
+| 60 د من الفتح | نفس الشيء، حتمًا |
+| `POST .../gate/lock` | `revoked_at = now()` + مسح الكوكي |
+| تسجيل الخروج من المنصّة | الجلسة عديمة الأثر تلقائيًا + مسح الكوكي |
+| تعطيل الحساب | `requireUser` → null → 404 |
 
 ### ممنوع `localStorage`
 
-* التوكن في كوكي `HttpOnly` — **لا يمكن** لـJS قراءته أو حفظه ولو أراد.
-* الواجهة تعرف «القسم مفتوح» من ردّ الخادم `{unlocked:true, expiresAt}` لا
-  من تخزين محلّي.
-* ❌ لا `localStorage` · ❌ لا `sessionStorage` · ❌ لا IndexedDB لأي شيء من
-  هذا القسم — لا كلمة مرور، ولا توكن، ولا بيانات رواتب مخبّأة، ولا حتى
-  «آخر شهر فتحته».
-* عدّاد الوقت المتبقّي في الواجهة يعتمد على `expiresAt` من الردّ، وهي معلومة
-  غير حسّاسة.
+التوكن في كوكي `HttpOnly` — لا يمكن لـJS قراءته ولو أراد. والواجهة تعرف
+«القسم مفتوح» من ردّ الخادم `{unlocked:true, expiresAt}`.
+❌ لا `localStorage` · ❌ لا `sessionStorage` · ❌ لا IndexedDB — لا كلمة مرور،
+ولا توكن، ولا بيانات رواتب مخبّأة، ولا حتى «آخر شهر فتحته».
 
 ---
 
-## 7. تصميم التخزين الخاصّ للملفات
+## 7. التخزين الخاصّ للملفات
 
-### ما وجدته فعليًا في `@vercel/blob@2.8.0`
-
-فحصت تعريفات الأنواع في الحزمة نفسها (لا من الذاكرة):
-
-```
-BlobAccessType = 'public' | 'private'                  ← put() يقبل الاثنين
-get(pathname, { access:'private' }) → { stream, blob } ← قراءة بالتوكن
-presignUrl(..., { access:'public'|'private' })         ← روابط موقّتة موقّعة
-```
-
-✅ **التخزين الخاصّ مدعوم في الـSDK المثبَّت.** يبقى التأكّد من تفعيله على
-المتجر الفعلي في حسابك — وهذه خطوة نشر لا تقع الآن.
-
-### التصميم الموصى به — ثلاث طبقات
+### ثلاث طبقات
 
 ```
 1) put(pathname, ciphertext, { access:'private', addRandomSuffix:true })
@@ -619,34 +735,29 @@ presignUrl(..., { access:'public'|'private' })         ← روابط موقّت
 3) التنزيل بثًّا عبر الخادم — لا رابط للمتصفّح إطلاقًا
 ```
 
-**الطبقة 2 (التشفير) ليست زائدة عن الحاجة.** هي التي تجعل الأمان مستقلًّا
-عن صحّة إعداد المتجر: لو تبيّن أن الخصوصية غير مفعّلة على الخطة، أو أُعيد
-ضبط المتجر خطأً، أو تسرّب `BLOB_READ_WRITE_TOKEN` وحده — **يبقى ما يخرج
-منه شيفرة لا معنى لها** بلا `DROUA_FILE_KEY`. تكلفتها صفر عمليًا لأربعة
-ملفات صغيرة في الشهر.
+**الطبقة 2 ليست زائدة.** هي التي تجعل الأمان مستقلًّا عن صحّة إعداد المتجر:
+لو تبيّن أن الخصوصية غير مفعّلة على الخطة، أو أُعيد ضبط المتجر خطأً، أو تسرّب
+`BLOB_READ_WRITE_TOKEN` وحده — **يبقى ما يخرج منه شيفرة بلا معنى** دون
+`DROUA_FILE_KEY`.
 
-### المسارات
+### المسارات (كما طلبت في البداية)
 
 ```
-droua-payroll-audit/2026-09/cash/<random>-<safe-name>.pdf
-droua-payroll-audit/2026-09/full/...
-droua-payroll-audit/2026-09/transfer/...
-droua-payroll-audit/2026-09/roster/...
+droua-payroll-audit/2026-09/{cash,full,transfer,roster}/<random>-<safe-name>.<ext>
 ```
-بالضبط كما طلبت: `droua-payroll-audit/<year-month>/...` — ولا يشترك في أي
-جزء من مسار مع ملفات أجير (`payroll/`، `permits/`، `uploads/`).
+مسارات Blob **داخلية بحتة** — لا تظهر في رابط ولا في ردّ ولا في لوجّ، لأن
+التنزيل يمرّ عبر الخادم. فالاسم الصريح هنا لا يخالف قرار الحياد في الروابط.
 
 ### التنزيل — نقطة الحماية الحقيقية
 
-```js
-GET /api/droua/files/:id/download
-  1. requireDrouaAccess(req, { needGate: true })   ← أنا + البوابة مفتوحة
-  2. اقرأ الصفّ من droua_payroll_files             ← pathname من القاعدة لا من الطلب
-  3. get(pathname, { access:'private', token })     ← بتوكن الخادم
-  4. فُكّ التشفير (AES-256-GCM، والوسم يُتحقّق منه)
-  5. ابعث بالرؤوس القسرية أدناه
 ```
-
+GET /api/secure-audit/files/:id/download
+  1. requireDrouaAccess(req, { needGate: true })
+  2. اقرأ الصفّ  ← pathname من القاعدة لا من الطلب
+  3. get(pathname, { access:'private', token })
+  4. فُكّ AES-256-GCM (ويُتحقّق من وسم المصادقة)
+  5. الرؤوس القسرية
+```
 ```
 Content-Type: <من قائمة مسموحة قسرًا — لا من الطلب ولا من الملف>
 Content-Disposition: attachment; filename*=UTF-8''<encoded>
@@ -657,82 +768,161 @@ Referrer-Policy: no-referrer
 X-Robots-Tag: noindex, nofollow, noarchive
 ```
 
-**`Content-Type` قسريّ** (`application/pdf` أو نوع Excel أو
-`application/octet-stream`) وليس ما أرسله العميل عند الرفع. سبب ذلك حاسم:
-ملف يُقدَّم بـ`text/html` من **نطاقنا نفسه** يصير XSS مخزَّنًا يعمل داخل
-سياق يملك كوكي المنصّة وكوكي البوابة معًا. هذا خطأ شائع جدًا ومكلف.
+**`Content-Type` قسريّ** لا ما أرسله العميل: ملف يُقدَّم بـ`text/html` من
+**نطاقنا نفسه** يصير XSS مخزَّنًا يعمل في سياق يملك كوكي المنصّة وكوكي
+البوابة معًا. خطأ شائع ومكلف.
 
-### ⚠️ لماذا لا أنصح بـ`presignUrl` كمسار افتراضي
+### لماذا لا `presignUrl` افتراضيًا
 
-الرابط الموقّع **هو نفسه كلمة مرور مكتوبة في شريط العنوان**: يدخل تاريخ
-المتصفّح، وقد يُرسَل في `Referer`، ويظهر في لقطة شاشة أو مشاركة سريعة،
-وينسخه أي إضافة متصفّح. البثّ عبر الخادم يزيل هذه الفئة كاملة.
-يبقى `presignUrl` احتياطًا وحيدًا لو تجاوز ملفٌ ما حدود حجم استجابة الدالّة،
-وعندها بـ`validUntil ≤ 60` ثانية وللتنزيل فقط.
+الرابط الموقّع **كلمة مرور مكتوبة في شريط العنوان**: يدخل تاريخ المتصفّح،
+وقد يُرسل في `Referer`، ويظهر في لقطة شاشة، وتنسخه أي إضافة. البثّ عبر
+الخادم يزيل الفئة كاملة. يبقى احتياطًا وحيدًا لو تجاوز ملفٌ حدود حجم
+الاستجابة، وعندها `validUntil ≤ 60` ثانية وللتنزيل فقط.
 
-### سلّم البدائل — بصراحة تامّة
+### سلّم البدائل — بصراحة
 
 | # | الخيار | الحكم |
 |---|---|---|
-| 1 | Private Blob + تشفير + بثّ عبر الخادم | ✅ **الموصى به** |
-| 2 | Public Blob + تشفير + بثّ عبر الخادم | ✅ مقبول تمامًا — الرابط المسرَّب يعطي شيفرة فقط |
-| 3 | تخزين البايتات في Neon (`bytea`) | ✅ مقبول — 4 ملفات صغيرة/شهر، تحكّم كامل، بلا اعتماد على Blob |
-| 4 | Public Blob + `addRandomSuffix` بلا تشفير | ❌ **مرفوض** — هذا «إخفاء» لا «حماية»، ويخالف شرطك نصًّا |
-
-لن نصل إلى (4) بأي حال. لو تعذّرت الخصوصية على الخطة، ننتقل إلى (2) أو (3)
-وأخبرك صراحةً بأيّهما.
+| 1 | Private Blob + تشفير + بثّ | ✅ **الموصى به** |
+| 2 | Public Blob + تشفير + بثّ | ✅ مقبول — الرابط المسرَّب يعطي شيفرة |
+| 3 | البايتات في Neon (`bytea`) | ✅ مقبول — 4 ملفات صغيرة/شهر |
+| 4 | Public Blob + `addRandomSuffix` بلا تشفير | ❌ **مرفوض** — إخفاء لا حماية |
 
 ### الرفع والاستبدال
 
-* حدّ حجم (10 MB مقترح) يُفرض **أثناء البثّ** لا بعده.
-* فحص **البايتات الأولى** لا الامتداد ولا `Content-Type`: `%PDF-` للـPDF،
-  `PK\x03\x04` للـxlsx. الامتداد وحده يُزوَّر بنداء API مباشر.
-* الاستبدال: ارفع الجديد ← حدّث الصفّ ← ثم احذف القديم (best-effort).
+* حدّ 10 MB يُفرض **أثناء البثّ** لا بعده.
+* **فحص البايتات الأولى** لا الامتداد ولا `Content-Type` (قسم 8).
+* الاستبدال: ارفع الجديد ← حدّث الصفّ ← ثم احذف القديم.
   **لا حذف قبل نجاح الرفع** كي لا يبقى شهر بلا ملف بسبب انقطاع.
 
 ---
 
-## 8. حماية الـAPIs
+## 8. القُرّاء: PDF و Excel معًا من البداية (قرارك 5)
 
-### مبدأ واحد لا استثناء له
+### المبدأ
+
+> **البنية تدعم الصيغتين من اليوم الأول. المكتبة لا تُضاف قبل العيّنات.**
+
+كل ما يتعلّق بالصيغة معزول خلف واجهة واحدة، فإضافة قارئ لاحقًا **ملفّ واحد
+جديد وسطر في جدول التوزيع** — لا هجرة، ولا تعديل على القاعدة، ولا مساس
+بمحرّك المراجعة.
+
+### كاشف الصيغة — من البايتات لا من الاسم
+
+```js
+// lib/droua/parse/detect.js — توضيحي
+function detectFormat(buf) {
+  if (buf.slice(0,5).toString("latin1") === "%PDF-")            return "pdf";
+  if (buf.slice(0,4).toString("hex")    === "504b0304")          return "xlsx"; // ZIP → OOXML
+  if (buf.slice(0,8).toString("hex")    === "d0cf11e0a1b11ae1")  return "xls";  // OLE2 القديم
+  if (looksLikeText(buf))                                        return "csv";
+  return "unknown";
+}
+```
+الامتداد و`Content-Type` **لا يُصدَّقان**: كلاهما يُزوَّر بنداء API مباشر.
+هذا الكاشف **حارس أمني قبل أن يكون أداة تصنيف**.
+
+### الواجهة الموحّدة
+
+```js
+// كل قارئ يُنفّذ هذا العقد بالضبط
+async function read(buffer) → {
+  ok: boolean,
+  rows: [{ /* خلايا مطبَّعة */ }],
+  totals: { net, gross, count } | null,   // صفّ الإجماليات المطبوع
+  reason: string | null                   // عند ok:false
+}
+```
+
+| الصيغة | الحالة في المرحلة 3 | المكتبة |
+|---|---|---|
+| `pdf` | ✅ يُبنى الآن | `pdfjs-dist` — **موجود أصلًا** |
+| `xlsx` | 🔸 stub يُرجع `unsupported_format` | تُختار **بعد العيّنات** |
+| `xls` | 🔸 stub | قد تحتاج مكتبة أخرى — انظر التنبيه |
+| `csv` | ✅ يُبنى الآن | **بلا مكتبة** — تحليل يدوي |
+
+الملف بصيغة غير مدعومة بعدُ **يُرفع ويُخزَّن ويُشفَّر بنجاح**، ويُسجَّل
+`parse_status='unsupported_format'`. فلا يضيع شيء، وتظهر الصفوف فور إضافة
+القارئ بضغطة «إعادة التحليل». **لا رفع ثانٍ ولا فقدان ملف.**
+
+> ⚠️ **تنبيه يهمّك قبل إرسال العيّنات:** `.xls` القديم (OLE2) و`.xlsx`
+> الحديث **صيغتان مختلفتان تمامًا** وقد تحتاجان مكتبتين. لو أمكن أن يخرج
+> النظام عندك `.xlsx` دائمًا، وفّر ذلك اعتمادية كاملة. وسأعرف الجواب من
+> أول عيّنة.
+
+### حاجز السلامة — يعمل على كل الصيغ
+
+مجموع صوافي الصفوف المستخرجة **يجب أن يطابق** صافي صفّ الإجماليات المطبوع
+في الملف، وإلّا `totals_mismatch` (`critical`) والاستيراد يُوسم ناقصًا.
+**استخراج ناقص لا يمرّ صامتًا فيُنتج مراجعة تنقصها ملاحظة.**
+نمط مثبت يعمل عندك بالفعل في `lib/payroll/sheetRoster.js`.
+
+### الفيكستشرات
+
+❌ **ممنوع منعًا باتًا** إدخال ملف رواتب حقيقي في المستودع — Git لا ينسى.
+اختبارات القُرّاء تعمل على **ملفات مُصنَّعة** بأسماء وأرقام وهمية،
+و`/droua-fixtures/` يُضاف إلى `.gitignore` للعيّنات الحقيقية محلّيًا.
+
+---
+
+## 9. حماية الـAPIs ومباشرة الرابط
+
+### 9.1 المبدأ
 
 > **كل endpoint يتحقّق من الهوية بنفسه.** لا وراثة من الوسيط، ولا حارس على
-> مستوى الموزّع وحده، ولا افتراض «الطلب وصل إلى هنا فهو موثوق».
-
-هذا ليس اجتهادًا مني — هو نفس المبدأ الموثّق في `lib/auth/requireAuth.js`
-في مشروعك: *«it never trusts a header set by the routing middleware»*.
-نكمل عليه.
-
-### طبقات كل طلب
+> مستوى الموزّع وحده. وهو نفس المبدأ الموثّق في `lib/auth/requireAuth.js`
+> عندك: *«it never trusts a header set by the routing middleware»*.
 
 | # | الطبقة | الفشل |
 |---|---|---|
-| 1 | `middleware.mjs` — جلسة منصّة موجودة | 401 / 302 (سلوك عام لكل المسارات) |
-| 2 | طريقة HTTP ضمن المسموح لهذا المسار | 404 |
-| 3 | `requireUser` — جلسة صالحة + `status='active'` | 404 |
-| 4 | `isAllowlisted(user)` | 404 |
+| 1 | `middleware.mjs` — جلسة منصّة موجودة | 401 / 302 (سلوك عام) |
+| 2 | طريقة HTTP مسموحة لهذا المسار | 404 |
+| 3 | `requireUser` — جلسة صالحة + `active` | 404 |
+| 4 | `isAllowlisted` (يشمل ثابت Protected User) | 404 + تدقيق |
 | 5 | جلسة بوابة صالحة | 401 `gate_required` |
-| 6 | CSRF: `Origin` + `Sec-Fetch-Site` على POST/PUT/DELETE | 403 |
-| 7 | تحقّق المدخلات (شهر بصيغة `YYYY-MM`، `kind` من أربعة، `status` من أربعة) | 400 |
-| 8 | حدّ معدّل لكل حساب | 429 |
+| 6 | `Origin` + `Sec-Fetch-Site` على الطرق الكاتبة | 403 |
+| 7 | تحقّق المدخلات (`YYYY-MM`، `kind`، `status`) | 400 |
+| 8 | حدّ المعدّل | 429 |
 
-### CSRF
+### 9.2 مصفوفة مباشرة الرابط
 
-* الدفاع الأول: `SameSite=Strict` على كوكي البوابة. طلب من موقع آخر **لا
-  يحمله**، فيسقط عند الطبقة 5.
-* الدفاع الثاني: على كل طريقة كاتبة، رفض `Sec-Fetch-Site: cross-site` ورفض
-  `Origin` مخالف لـ`Host`.
-* ملاحظة مهمّة: كوكي المنصّة `SameSite=Lax` — وهذا **لا يكفي** وحده لمنع
-  CSRF على POST. لكن ذروة لا تعتمد عليه: بلا كوكي البوابة (Strict) لا شيء
-  يمرّ.
+| من | الطلب | الردّ | ما يستنتجه |
+|---|---|---|---|
+| غير مسجَّل | `/secure-audit` | 302 → `/login.html` | لا شيء — كل مسار يفعل هذا |
+| غير مسجَّل | `/api/secure-audit/runs` | 401 عام | لا شيء |
+| مسجَّل، ليس في الـallowlist | `/secure-audit` | **404** `Not found` | «صفحة غير موجودة» |
+| مسجَّل، ليس في الـallowlist | `/api/secure-audit/*` | **404** `{ok:false,error:"Not found"}` | «مسار غير موجود» |
+| أنا، البوابة مقفلة | صفحة | 200 + شاشة كلمة المرور، **بلا بيانات** | — |
+| أنا، البوابة مقفلة | API | 401 `gate_required` | — |
 
-### IDOR
+**404 لا 403.** 403 يقول «موجود لكن ممنوع» — أي **يؤكّد وجود قسم رواتب سرّي**.
+والردّ **مطابق حرفيًا** لما تنتجه المنصّة أصلًا: `res.status(404).end("Not found")`
+للصفحات (`api/app.js:82`) و`{ok:false,error:"Not found"}` للـAPI
+(`api/app.js:72`). ليس 404 مصطنعًا يمكن تمييزه — **نفس البايتات ونفس الرؤوس**
+التي يراها من يكتب `/xyz.html`.
 
-* `/api/droua/files/:id` و`/api/droua/notes/:id` يقرآن الصفّ ويتحقّقان أن
-  `run_id` يعود إلى مسير ذروة قبل أي عملية. الجداول ذروية بالكامل فالشرط
-  محقّق تلقائيًا — لكن **يُكتب صراحةً** كي لا يسقط عند أي توسعة لاحقة.
+### 9.3 ⚠️ قاعدة جديدة أوجبها قرار المسار المحايد
 
-### رؤوس على **كل** استجابة (صفحات وAPI)
+مسار الصفحة صار محايدًا — لكن لو حمّلت الصفحة `droua-audit.css` أو
+`droua-audit.js` كملفّين منفصلين، **لظهر الاسم في لوجّات Vercel من رابط
+الأصل**، فيُبطل الحياد كلّه من الباب الخلفي.
+
+> **القرار: صفحات القسم مكتفية ذاتيًا — CSS وJS مضمّنان داخل الـHTML.**
+
+فائدة إضافية: لا ملفّ أصل للقسم يمكن جلبه بلا حارس، ولا يُخبَّأ شيء في
+المتصفّح. (`ui.css` مشترك مع كل صفحات المنصّة، فطلبه لا يحمل إشارة.)
+
+### 9.4 الإخفاء من الواجهة — طبقة ثانية لا أولى
+
+❌ لا عنصر في `DEST` · ❌ لا زرّ ولا رابط ولا بطاقة · ❌ لا شارة ولا عدّاد ولا
+إشعار (**الوحدة لا تستورد `lib/push/*` ولا `lib/notifications/*` أصلًا**) ·
+❌ الصفحات **لا تُحمّل `app-nav.js`** · ✅ `sw.js` بلا `fetch` ولا cache ·
+✅ لا ذكر في `manifest.webmanifest`.
+
+> **وأكرّر ما قلته أنت:** الإخفاء **ليس** وسيلة الحماية. لو نُزع كل ما في
+> هذه القائمة وبقي الحارس في الخادم، لبقي القسم محميًا تمامًا.
+
+### 9.5 الرؤوس والأخطاء
 
 ```
 Cache-Control: no-store, private, max-age=0, must-revalidate
@@ -742,324 +932,259 @@ X-Frame-Options: DENY
 X-Robots-Tag: noindex, nofollow, noarchive
 Content-Security-Policy: default-src 'self'; frame-ancestors 'none'; object-src 'none'; base-uri 'none'
 ```
-
-### الأخطاء
-
-`api/droua.js` لا يستعمل الـcatch-all في `api/app.js` (الذي يُرجع
-`err.message` إلى العميل). له `try/catch` خاصّ يُرجع
-`{ ok:false, error:"تعذّر تنفيذ العملية" }` ويسجّل التفصيل في التدقيق
-بعد تنقيته. **رسالة خطأ Postgres مسرَّبة تكشف أسماء الجداول والأعمدة.**
+و`api/secure-audit.js` لا يستعمل catch-all الخاص بـ`api/app.js` (الذي يُرجع
+`err.message`): له `try/catch` يُرجع رسالة عامّة ويسجّل التفصيل بعد تنقيته.
+**رسالة خطأ Postgres مسرَّبة تكشف أسماء الجداول والأعمدة.**
 
 ---
 
-## 9. حماية مباشرة الرابط (Direct-link)
+## 10. IDOR والمدخلات
 
-### مصفوفة السلوك
-
-| من | الطلب | الردّ | ما يستنتجه |
-|---|---|---|---|
-| غير مسجَّل | `/droua-audit.html` | 302 → `/login.html` | لا شيء — كل مسار في المنصّة يفعل هذا |
-| غير مسجَّل | `/api/droua/runs` | 401 `{ok:false,error:"غير مسجّل الدخول"}` | لا شيء — نفس ردّ أي مسار |
-| مسجَّل، ليس في الـallowlist | `/droua-audit.html` | **404** `Not found` | «هذه الصفحة غير موجودة» |
-| مسجَّل، ليس في الـallowlist | `/api/droua/runs` | **404** `{ok:false,error:"Not found"}` | «هذا المسار غير موجود» |
-| أنا، البوابة مقفلة | صفحة | 200 + شاشة كلمة المرور، **بلا أي بيانات** | — |
-| أنا، البوابة مقفلة | API | 401 `{ok:false,error:"gate_required"}` | — |
-
-### لماذا 404 وليس 403 — وهل يناسب البنية الحالية؟ **نعم تمامًا**
-
-403 يقول «هذا موجود لكن لا تملك صلاحيته» — أي **يؤكّد وجود قسم رواتب سرّي**.
-404 يقول «لا شيء هنا».
-
-والأجمل أن الردّ **مطابق حرفيًا** لما تُنتجه المنصّة أصلًا لمسار غير موجود:
-
-* الصفحات: `res.status(404).end("Not found")` — نفس `api/app.js:82`
-* الـAPI: `res.status(404).json({ ok:false, error:"Not found" })` — نفس `api/app.js:72`
-
-فالردّ ليس «404 مصطنعًا» يمكن تمييزه، بل **نفس البايتات ونفس الرؤوس** التي
-يراها من يكتب `/xyz.html`. لا فرق في المحتوى ولا في الطول ولا في الرؤوس.
-
-### الإخفاء من الواجهة (طبقة ثانية، لا الأولى)
-
-* ❌ لا عنصر في `DEST` داخل `app-nav.js` — القسم غير موجود في القائمة لأحد.
-* ❌ لا زرّ، لا رابط، لا بطاقة في لوحة المعلومات.
-* ❌ لا شارة ولا عدّاد ولا إشعار — **الوحدة لا تستورد `lib/push/*` ولا
-  `lib/notifications/*` إطلاقًا**، فلا يمكن أن يظهر عنوان على شاشة قفل جهاز
-  أو في بريد مشترك.
-* ❌ صفحات ذروة **لا تُحمّل `app-nav.js`** أصلًا — لها ترويسة خاصّة بسيطة.
-  هكذا يستحيل تسرّب عبر تعديل مستقبلي في شريط التنقّل.
-* ✅ `sw.js` بلا `fetch` handler وبلا cache — لا استجابة ذروة تُخزَّن في
-  المتصفّح عبر عامل الخدمة (تحقّقت من ذلك في الملف).
-* ✅ لا ذكر لأي مسار ذروة في `manifest.webmanifest`.
-
-> **وأكرّر ما قلته أنت حرفًا:** الإخفاء **ليس** وسيلة الحماية. لو نُزع كل ما
-> في هذه القائمة وبقي الحارس في الخادم، لبقي القسم محميًا تمامًا. الإخفاء
-> يمنع الفضول والتسريب العَرَضي، والخادم هو الذي يمنع الوصول.
+`/files/:id` و`/notes/:id` يقرآن الصفّ ويتحقّقان أن `run_id` يعود إلى مسير
+ذروة قبل أي عملية. الجداول ذروية بالكامل فالشرط محقّق تلقائيًا — لكنه
+**يُكتب صراحةً** كي لا يسقط عند أي توسعة لاحقة.
+والشهر يُتحقّق بـ`/^\d{4}-(0[1-9]|1[0-2])$/`، و`kind` من أربعة، و`status`
+من أربعة — قوائم مغلقة لا فحص نمط مفتوح.
 
 ---
 
-## 10. التدقيق (Audit)
+## 11. التدقيق (Audit)
 
-### الأحداث المسجَّلة
+### الأحداث
 
-| الحدث | متى |
-|---|---|
-| `access_denied` | مستخدم مسجَّل ليس في الـallowlist طرق أي مسار ذروة |
-| `gate_unlock_success` | **فتح القسم** بنجاح |
-| `gate_unlock_failed` | **محاولة دخول فاشلة** |
-| `gate_locked_out` | تجاوز حدّ المحاولات |
-| `gate_locked` | قفل يدوي |
-| `gate_session_expired` | انتهاء خمول أو سقف مطلق |
-| `section_opened` | فتح قائمة الأشهر |
-| `month_opened` / `month_created` | فتح/إنشاء شهر |
-| `file_uploaded` / `file_replaced` | **رفع ملف** |
-| `file_opened` | **فتح ملف** (عرض) |
-| `file_downloaded` | **تنزيل ملف** |
-| `file_deleted` | **حذف ملف** |
-| `file_parse_ok` / `file_parse_failed` | نتيجة قراءة الملف |
-| `review_started` / `review_completed` | **تشغيل مراجعة** |
-| `note_status_changed` / `note_annotated` | **معالجة ملاحظة** |
+`access_denied` · `gate_unlock_success` · `gate_unlock_failed` ·
+`gate_locked_out` · `gate_locked` · `gate_session_expired` · `section_opened` ·
+`month_opened` · `month_created` · `file_uploaded` · `file_replaced` ·
+`file_opened` · `file_downloaded` · `file_deleted` · `file_parse_ok` ·
+`file_parse_failed` · `review_started` · `review_completed` ·
+`note_status_changed` · `note_annotated` · `protected_user_write_blocked`
 
-### ما يُسجَّل فعلًا
+الأخير جديد: كل محاولة من admin للكتابة على الحساب المحميّ تُسجَّل — فتراها
+لو حدثت.
+
+### ما يُسجَّل
 
 ```
 ts · event · actor_id · actor_email · run_id · target · meta · ip_hash · ua_hash
 ```
-`ip_hash = HMAC(ip, DROUA_AUDIT_HASH_KEY)` مقطوعًا إلى 16 حرفًا — يكفي
-للتمييز بين الأجهزة، ولا يخزّن عنوانًا حقيقيًا.
+`ip_hash = HMAC(ip, DROUA_AUDIT_HASH_KEY)` مقطوعًا إلى 16 حرفًا — يميّز
+الأجهزة بلا تخزين عنوان حقيقي.
 
-### ⛔ ما لا يُسجَّل أبدًا — والآلية التي تفرضه
+### ⛔ ما لا يُسجَّل أبدًا
 
-**ممنوع في `meta`:** أي مبلغ · أي IBAN أو رقم حساب · اسم موظف · أي محتوى
-من الملف · كلمة مرور القسم أو أي جزء منها · توكن البوابة · مسار Blob.
+أي مبلغ · **أي IBAN أو رقم حساب أو آخر أربعة منه** · أي رقم هوية · اسم موظف ·
+أي محتوى من الملف · كلمة مرور القسم أو جزء منها · توكن البوابة · مسار Blob.
 
-**الآلية — قائمة مفاتيح مسموحة (whitelist)، لا ممنوعة:**
+**الآلية — قائمة مفاتيح مسموحة (whitelist) لا ممنوعة:**
 
 ```js
-// lib/droua/audit.js  (توضيحي)
 const META_ALLOWED = new Set([
-  "kind","month","previousMonth","noteId","noteCode","fromStatus","toStatus",
+  "kind","format","month","previousMonth","noteId","noteCode","fromStatus","toStatus",
   "fileId","sizeBytes","contentType","sha256Prefix","rowCount","notesCreated",
-  "notesUpdated","durationMs","reason","attemptCount","retryAfter","detectorVer",
+  "notesUpdated","notesStale","durationMs","reason","attemptCount","retryAfter","detectorVer",
 ]);
 function sanitizeMeta(meta) {
   const out = {};
   for (const [k, v] of Object.entries(meta || {})) {
-    if (!META_ALLOWED.has(k)) continue;                       // كل ما عداه يُسقط
-    if (typeof v === "object" && v !== null) continue;         // لا كائنات متداخلة
+    if (!META_ALLOWED.has(k)) continue;                  // كل ما عداه يُسقط
+    if (typeof v === "object" && v !== null) continue;    // لا كائنات متداخلة
     out[k] = typeof v === "string" ? v.slice(0, 200) : v;
   }
   return out;
 }
 ```
 
-**لماذا whitelist لا blacklist:** قائمة الممنوع تحمي ممّا فكّرنا فيه اليوم.
-قائمة المسموح تحمي أيضًا ممّا يضيفه أحدنا بعد ستة أشهر بلا انتباه. وهذا
-بالضبط الفرق بين نظام يصمد ونظام يتسرّب بهدوء. **يفرضه اختبار** يمرّر
-`{ iban:"SA...", net:9500, name:"...", password:"..." }` ويؤكّد أن الناتج `{}`.
+**لماذا whitelist:** قائمة الممنوع تحمي ممّا فكّرنا فيه اليوم؛ قائمة المسموح
+تحمي أيضًا ممّا يضيفه أحدنا بعد ستّة أشهر بلا انتباه. **يفرضه اختبار** يمرّر
+`{iban, ibanLast4, net, name, nationalId, password}` ويؤكّد أن الناتج `{}`.
 
-**وقاعدة موازية للّوجّات:** `console.error` في وحدة ذروة يطبع **رقم السطر
-وسبب الخطأ فقط** — لا محتوى الصفّ. لوجّات Vercel يقرأها كل من له وصول إلى
-المشروع؛ صفّ راتب واحد فيها يُبطل كل ما سبق.
+**وقاعدة موازية للّوجّات:** `console.error` في الوحدة يطبع **رقم السطر وسبب
+الخطأ فقط** — لا محتوى الصفّ. لوجّات Vercel يقرأها كل من له وصول إلى
+المشروع؛ صفّ راتب واحد فيها يُبطل ما سبق كلّه.
 
-### خصائص السجلّ
+### الخصائص
 
-* **جدول مستقلّ** `droua_payroll_audit` — لا يمرّ عبر `lib/auth/audit.js`
-  ولا يكتب في `audit_log`. سببان: الفصل الذي طلبته، **و**أن `audit_log`
-  المشترك يكشف وجود القسم لمن يقرؤه.
-* **إلحاق فقط**: لا `UPDATE` ولا `DELETE` في شيفرة الوحدة. (يمكن تثبيته
-  في القاعدة بـ`REVOKE`/trigger لاحقًا لو أردت ضمانًا أقوى.)
-* **الفشل لا يُسقط العملية**: `try/catch` حول الكتابة كما في
-  `lib/auth/audit.js` — عطل تدقيق لا يمنعك من رفع ملف.
-* **الاستثناء الوحيد:** فشل تسجيل `gate_unlock_*` **يُسقط الطلب** —
-  بوابة لا تُدقَّق يجب ألّا تُفتح.
+* **جدول مستقلّ** — لا يمرّ عبر `lib/auth/audit.js`، لسببين: الفصل الذي
+  طلبته، **و**أن `audit_log` المشترك يكشف وجود القسم لمن يقرؤه.
+* **إلحاق فقط**: لا `UPDATE` ولا `DELETE` في شيفرة الوحدة.
+* **الفشل لا يُسقط العملية** — إلا `gate_unlock_*`: **بوابة لا تُدقَّق يجب
+  ألّا تُفتح**.
 
 ---
 
-## 11. تحديد المعدّل (Rate Limiting)
+## 12. تحديد المعدّل
 
 | الطبقة | الهدف | السياسة |
 |---|---|---|
-| **1. بوابة كلمة المرور** | brute force | 5/15د → قفل 15د · 10/ساعة → ساعة · 15/24س → 24س |
-| **2. الاستكشاف من غير المصرّح** | كشف الوجود + تضخّم التدقيق | صفّ تدقيق **واحد** لكل `ip_hash` كل 10 دقائق مهما تكرّر الطلب؛ والردّ 404 لا يتغيّر إطلاقًا |
-| **3. الرفع** | تكلفة Blob | 30 رفعة/ساعة لكل حساب |
-| **4. تشغيل المراجعة** | تكلفة تنفيذ | 20/ساعة لكل حساب |
-| **5. التنزيل** | تسريب بالجملة | 100/ساعة لكل حساب |
+| 1. بوابة كلمة المرور | brute force | 5/15د → 15د · 10/ساعة → ساعة · 15/24س → 24س |
+| 2. استكشاف غير المصرّح | كشف الوجود + تضخّم التدقيق | صفّ تدقيق **واحد** لكل `ip_hash` كل 10 دقائق؛ **والردّ 404 لا يتغيّر إطلاقًا** |
+| 3. الرفع | تكلفة Blob | 30/ساعة |
+| 4. تشغيل المراجعة | تكلفة تنفيذ | 20/ساعة |
+| 5. التنزيل | تسريب بالجملة | 100/ساعة |
 
 **الطبقة 2 أهمّ ممّا تبدو:** بلا حدّ عليها يستطيع أي مسجَّل — أو سكربت —
-أن يطرق `/api/droua/*` آلاف المرّات فيملأ جدول التدقيق ويستهلك Neon.
-تسجيل واحد لكل نافذة يحفظ الإشارة ويمنع الإغراق.
+طرق `/api/secure-audit/*` آلاف المرّات فيملأ جدول التدقيق ويستهلك Neon.
 
-**بصراحة عن الحدود:**
-* Vercel Hobby **لا يوفّر WAF ولا Rate Limiting على مستوى الحافة**. كل ما
-  سبق تطبيقي، ويكلّف رحلة إلى Neon.
-* لا حماية من إغراق موزَّع (DDoS) على مستوى المصدر. لكن **الخطر هنا تكلفة
-  لا بيانات**: كل طلب من غير المصرَّح يقف عند 404 قبل أن يلمس أي بيانات.
-* العدّ في Neon هو الخيار الوحيد الصحيح على serverless. عدّاد في الذاكرة
-  يبدو ناجحًا في الاختبار ويفشل في الإنتاج بصمت.
+**وبصراحة:** Vercel Hobby **لا يوفّر WAF ولا rate limiting على الحافة**؛ كل
+ما سبق تطبيقي ويكلّف رحلة إلى Neon. ولا حماية من إغراق موزَّع — لكن **الخطر
+هنا تكلفة لا بيانات**: كل طلب من غير مصرَّح يقف عند 404 قبل ملامسة أي بيانات.
 
 ---
 
-## 12. الأخطاء الأمنية المحتملة — وكيف نمنع كلّ واحد منها
-
-هذه ليست قائمة نظرية. كل بند فيها إمّا وجدته في الكود الحالي، أو هو الخطأ
-الذي تقع فيه أنظمة كهذه فعليًا.
+## 13. الأخطاء الأمنية المحتملة
 
 | # | الخطر | الأثر | المنع |
 |---|---|---|---|
-| 1 | تسجيل الوحدة في `lib/data/registry.js` | وصول فوري عبر `/api/data/droua-*` بصلاحية عامّة | ممنوع نصًّا + اختبار عزل |
-| 2 | إضافة قسم `droua` إلى `permissions.js` | يظهر في مودال الصلاحيات لكل `users:manage` | ممنوع نصًّا + اختبار عزل |
-| 3 | **`owner` يتجاوز كل الصلاحيات** (`hasPermission` سطر 2) | أي حارس بصلاحية = مفتوح لكل مالك | الحصر بـallowlist للهوية، لا بصلاحية |
-| 4 | **admin يصفّر كلمة مرور حسابي** (`api/app.js`) | انتحال كامل لهويتي | حسابي `owner` + كلمة مرور القسم المستقلّة |
-| 5 | تخزين رابط Blob عام | من يملك الرابط يفتح المسير بلا جلسة | نخزّن `pathname` + خاصّ + مشفَّر |
-| 6 | تقديم الملف بـ`Content-Type` من العميل | XSS مخزَّن على نطاقنا يملك الكوكيين | نوع قسريّ + `nosniff` + `sandbox` CSP |
-| 7 | إرجاع 403 بدل 404 | يؤكّد وجود قسم سرّي | 404 مطابق بايتًا لردّ المنصّة |
-| 8 | `err.message` إلى العميل | يكشف أسماء الجداول والأعمدة | catch محلّي برسالة عامّة |
-| 9 | `console.log` لصفّ فشل تحليله | راتب في لوجّات Vercel | تسجيل رقم السطر فقط + قاعدة مكتوبة |
-| 10 | `meta` تحمل مبلغًا أو IBAN | تسريب داخل التدقيق نفسه | whitelist + اختبار |
-| 11 | استعمال `SESSION_SECRET` للبوابة | تسريب سرّ واحد يفتح الاثنين | `DROUA_GATE_SECRET` مستقلّ |
-| 12 | جلسة بوابة بلا سقف مطلق | تُمدَّد إلى الأبد بنشاط صناعي | `absolute_exp` لا يُمدَّد أبدًا |
-| 13 | جلسة بلا `sid` في القاعدة | «قفل القسم» لا يُبطل نسخة مسروقة | `droua_gate_sessions` + `revoked_at` |
-| 14 | عدّاد محاولات في الذاكرة | ضابط وهمي على serverless | العدّ في Neon |
-| 15 | كوكي `SameSite=Lax` | CSRF على POST | `Strict` + فحص `Origin`/`Sec-Fetch-Site` |
-| 16 | حفظ التوكن أو الحالة في `localStorage` | XSS يقرؤه | `HttpOnly` فقط، ولا تخزين محلّي بتاتًا |
-| 17 | إعادة تشغيل المراجعة تمحو حالاتي | فقدان عمل مراجعة | `fingerprint` + `ON CONFLICT DO UPDATE` بلا لمس `status` |
-| 18 | قيد `UNIQUE` يمنع استيراد صفّ مكرّر | نفقد الملاحظة المطلوبة أصلًا | لا قيد فرادة؛ الكشف في المراجعة |
-| 19 | ملاحظات محسوبة في المتصفّح من dump كامل | البيانات كلّها في الشبكة والذاكرة | الحساب في الخادم، والردّ بما تحتاجه الشاشة فقط |
-| 20 | مسار ذروة تحت `/api/cron/` | الوسيط يستثنيه من الفحص | ممنوع نصًّا |
-| 21 | إشعار/بريد عن ذروة | عنوان على شاشة قفل أو في صندوق مشترك | لا استيراد لـ`push`/`notifications` |
-| 22 | رفع ملف ضخم | استنزاف ذاكرة الدالّة | حدّ 10 MB أثناء البثّ |
-| 23 | الثقة بالامتداد أو `Content-Type` | ملف مزوّر | فحص البايتات الأولى |
-| 24 | حذف الملف القديم قبل نجاح الجديد | شهر بلا ملف عند انقطاع | ارفع ← حدّث ← ثم احذف |
-| 25 | لقطة PDF/Excel حقيقية في المستودع | راتب حقيقي في Git إلى الأبد | فيكستشرات مُصنَّعة فقط + `.gitignore` |
-| 26 | تصدير/تقرير لاحق يتجاوز البوابة | باب خلفي للبيانات | لا ميزة تصدير في v1 |
+| 1 | تسجيل الوحدة في `registry.js` | وصول فوري بصلاحية عامّة | ممنوع + اختبار عزل |
+| 2 | إضافة قسم إلى `permissions.js` | يظهر لكل `users:manage` | ممنوع + اختبار عزل |
+| 3 | `owner` يتجاوز كل الصلاحيات | أي حارس بصلاحية = مفتوح | allowlist بالهوية |
+| 4 | **admin يغيّر بريدي/كلمتي/دوري** | انتحال كامل | **Protected User في طبقة البيانات** |
+| 5 | **المسار الكامن في `usersAdapter`** | تجاوز حارس الموزّع | الحارس في `lib/auth/users.js` لا في الموزّع |
+| 6 | **تصادم البريد باختلاف حالة الأحرف** | التباس هوية عند الدخول | رفض بريد محميّ مصغَّرًا + فحص الفهرس (4.6) |
+| 7 | **حقل جديد على المستخدم بعد سنة** | يفلت من الحماية | `fail-closed`: ممنوع حتى يُصنَّف |
+| 8 | **تغيير كلمة المرور بلا القديمة** | سارق الجلسة يقصيني | شرط كلمة المرور الحالية للحساب المحميّ |
+| 9 | **نزع `PROTECTED_USER_IDS`** | إضعاف الحماية | القسم **لا يفتح** بلا حماية متّسقة (4.7) |
+| 10 | تخزين رابط Blob عام | فتح بلا جلسة | `pathname` + خاصّ + مشفَّر |
+| 11 | `Content-Type` من العميل | XSS مخزَّن يملك الكوكيين | نوع قسريّ + `nosniff` + `sandbox` |
+| 12 | **ملف CSS/JS منفصل للقسم** | الاسم في لوجّات Vercel | تضمينهما في الصفحة (9.3) |
+| 13 | **الآيبان الكامل في `raw jsonb`** | يعود من الباب الخلفي | مصفاة مفاتيح قبل الكتابة (2.4) |
+| 14 | **هاش آيبان بلا مفتاح** | كسر offline لفضاء ضيّق | HMAC بمفتاح سرّي (2.4) |
+| 15 | 403 بدل 404 | يؤكّد وجود القسم | 404 مطابق بايتًا |
+| 16 | `err.message` إلى العميل | يكشف الجداول والأعمدة | catch محلّي |
+| 17 | `console.log` لصفّ فشل تحليله | راتب في لوجّات Vercel | رقم السطر فقط |
+| 18 | `meta` تحمل مبلغًا أو آيبان | تسريب داخل التدقيق | whitelist + اختبار |
+| 19 | `SESSION_SECRET` للبوابة | تسريب واحد يفتح الاثنين | سرّ مستقلّ |
+| 20 | جلسة بلا سقف مطلق | تُمدَّد إلى الأبد | `absolute_exp` لا يُمدَّد |
+| 21 | جلسة بلا `sid` | «قفل القسم» لا يُبطل نسخة مسروقة | صفّ + `revoked_at` |
+| 22 | عدّاد محاولات في الذاكرة | ضابط وهمي على serverless | العدّ في Neon |
+| 23 | `SameSite=Lax` | CSRF على POST | `Strict` + فحص `Origin` |
+| 24 | `localStorage` للتوكن أو الحالة | XSS يقرؤه | `HttpOnly` فقط |
+| 25 | إعادة المراجعة تمحو حالاتي | فقدان عمل مراجعة | `fingerprint` + عدم لمس `status` |
+| 26 | `UNIQUE` يمنع الصفّ المكرّر | نفقد الملاحظة المطلوبة | لا قيد فرادة |
+| 27 | الثقة بالامتداد أو `Content-Type` | ملف مزوّر | كاشف البايتات (قسم 8) |
+| 28 | ملاحظات محسوبة في المتصفّح من dump | البيانات كلّها في الشبكة | الحساب في الخادم |
+| 29 | مسار تحت `/api/cron/` | الوسيط يستثنيه | ممنوع |
+| 30 | إشعار أو بريد عن القسم | عنوان على شاشة قفل | لا `push` ولا `notifications` |
+| 31 | حذف القديم قبل نجاح الجديد | شهر بلا ملف | ارفع ← حدّث ← احذف |
+| 32 | ملف رواتب حقيقي في Git | راتب في التاريخ إلى الأبد | فيكستشرات مُصنَّعة + `.gitignore` |
+| 33 | ميزة تصدير لاحقة | باب خلفي للبيانات | لا تصدير في v1 |
 
 ---
 
-## 13. ماذا يمكن ضمانه أمنيًا — وماذا لا يمكن
+## 14. ما يمكن ضمانه — وما لا يمكن
 
-### ✅ ما أضمنه فعلًا
+### ✅ ما أضمنه
 
-1. لا مستخدم آخر في المنصّة — **بما فيهم `admin` وحاملو `payroll:*` وأي
-   `owner` آخر** — يستطيع رؤية القسم أو بياناته عبر الواجهة أو الـAPI أو
-   رابط مباشر.
-2. من ليس في الـallowlist يتلقّى **404 لا يمكن تمييزه** عن أي مسار غير
-   موجود — فلا يعرف حتى أن القسم موجود.
-3. كل endpoint يتحقّق بنفسه؛ خلل في الوسيط لا يمنح وصولًا.
-4. ملفات المسير **غير قابلة للفتح برابط**، ومشفّرة في التخزين.
-5. كلمة المرور الثانية **ليست في الكود ولا في Git ولا في القاعدة** ولا
-   بصيغة plaintext في أي مكان، والتحقّق ثابت الزمن.
-6. التخمين محدود بقفل تصاعدي مبنيّ على القاعدة.
-7. جلسة القسم قصيرة، مرتبطة بهويتي، قابلة للإبطال فورًا.
-8. لا تداخل تخزيني أو منطقي مع أجير — يفرضه اختبار في CI لا مراجعة بشرية.
-9. سجلّ تدقيق كامل لكل فعل، خالٍ من الرواتب والحسابات بحكم البنية.
+1. لا مستخدم آخر — **بما فيهم `admin` وأي `owner` آخر** — يرى القسم أو
+   بياناته عبر الواجهة أو الـAPI أو رابط مباشر.
+2. **لا أحد يستطيع تغيير بريد حسابي أو كلمة مروري أو دوري أو حالتي أو حذفه
+   من أدوات الإدارة** — والحارس في طبقة البيانات فيغطّي كل مُنادٍ حاضر ومستقبل.
+3. **الأمان لم يعد معلَّقًا بدور `owner`** — الدور صار بلا أثر على القسم.
+4. من ليس في الـallowlist يتلقّى **404 لا يمكن تمييزه** عن أي مسار غير موجود.
+5. كل endpoint يتحقّق بنفسه؛ خلل في الوسيط لا يمنح وصولًا.
+6. الملفات **غير قابلة للفتح برابط**، ومشفّرة في التخزين.
+7. **لا آيبان كامل في القاعدة** — آخر أربعة وHMAC بمفتاح سرّي فقط.
+8. كلمة المرور الثانية ليست في الكود ولا Git ولا القاعدة، والتحقّق ثابت الزمن.
+9. التخمين محدود بقفل تصاعدي مبنيّ على القاعدة.
+10. جلسة قصيرة (15/60)، مرتبطة بهويتي، قابلة للإبطال فورًا.
+11. لا تداخل مع أجير — يفرضه اختبار في CI لا مراجعة بشرية.
+12. سجلّ تدقيق كامل، خالٍ من الرواتب والحسابات **بحكم البنية** لا بحكم الانتباه.
 
-### ❌ ما لا أستطيع ضمانه — وأقوله بوضوح لأن معرفته جزء من الأمان
+### ❌ ما لا أستطيع ضمانه
 
-1. **من يملك وصولًا إلى لوحة Vercel أو قاعدة Neon يملك كل شيء.**
-   متغيّرات البيئة تعطيه توكن Blob ومفتاح التشفير وسرّ البوابة؛ ورابط
-   القاعدة يعطيه الصفوف. **كلمة مرور القسم تحمي من الوصول عبر التطبيق، لا
-   من الوصول إلى البنية التحتية.** العلاج الوحيد الحقيقي: تقليل من يملك
-   وصولًا إلى حساب Vercel وحساب Neon إلى أدنى حدّ، وتفعيل 2FA عليهما.
-   ولو كان بينهما شريك لا تريده أن يرى الرواتب، **فهذا القيد لا يُحلّ
-   ببرمجة داخل المنصّة نفسها**.
-2. **من يستطيع النشر يستطيع زرع باب خلفي.** حماية المستودع والفرع
-   ومراجعة أي تغيير على `lib/droua/**` جزء من النموذج الأمني.
-3. **اختراق جهازي أو متصفّحي** (برمجية خبيثة، جهاز مفتوح بلا قفل) يتجاوز
-   كل ما سبق. الخمول 15 دقيقة يضيّق النافذة ولا يلغيها.
-4. **تسريب صورة الشاشة أو ملف نزّلته** خارج سيطرة النظام تمامًا.
-5. **النسخ الاحتياطية**: صفّ محذوف من Neon أو ملف محذوف من Blob قد يبقى
-   في اللقطات مدّة. «حذف» ≠ «مُحي إلى الأبد».
-6. **البيانات الوصفية في لوجّات Vercel**: أن طلبًا وصل إلى
-   `/droua-audit.html` في وقت ما يظهر لمن يقرأ لوجّات المشروع — والمسار
-   نفسه يحمل الاسم.
-   *خيار لك:* تسمية المسارات بشكل محايد (`/finance-review.html`) لإبقاء
-   عبارة «مسير ذروة» خارج اللوجّات. أسماء الجداول تبقى صريحة كما طلبت.
-   وأكرّر: هذا **تقليل بصمة**، لا حماية.
-7. **قنوات جانبية زمنية** مضبوطة إلى حدّ كبير (حدّ أدنى ثابت للزمن) لكنها
-   ليست صفرًا رياضيًا.
-8. **دقّة المراجعة نفسها**: النظام يقارن ما استخرجه من الملفات. ملف بصيغة
-   غير متوقّعة قد يُقرأ ناقصًا — ولذلك حاجز «مجموع الصفوف = إجمالي الملف»
-   (`totals_mismatch`) الذي يمنع مرور استخراج ناقص بصمت. هذا نمط مثبت
-   يعمل في `lib/payroll/sheetRoster.js` عندك بالفعل.
+1. **من يملك وصولًا إلى لوحة Vercel أو قاعدة Neon يملك كل شيء.** متغيّرات
+   البيئة تعطيه مفتاح التشفير وسرّ البوابة ومفتاح HMAC؛ ورابط القاعدة يعطيه
+   الصفوف. **Protected User وكلمة مرور القسم يحميان من الوصول عبر التطبيق،
+   لا من الوصول إلى البنية التحتية.** العلاج الوحيد: تقليل من يملك وصولًا
+   إلى Vercel وNeon إلى أدنى حدّ + 2FA. ولو كان بينهم شريك لا تريده أن يرى
+   الرواتب، **فهذا القيد لا يُحلّ ببرمجة داخل المنصّة**.
+2. **من يستطيع النشر يستطيع زرع باب خلفي** — بما في ذلك تعطيل Protected User
+   بتعديل `lib/auth/users.js`. حماية المستودع ومراجعة أي تغيير على
+   `lib/auth/protectedUsers.js` و`lib/droua/**` جزء من النموذج الأمني.
+3. **اختراق جهازي أو متصفّحي** يتجاوز كل ما سبق. الخمول 15 دقيقة يضيّق
+   النافذة ولا يلغيها.
+4. **تسريب لقطة شاشة أو ملف نزّلته** خارج سيطرة النظام تمامًا.
+5. **النسخ الاحتياطية**: صفّ محذوف من Neon أو ملف من Blob قد يبقى في اللقطات
+   مدّة. «حذف» ≠ «مُحي إلى الأبد».
+6. **البيانات الوصفية**: أن طلبًا وصل إلى `/secure-audit` يظهر لمن يقرأ لوجّات
+   المشروع — لكن المسار **لم يعد يحمل الاسم** بعد قرارك 3، وهذا أقصى ما
+   تستطيعه البرمجة هنا.
+7. **قنوات جانبية زمنية** مضبوطة إلى حدّ كبير (حدّ أدنى ثابت) لكنها ليست
+   صفرًا رياضيًا.
+8. **دقّة المراجعة**: النظام يقارن ما استخرجه. ملف بصيغة غير متوقّعة قد
+   يُقرأ ناقصًا — ولذلك حاجز `totals_mismatch` الذي يمنع مرور استخراج ناقص
+   بصمت.
 
 ---
 
-## 14. خطة البناء على مراحل
+## 15. خطة البناء
 
 كل مرحلة = commit مستقلّ على `claude/droua-payroll-audit-module-qlk6ri`.
 **لا merge ولا نشر ولا لمس لقاعدة الإنتاج قبل إذنك في كل مرحلة.**
 
 | # | المرحلة | المخرجات | المعيار |
 |---|---|---|---|
-| **0** | *(هذا المستند)* | التصميم | **اعتمادك** |
-| **1** | الهيكل والبوابة | `api/droua.js` · `lib/droua/{access,gateToken,gatePassword,rateLimit,audit}.js` · شاشة كلمة المرور · `scripts/setup-droua-payroll.js` (**`--dry-run` فقط**) | اختبارات: allowlist، تطابق 404 بايتًا، توقيع التوكن، الخمول والسقف، القفل التصاعدي، مُنقّي `meta` |
-| **2** | الأشهر والملفات | إنشاء شهر · رفع/استبدال الأربعة · تخزين خاصّ مشفَّر · تنزيل بثًّا · حذف | اختبارات: النوع القسريّ، فحص البايتات، عدم ظهور `pathname` في أي ردّ، ترتيب الاستبدال |
-| **3** | القُرّاء (Parsers) | قارئ لكل نوع · استيراد إلى `droua_payroll_employees` · `parse_status` · حاجز الإجماليات | اختبارات على **فيكستشرات مُصنَّعة** — لا ملف حقيقي في Git أبدًا |
-| **4** | محرّك المراجعة | العشرون قاعدة · البصمة · إعادة التشغيل الآمنة · `review_summary` | اختبار مستقلّ لكل رمز ملاحظة + اختبار «إعادة التشغيل لا تمحو حالتي» |
-| **5** | الواجهة | قائمة الأشهر · صفحة الشهر · اللوحة المختصرة · الملاحظات بالحالات الأربع + ملاحظتي | مراجعة بصرية معك |
-| **6** | التقسية | حدود المعدّل الكاملة · مراجعة أمنية ذاتية (`/security-review`) · اختبار العزل في CI | لا اكتشاف مفتوح |
-| **7** | التشغيل | تضبط أنت المتغيّرات في Vercel · تشغيل واحد لسكربت التهيئة · تحقّق من Private Blob على المتجر · **اختبار قبول بحساب آخر يجب أن يرى 404** | إقرارك |
+| **0** | التصميم | *(هذا المستند، نسخة 2)* | **اعتمادك النهائي** |
+| **1أ** | **Protected User** | `lib/auth/protectedUsers.js` · حارس في `lib/auth/users.js` · 403 في `api/app.js` · شرط كلمة المرور الحالية | اختبارات: منع كل حقل مجمَّد · سماح `lastLogin` · سماح التعديل الذاتي · **fail-closed لحقل جديد** · منع تصادم البريد · **حساب غير محميّ سلوكه لم يتغيّر** |
+| **1ب** | البوابة | `api/secure-audit.js` · `lib/droua/{access,gateToken,gatePassword,rateLimit,audit}.js` · شاشة كلمة المرور · `scripts/setup-droua-payroll.js` (**`--dry-run` فقط**) | اختبارات: allowlist · **ثابت اتّساق الحماية** · تطابق 404 بايتًا · التوقيع · 15/60 · القفل التصاعدي · مُنقّي `meta` |
+| **2** | الأشهر والملفات | إنشاء شهر · رفع/استبدال الأربعة · تخزين خاصّ مشفَّر · تنزيل بثًّا · حذف | النوع القسريّ · كاشف البايتات · عدم ظهور `pathname` في أي ردّ · ترتيب الاستبدال |
+| **3** | القُرّاء | كاشف الصيغة · قارئ PDF · قارئ CSV · stubs لـExcel · حاجز الإجماليات · مصفاة `raw` | على **فيكستشرات مُصنَّعة** — لا ملف حقيقي في Git |
+| **3ب** | *(بعد عيّناتك)* | قارئ Excel + المكتبة المختارة | — |
+| **4** | محرّك المراجعة | العشرون قاعدة · البصمة · الهوية الداخلية · إعادة التشغيل الآمنة | اختبار لكل رمز + «إعادة التشغيل لا تمحو حالتي» |
+| **5** | الواجهة | قائمة الأشهر · صفحة الشهر · اللوحة · الملاحظات بالحالات الأربع | مراجعة بصرية معك |
+| **6** | التقسية | حدود المعدّل · `/security-review` · اختبار العزل في CI | لا اكتشاف مفتوح |
+| **7** | التشغيل | **أنت** تضبط الأسرار · تشغيل واحد للسكربت · تحقّق من Private Blob · **اختبار قبول بحساب آخر يجب أن يرى 404** | إقرارك |
 
-**المرحلة 7 لا أنفّذها وحدي**: إنشاء الأسرار وتشغيل السكربت على القاعدة
-الحيّة قرارك أنت، بعد اعتماد ما قبله.
-
-### المتغيّرات المقترحة (تُنشأ في المرحلة 7 — لا الآن)
+### المتغيّرات المقترحة (المرحلة 7 — لا الآن)
 
 ```
-DROUA_AUDIT_USER_IDS       معرّف حسابك (UUID) — تجلبه أنت من قاعدة البيانات
-DROUA_AUDIT_EMAILS         hr-manager@droua.com
+PROTECTED_USER_IDS         معرّف حسابك (UUID) — تضعه أنت
+PROTECTED_USER_EMAILS      hr-manager@droua.com
+DROUA_AUDIT_USER_IDS       نفس المعرّف
+DROUA_AUDIT_EMAILS         نفس البريد
 DROUA_AUDIT_PASSWORD_HASH  ناتج سكربت محلّي — لا كلمة مرور
 DROUA_AUDIT_PEPPER         32 بايت عشوائية
 DROUA_GATE_SECRET          32 بايت عشوائية (≠ SESSION_SECRET)
-DROUA_FILE_KEY             مفتاح AES-256 (32 بايت)
+DROUA_FILE_KEY             مفتاح AES-256
+DROUA_IBAN_HMAC_KEY        مفتاح HMAC للآيبان والهوية
 DROUA_AUDIT_HASH_KEY       مفتاح HMAC لتجزئة IP/UA
 ```
-كلها **Sensitive** وعلى بيئة Production فقط. ولا يمرّ أيّ منها عبري.
+كلها **Sensitive**، Production فقط، **ولا يمرّ أيٌّ منها عبري**.
 
 ---
 
-## 15. كيف نحافظ على Vercel Hobby
+## 16. الحفاظ على Vercel Hobby
 
-| المورد | السقف | الآن | بعد ذروة | الحكم |
+| المورد | السقف | الآن | بعد | الحكم |
 |---|---|---|---|---|
-| Serverless Functions | 12 | 2 | **3** | ✅ مريح جدًا |
-| Cron Jobs | 2 (يومي) | 1 | **1** | ✅ ذروة **لا تحتاج كرون** — المراجعة عند الطلب |
+| Functions | 12 | 2 | **3** | ✅ مريح |
+| Cron | 2 (يومي) | 1 | **1** | ✅ لا كرون للقسم |
 | Middleware | — | 1 | 1 | ✅ بلا تغيير |
-| Blob Storage | مساحة الخطة | ملفات أجير | +4 ملفات/شهر (~20 MB/سنة) | ✅ لا يُذكر |
-| Neon | الخطة المجانية | جداول قائمة | 6 جداول صغيرة | ✅ لا يُذكر |
-| Function Duration | حدّ Hobby | — | انظر أدناه | ⚠️ يُدار بالتصميم |
+| Blob | مساحة الخطة | أجير | +~20 MB/سنة | ✅ لا يُذكر |
+| Neon | المجانية | قائمة | 7 جداول صغيرة | ✅ لا يُذكر |
+| Duration | حدّ Hobby | — | مُدار بالتصميم | ⚠️ انظر 3 |
 
-### القرارات التي تحفظ الخطة
-
-1. **دالّة ثالثة فقط.** كل مسارات ذروة — صفحات وAPI — تدخل من
-   `api/droua.js` عبر ثلاثة rewrites. ولا تُضاف رابعة بأي حال.
-2. **لا كرون.** «تشغيل المراجعة» فعل يدوي تبدأه أنت من صفحة الشهر. هذا يحفظ
-   خانة الكرون الثانية، **وهو الأصحّ أمنيًا أيضًا**: لا عملية خلفية تعمل على
-   بيانات ذروة بلا جلسة مفتوحة وبلا هوية فاعل في التدقيق.
-3. **⚠️ التحليل عند الرفع لا عند المراجعة.** كل ملف يُقرأ في **نداء الرفع
-   الخاصّ به** ويُستورَد إلى `droua_payroll_employees`. عندها «تشغيل
-   المراجعة» يصير **حسابًا على صفوف جاهزة**: استعلامان وعمليات حسابية — أجزاء
-   من الثانية. لو حلّلنا الملفات الأربعة داخل نداء المراجعة، لخاطرنا بتجاوز
-   حدّ زمن التنفيذ في أي شهر كبير. **هذا القرار هو ما يجعل النظام يعمل على
-   Hobby أصلًا.**
-4. **البثّ عبر الخادم للتنزيل** يستهلك عرض نطاق الدالّة — لكن لمستخدم واحد
-   وأربعة ملفات صغيرة شهريًا، الاستهلاك مهمَل.
-5. **تقليم تلقائي بلا كرون:** كل `unlock` يحذف صفوف `droua_gate_attempts`
-   و`droua_gate_sessions` المنتهية الأقدم من 30 يومًا. تنظيف يركب على نداء
-   قائم بلا مُطلِق جديد — نفس النمط الذي اتّبعه المسير الشهري عندك.
-6. **اعتماديات:** لا شيء جديد للـPDF (`pdfjs-dist` موجود). لو كانت الملفات
-   Excel نحتاج قارئ `xlsx` صغيرًا واحدًا — وهذا يتوقّف على جوابك أدناه.
+1. **دالّة ثالثة فقط** — كل شيء عبر `api/secure-audit.js` بثلاثة rewrites.
+2. **لا كرون.** المراجعة فعل يدوي تبدأه أنت — يحفظ الخانة الثانية، **وهو
+   الأصحّ أمنيًا**: لا عملية خلفية تعمل على بيانات ذروة بلا جلسة مفتوحة وبلا
+   هوية فاعل في التدقيق.
+3. **⚠️ التحليل عند الرفع لا عند المراجعة.** كل ملف يُقرأ في **نداء رفعه**
+   ويُستورَد. عندها «تشغيل المراجعة» حسابٌ على صفوف جاهزة — أجزاء من الثانية.
+   لو حلّلنا الأربعة داخل نداء المراجعة لخاطرنا بحدّ زمن التنفيذ.
+   **هذا القرار هو ما يجعل النظام يعمل على Hobby أصلًا.**
+4. **تقليم بلا كرون:** كل `unlock` يحذف صفوف المحاولات والجلسات المنتهية
+   الأقدم من 30 يومًا — يركب على نداء قائم، نفس نمط المسير الشهري عندك.
+5. **الاعتماديات:** لا شيء للـPDF (`pdfjs-dist` موجود)، ولا شيء للـCSV،
+   وقارئ Excel **بعد العيّنات فقط**.
 
 ---
 
-## 16. الصفحات كما ستبدو
+## 17. الصفحات
 
-### `/droua-audit.html`
-
+### `/secure-audit`
 ```
 ┌────────────────────────────────────────────┐
-│  مراجعة مسير رواتب ذروة                    │
-│                                     [قفل]  │
+│  مراجعة مسير رواتب ذروة             [قفل]  │
 ├────────────────────────────────────────────┤
 │  سبتمبر 2026    ●●●●  4/4    ⚠ 2 ملاحظة   │
 │  أغسطس 2026     ●●●●  4/4    ✓ مكتمل      │
@@ -1067,66 +1192,84 @@ DROUA_AUDIT_HASH_KEY       مفتاح HMAC لتجزئة IP/UA
 └────────────────────────────────────────────┘
 ```
 
-### `/droua-audit/2026-09`
-
+### `/secure-audit/2026-09`
 ```
 ┌────────────────────────────────────────────┐
 │  سبتمبر 2026                        [قفل]  │
 ├────────────────────────────────────────────┤
 │  45 موظف │ 39 بدون تغيير │ 4 تغييرات │ 2 تحتاج مراجعة │
 ├────────────────────────────────────────────┤
-│  الملفات الأربعة                            │
 │  ✓ مسير الرواتب كاش        [عرض][استبدال]  │
 │  ✓ مسير الرواتب كامل       [عرض][استبدال]  │
 │  ✓ مسير الرواتب تحويل      [عرض][استبدال]  │
 │  ✓ تقرير قائمة الموظفين    [عرض][استبدال]  │
-│                                             │
 │              [ تشغيل المراجعة ]             │
 ├────────────────────────────────────────────┤
-│  المقارنة مع أغسطس 2026                     │
-│  الملاحظات                                  │
+│  المقارنة مع أغسطس 2026 — الملاحظات         │
 │  ⚠ تغيّر صافي الراتب — 4312                │
 │    أغسطس 6,500 ← سبتمبر 7,200  (+700)      │
 │    [تحتاج مراجعة ▾]  [ملاحظتي...]          │
 └────────────────────────────────────────────┘
 ```
+عنوان الصفحة صريح بالعربية — **الرابط وحده هو المحايد**، وهو ما يظهر في
+اللوجّات وتاريخ المتصفّح.
 
 ---
 
-## 17. أسئلة أحتاج جوابها قبل البدء
+## 18. القرارات المعتمدة
 
-1. **صيغة الملفات الأربعة**: PDF أم Excel أم خليط؟
-   يحدّد القارئ وحاجة مكتبة إضافية. (الملفات المرفوعة عندك حاليًا PDF.)
-2. **دور حسابك في المنصّة**: هل `hr-manager@droua.com` حسابه `owner`؟
-   لو لا، فهذه أول خطوة (السبب في القسم 4).
-   وسأحتاج منك لاحقًا `users.id` الخاص به — **تجلبه أنت وتضعه في متغيّر
-   البيئة مباشرة؛ لا يمرّ عبري ولا يُكتب في المستودع.**
-3. **مدّة الجلسة**: أوافق على 15 دقيقة خمول / 60 دقيقة سقف مطلق؟
-4. **اسم المسار**: `/droua-audit.html` صريح، أم تفضّل اسمًا محايدًا يُبقي
-   عبارة «مسير ذروة» خارج لوجّات Vercel؟ (أسماء الجداول تبقى صريحة كما طلبت.)
-5. **الـallowlist**: مستخدم واحد إلى الأبد، أم أترك البنية تقبل قائمة
-   (وهي تقبلها أصلًا) تحسّبًا لحساب احتياطي لك؟
-6. **الرقم الوظيفي في ذروة**: هل هو ثابت لكل موظف بين الشهور؟
-   عليه تقوم كل المقارنة (القسم 2).
-7. **IBAN**: أكتفي بآخر أربعة + hash للمقارنة (توصيتي)، أم تحتاج الرقم
-   كاملًا معروضًا في الواجهة؟
+| # | القرار | الحالة |
+|---|---|---|
+| 1 | Protected User في طبقة البيانات + allowlist بـ`users.id` + البريد + كلمة البوابة + جلسة القسم | ✅ معتمد |
+| 2 | جلسة القسم: 15 د خمول / 60 د سقف مطلق | ✅ معتمد |
+| 3 | مسار محايد `/secure-audit` بلا `payroll` ولا `droua` | ✅ معتمد |
+| 4 | IBAN: آخر 4 + HMAC بمفتاح سرّي؛ الكامل داخل الملف المشفَّر فقط | ✅ معتمد |
+| 5 | البنية تدعم PDF وExcel؛ المكتبة بعد العيّنات | ✅ معتمد |
+| 6 | لا فحص ولا تغيير لدور الحساب الآن | ✅ معتمد |
+| 7 | `emp_no` مفتاحًا إن ثبت؛ وجدول هوية داخلية جاهز كبديل | ✅ معتمد |
+
+---
+
+## 19. ما أحتاجه منك قبل المرحلة 1
+
+**قراران يمنعان إعادة عمل، وواحد يمكن تأجيله:**
+
+1. **هل أبدأ بالمرحلة 1أ (Protected User) وحدها وأقف لمراجعتك؟**
+   توصيتي **نعم**: هي التغيير الوحيد الذي يلمس ملفًّا مشتركًا تستعمله المنصّة
+   كلّها اليوم. مراجعتها منفردة — قبل أن تختلط بـ1500 سطر من كود القسم —
+   أأمن بكثير.
+2. **الحساب المحميّ: هل هو حسابك وحده، أم أضيف حسابًا احتياطيًا لك؟**
+   البنية تقبل قائمة أصلًا. **تنبيه:** بحساب واحد، فقدان كلمة مرور المنصّة
+   **أو** كلمة مرور القسم يعني استرجاعًا يدويًا من قاعدة البيانات. لو أردت
+   حسابًا احتياطيًا باسمك، الآن أرخص وقت.
+3. *(يمكن تأجيله)* **فهرس البريد**: أشغّل `SELECT indexdef FROM pg_indexes
+   WHERE tablename='users';` متى شئت. إن كان حسّاسًا لحالة الأحرف، فإصلاحه
+   **مسألة منصّة عامّة** أفصلها في مقترح مستقلّ — ولا تعطّل المرحلة 1.
+
+**ثم — كما قلت — العيّنات:** أربعة ملفات حقيقية لشهرين متتاليين (سبتمبر
+وأغسطس) لأبني القارئ مضبوطًا من أول مرّة، وأحسم بها ثلاثة أشياء دفعة واحدة:
+الصيغة الفعلية · ثبات الرقم الوظيفي · وجود رقم الهوية من عدمه.
+لا ترسلها قبل المرحلة 2 — لا حاجة بها قبل ذلك.
 
 ---
 
 ## الخلاصة
 
-الحماية الفعلية تقوم على **أربعة حواجز مستقلّة** يجب أن تُجتاز كلّها معًا،
-ولا يعوّض أحدها عن الآخر:
+الحماية تقوم على **خمسة حواجز مستقلّة** تُجتاز كلّها معًا، ولا يعوّض أحدها
+عن الآخر:
 
 ```
-1. جلسة منصّة صالحة        ← موجود في المشروع أصلًا
-2. allowlist بـ user.id     ← لا دور، لا صلاحية، لا owner-bypass
-3. كلمة مرور القسم         ← سرّ خارج الكود والقاعدة تمامًا
-4. جلسة قسم قصيرة قابلة للإبطال
+1. جلسة منصّة صالحة                ← موجود في المشروع أصلًا
+2. Protected User                   ← لا أحد يمسّ حسابي من أدوات الإدارة
+3. allowlist بـ users.id + البريد   ← لا دور، لا صلاحية، لا owner-bypass
+4. كلمة مرور القسم                  ← سرّ خارج الكود والقاعدة تمامًا
+5. جلسة قسم 15/60 قابلة للإبطال
 ```
 
-وفوقها: **الملفات نفسها مقفلة** — خاصّة، مشفّرة، ولا يوجد لها رابط قابل
-للفتح في أي مكان. وهذا — كما قلت تمامًا — هو ما يعطي الحماية الفعلية،
-لا إخفاء الرابط.
+وفوقها **الملفات نفسها مقفلة** — خاصّة، مشفّرة، بلا رابط قابل للفتح —
+و**لا آيبان كامل في القاعدة أصلًا**.
 
-**بانتظار اعتمادك للبدء بالمرحلة 1.**
+والفرق الجوهري بين النسخة 1 وهذه: **لم يعد شيء من هذا معلَّقًا بدور
+`owner`.** حتى لو تغيّر دور حسابي غدًا، الحماية قائمة كما هي.
+
+**بانتظار جوابك على السؤالين في القسم 19 لأبدأ المرحلة 1أ.**
