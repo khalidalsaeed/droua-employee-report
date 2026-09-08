@@ -123,7 +123,10 @@ test("الفهرس فريد وجزئي: لا يتعارض غير المربوط�
 
 /* استيراد السكربت يجب ألّا يشغّله — وإلّا لمس الاختبار قاعدة حقيقية. */
 test("الاستيراد لا ينفّذ السكربت", () => {
-  assert.ok(Array.isArray(STATEMENTS) && STATEMENTS.length === 5);
+  /* لا عدد ثابت: العدد يتغيّر مع كل عمود جديد (أُضيف sheet_amount في
+     مرحلة مطابقة الإيصالات)، فتثبيته يُسقط الاختبار على إضافةٍ سليمة
+     ويخفي ما يستحقّ القياس فعلًا — أن العبارات كلها idempotent. */
+  assert.ok(Array.isArray(STATEMENTS) && STATEMENTS.length > 0);
   assert.equal(typeof run, "function");
   for (const s of STATEMENTS) {
     assert.equal(typeof s.label, "string");

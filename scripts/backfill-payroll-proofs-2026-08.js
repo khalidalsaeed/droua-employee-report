@@ -49,19 +49,13 @@
 
 const RUN_ID = "2026-08";
 const MONTH_END = "2026-08-31";
-/* رقم الموظف لدى شركة ضمان (500، 501 …) — معرّفه في هذه المنصّة: عمود
-   employees.eid ومفتاح الربط في التذاكر والتصاريح وإثباتات التحويل.
-   المفتاح المخزَّن يبقى "الرقم الوظيفي" حرفيًا: تغييره هجرةُ JSONB في كل
-   صفّ ومفتاحِ ربطٍ عبر أربعة جداول، بمكسب صفر لأن أحدًا لا يرى مفتاح
-   التخزين. الوضوح يقع في الاسم البرمجي وفيما يُعرض للمستخدم.
-   لا يُخلط برقم جسر (F_JISR) — ترقيمان مستقلّان يُحفظان معًا. */
-const F_DAMANAH = "الرقم الوظيفي";
-const F_NAME = "اسم العامل";
-const F_JOB = "المهنة";
 const F_START = "تاريخ المباشرة";
-const { F_JISR, normalizeJisr } = require("../lib/data/employees");
-
-const SHEET_ATTACHMENT_KEY = "payroll_sheet";
+/* قاعدة الربط وأسماء حقول الهوية تسكن lib/payroll/sheetLink.js لا هنا:
+   تحتاجها هذه العملية ومزامنة راتب المسير معًا، ونسختان من قاعدة ربطٍ
+   تتباعدان — وهي القاعدة التي تمنع إرفاق إثبات بالشخص الخطأ، فلا تُنسخ.
+   وF_DAMANAH هناك هو «الرقم الوظيفي» حرفيًا: رقم الموظف لدى ضمان
+   ومفتاح الربط عبر أربعة جداول، لا يُخلط برقم جسر. */
+const { sheetUrlOf, linkStaff, F_DAMANAH, F_NAME, F_JOB } = require("../lib/payroll/sheetLink");
 
 /* الاعتماديات تُحقن كي تُختبر الدوالّ بلا قاعدة ولا شبكة. */
 function deps(overrides) {
@@ -82,31 +76,6 @@ async function defaultFetchFile(url) {
   return Buffer.from(await res.arrayBuffer());
 }
 
-/* رابط كشف الرواتب على المسير: المرفق المخصّص أوّلًا، ثم ملفّ المسير
-   الرئيسي — وهو ما ترفعه الواجهة في الحالتين. */
-function sheetUrlOf(run) {
-  const attachment = (run.attachments || []).find((a) => a.key === SHEET_ATTACHMENT_KEY && a.fileUrl);
-  return (attachment && attachment.fileUrl) || run.fileUrl || null;
-}
-
-/* فهرس الموظفين بـ«رقم جسر» المُطبَّع. يرفض إن حمل موظفان الرقم نفسه:
-   دفاعٌ مضاعف فوق الفهرس الفريد في القاعدة — لو عُطّل الفهرس أو أُدخل
-   الصفّان قبل إنشائه، لا يصحّ أن يختار السكربت أحدهما اعتباطًا. */
-function indexByJisr(employees) {
-  const byJisr = new Map();
-  for (const e of employees) {
-    const key = normalizeJisr(e && e[F_JISR]);
-    if (!key) continue;
-    if (byJisr.has(key)) {
-      const first = byJisr.get(key);
-      return { ok: false, reason: "duplicate_jisr_in_platform", jisrNo: key,
-               eids: [String(first[F_DAMANAH] || ""), String(e[F_DAMANAH] || "")] };
-    }
-    byJisr.set(key, e);
-  }
-  return { ok: true, byJisr };
-}
-
 /* القائمة من الكشف: أرقام جسر من الوثيقة، والهوية من السجلّ عبر «رقم جسر». */
 async function rosterFromSheet(run, d, { exclude }) {
   const url = sheetUrlOf(run);
@@ -116,35 +85,12 @@ async function rosterFromSheet(run, d, { exclude }) {
   const extraction = await d.extractRoster(buffer);
   if (!extraction.ok) return { ok: false, reason: extraction.reason, extraction, url };
 
-  const index = indexByJisr(await d.listEmployees());
-  if (!index.ok) return { ...index, url, extraction };
-
-  const excludeSet = new Set((exclude || []).map(normalizeJisr).filter(Boolean));
-  const roster = [];
-  const unknown = [];
-  /* المستثنَون بأمر المستخدم — اسمٌ مستقلّ عن عدّاد الإدراج المتخطّى
-     (ON CONFLICT) في insertRows، فلا يدوس أحدهما الآخر في الردّ. */
-  const excluded = [];
-  for (const row of extraction.staff) {
-    const key = normalizeJisr(row.jisrNo);
-    if (excludeSet.has(key)) {
-      excluded.push(row);
-      continue;
-    }
-    const employee = index.byJisr.get(key);
-    if (!employee) {
-      unknown.push(row);
-      continue;
-    }
-    roster.push({
-      /* المُخزَّن هو الرقم الوظيفي للمنصّة لا رقم جسر: جدول الإثباتات
-         مفتاحه (run_id, employee_eid) وهو يعني الرقم الوظيفي. */
-      eid: String(employee[F_DAMANAH] || "").trim(),
-      jisrNo: key,
-      name: String(employee[F_NAME] || "").trim(),
-      jobTitle: String(employee[F_JOB] || "").trim() || null,
-    });
-  }
+  /* الربط بمفتاح «رقم جسر» وحده — المستثنَون بأمر المستخدم اسمٌ مستقلّ
+     عن عدّاد الإدراج المتخطّى (ON CONFLICT) في insertRows، فلا يدوس
+     أحدهما الآخر في الردّ. */
+  const link = linkStaff(extraction.staff, await d.listEmployees(), { exclude });
+  if (!link.ok) return { ...link, url, extraction };
+  const { linked: roster, unknown, excluded } = link;
 
   if (unknown.length) {
     return { ok: false, reason: "unknown_jisr_numbers", unknown, roster, excluded, url, extraction };

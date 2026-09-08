@@ -266,3 +266,97 @@ test("قراءة المسير لا تكتب شيئًا ولا تمسّ حالت�
     assert.deepEqual(writes, [], "العرض قراءة محضة");
   } finally { restore(); }
 });
+
+/* ── راتب المسير على بطاقة الموظف ──
+   =========================================================================
+   sheet_amount هو مرجع المقارنة في مطابقة إيصالات التحويل: صافي الموظف
+   في كشف رواتب ذلك الشهر نفسه، لا المقروء حيًّا من سجلّه — الراتب يتغيّر
+   شهرًا بعد شهر بوقتٍ إضافي وغياب وسلف وخصميات، فراتب سبتمبر ليس مرجعًا
+   لأغسطس.
+
+   ما يُثبَت هنا: أن القيمة تصل إلى الواجهة بمنزلتيها كاملتين، وأن
+   «لم تُزامَن بعد» تبقى متميّزة عن «صفر». */
+
+function runWithSheetAmounts(rows) {
+  return makeFakeSql((call) => {
+    if (/FROM payroll_runs WHERE id =/.test(call.text)) {
+      return [{ id: "2026-08", month_label: "أغسطس 2026", uploaded_at: "2026-09-02",
+                status_key: "pending_invoice", file_url: null }];
+    }
+    if (/FROM payroll_attachments/.test(call.text)) return [];
+    if (/FROM payroll_transfer_proofs/.test(call.text)) return rows;
+    return [];
+  });
+}
+
+test("sheet_amount يُقرأ في استعلام العرض ويصل باسم sheetAmount", async () => {
+  const sql = runWithSheetAmounts([
+    /* numeric يعود من المُشغّل نصًّا كي لا تُفقد المنزلتان في تحويل عائم. */
+    { employee_eid: "900", employee_name: "الموظف 900", job_title: "عامل", sheet_amount: "3412.08",
+      file_url: null, file_name: null, uploaded_at: null, uploaded_by: null, jisr_no: "11" },
+  ]);
+  const { mod, restore } = loadWithFakeDb(sql);
+  try {
+    const run = await mod.get("2026-08");
+    assert.equal(run.employees[0].sheetAmount, 3412.08);
+    /* المنزلة الأخيرة هي بالضبط ما وُجدت الميزة لأجله: فرق ثماني هللات
+       بين المسير والتحويل. تدويرٌ إلى الريال يمحوه. */
+    assert.equal(Math.round(run.employees[0].sheetAmount * 100) % 100, 8);
+    const selects = sql.calls.filter((c) => /^SELECT/.test(c.text)).map((c) => c.text).join(" ");
+    assert.match(selects, /p\.sheet_amount/, "العمود مقروء فعلًا من القاعدة");
+  } finally { restore(); }
+});
+
+test("لم تُزامَن بعد تبقى null لا صفرًا", async () => {
+  const sql = runWithSheetAmounts([
+    { employee_eid: "900", employee_name: "الموظف 900", job_title: null, sheet_amount: null,
+      file_url: null, file_name: null, uploaded_at: null, uploaded_by: null, jisr_no: "11" },
+  ]);
+  const { mod, restore } = loadWithFakeDb(sql);
+  try {
+    const run = await mod.get("2026-08");
+    /* صفرٌ هنا كان سيُعرض «راتب المسير 0.00 ر.س» على موظف راتبه لم يُقرأ
+       بعد — وهو كذبٌ يبدو بيانًا. */
+    assert.equal(run.employees[0].sheetAmount, null);
+    assert.notEqual(run.employees[0].sheetAmount, 0);
+  } finally { restore(); }
+});
+
+test("صفر حقيقي يبقى صفرًا لا null", async () => {
+  const sql = runWithSheetAmounts([
+    { employee_eid: "900", employee_name: "الموظف 900", job_title: null, sheet_amount: "0.00",
+      file_url: null, file_name: null, uploaded_at: null, uploaded_by: null, jisr_no: "11" },
+  ]);
+  const { mod, restore } = loadWithFakeDb(sql);
+  try {
+    const run = await mod.get("2026-08");
+    assert.equal(run.employees[0].sheetAmount, 0);
+    assert.notEqual(run.employees[0].sheetAmount, null);
+  } finally { restore(); }
+});
+
+test("تعديل إثبات التحويل لا يمسّ sheet_amount", async () => {
+  const sql = makeFakeSql((call) => {
+    if (/FROM payroll_runs WHERE id =/.test(call.text)) {
+      return [{ id: "2026-08", month_label: "أغسطس 2026", uploaded_at: "2026-09-02",
+                status_key: "pending_invoice", file_url: null }];
+    }
+    if (/FROM payroll_attachments/.test(call.text)) return [];
+    if (/FROM payroll_transfer_proofs/.test(call.text)) {
+      return [{ employee_eid: "900", employee_name: "الموظف 900", job_title: null, sheet_amount: "3412.08",
+                file_url: null, file_name: null, uploaded_at: null, uploaded_by: null, jisr_no: "11" }];
+    }
+    return [];
+  });
+  const { mod, restore } = loadWithFakeDb(sql);
+  try {
+    await mod.update("2026-08", { proofs: [{ eid: "900", fileUrl: "https://blob/p.pdf", fileName: "p.pdf" }] },
+      { email: "hr-manager@droua.com" });
+    const writes = sql.matching(/UPDATE payroll_transfer_proofs/);
+    assert.equal(writes.length, 1);
+    /* مسارا الكتابة منفصلان تمامًا: رفع الإثبات لا يكتب راتبًا،
+       ومزامنة الراتب لا تكتب ملفًّا. */
+    assert.ok(!/sheet_amount/.test(writes[0].text), "رفع الإثبات لا يكتب راتبًا");
+    assert.ok(!writes[0].values.includes(3412.08), "ولا يمرّر قيمته");
+  } finally { restore(); }
+});

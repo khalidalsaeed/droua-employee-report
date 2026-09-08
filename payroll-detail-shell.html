@@ -68,6 +68,9 @@ main.block{padding-block:20px}
 .emp-ident{min-width:0}
 .emp-name{font-size:14px;font-weight:600;color:var(--ink);overflow-wrap:anywhere}
 .emp-meta{font-size:11.5px;color:var(--ink-soft);margin-top:2px}
+/* راتب المسير أبرز من سطر المعرّفات: هو مرجع المقارنة لا بيان هوية. */
+.emp-salary{font-size:12.5px;color:var(--ink);margin-top:4px;font-weight:600}
+.emp-salary.muted{color:var(--ink-soft);font-weight:400;font-style:italic}
 /* البطاقة الصغيرة نفسها */
 .proof-card{flex:none;border:1px solid var(--hair-2);border-radius:10px;background:var(--paper-2);padding:8px 10px}
 @media(min-width:768px){.proof-card{min-width:300px}}
@@ -310,6 +313,24 @@ function editAttachmentNote(key, currentNote){
    الحقيقي في lib/data/payrollRuns.js على الخادم. */
 const PROOF_ACCEPT="application/pdf,image/jpeg,image/png";
 
+/* راتب المسير — صافي الموظف في كشف رواتب هذا الشهر كما استُخرج من الكشف
+   نفسه. مرجع المقارنة الذي ستُقاس عليه لاحقًا قيمة الفاتورة ومبلغ
+   التحويل، فيُعرض بمنزلتين دائمًا: 3412.1 و3412.08 ليسا الشيء نفسه حين
+   تكون السماحية صفرًا، وحجب المنزلة الأخيرة يخفي بالضبط نوع الفرق الذي
+   وُجدت الميزة لأجله. */
+function fmtMoney(n){
+  return Number(n).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});
+}
+
+/* null ليس صفرًا: مسير لم تُزامَن أرقامه بعد لا يُعرض كأن رواتبه صفر —
+   يُقال صراحةً إنها لم تُقرأ من الكشف. */
+function salaryLine(emp){
+  if(emp.sheetAmount===null||emp.sheetAmount===undefined){
+    return `<div class="emp-salary muted">راتب المسير غير مقروء من الكشف بعد</div>`;
+  }
+  return `<div class="emp-salary">راتب المسير <span class="num">${fmtMoney(emp.sheetAmount)}</span> ر.س</div>`;
+}
+
 function proofCard(emp, monthLabel){
   const has=!!(emp.proof && emp.proof.fileUrl);
   const mayUpload=AdminUI.can("payroll","upload_files");
@@ -341,6 +362,7 @@ function employeeRow(emp, monthLabel){
     <div class="emp-ident">
       <div class="emp-name">${esc(emp.name)}</div>
       <div class="emp-meta">رقم ضمان <span class="num">${esc(emp.eid)}</span>${emp.jisrNo?` · رقم جسر <span class="num">${esc(emp.jisrNo)}</span>`:""}${emp.jobTitle?` · ${esc(emp.jobTitle)}`:""}</div>
+      ${salaryLine(emp)}
     </div>
     ${proofCard(emp, monthLabel)}
   </div>`;

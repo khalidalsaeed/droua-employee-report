@@ -45,6 +45,25 @@ const STATEMENTS = [
     sql: `CREATE INDEX IF NOT EXISTS idx_payroll_proofs_run ON payroll_transfer_proofs (run_id)`,
   },
   {
+    label: "عمود payroll_transfer_proofs.sheet_amount",
+    /* «راتب المسير» — صافي الموظف في كشف رواتب ذلك الشهر، مُلقَطًا من
+       الكشف نفسه ومجمَّدًا في صفّه. هو المرجع الذي تُقاس عليه بقية
+       القيم في مطابقة إيصالات التحويل:
+         sheet_amount    صافيه في الكشف                    ← هذا العمود
+         invoice_amount  «صافي الراتب الشهري» في الفاتورة  ← مرحلة تالية
+         receipt_amount  المبلغ المحوَّل فعلًا              ← مرحلة تالية
+
+       ولا يُقرأ حيًّا من سجلّ الموظف عند المقارنة: الراتب يتغيّر شهرًا
+       بعد شهر — وقتٌ إضافي وغياب وسلف وخصميات — فراتب سبتمبر ليس مرجعًا
+       لأغسطس. القيمة الصحيحة الوحيدة ما طُبع في كشف الشهر نفسه.
+
+       NULL مسموح ومعناه صريح: «لم تُزامَن بعد» لا «صفر». والمسيرات
+       القائمة تبقى NULL حتى تُشغَّل المزامنة عليها — لا تُمسّ بياناتها.
+       numeric(12,2) لا عائم: المال يُخزَّن بمنزلتين مضبوطتين، والمقارنة
+       بسماحية صفر لا تصحّ على عائم. */
+    sql: `ALTER TABLE payroll_transfer_proofs ADD COLUMN IF NOT EXISTS sheet_amount numeric(12,2)`,
+  },
+  {
     label: "عمود payroll_runs.source",
     // 'manual' افتراضًا فالمسيرات القائمة توصَف بصدق دون تعديل بياناتها.
     sql: `ALTER TABLE payroll_runs ADD COLUMN IF NOT EXISTS source text NOT NULL DEFAULT 'manual'`,

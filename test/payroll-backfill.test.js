@@ -14,24 +14,27 @@ const { RUN_ID, backfill, rosterFromEmployees } = require("../scripts/backfill-p
    مرفوعًا. فالاختبارات هنا تقيس ما كُتب فعلًا في القاعدة — كل عبارة
    وكل قيمة — لا ما تُرجعه الدالّة عن نفسها. */
 
-const JULY_SHEET = fs.readFileSync(path.join(__dirname, "..", "payroll", "2026-07.pdf"));
+/* عيّنة مُعقَّمة لا الكشف الحقيقي: البنية نفسها حرفيًا وبيانات الهوية
+   والمبالغ مُختلقة بالكامل — انظر test/fixtures/payroll-sheet.js. أي
+   مستند أصلي في المستودع يعني حفظ أسماء أشخاص ورواتبهم في تاريخ Git
+   للأبد ولكل من يستنسخه. */
+const FIXTURE = require("./fixtures/payroll-sheet.js");
+const SANITIZED_SHEET = fs.readFileSync(path.join(__dirname, "fixtures", "payroll-sheet-sanitized.pdf"));
 
-/* الترقيمان مختلفان عمدًا وهذا هو بيت القصيد: المنصّة في المدى 5xx
-   وجسر من مرتبتين — وهو الواقع الفعلي الذي أفشل أول محاولة ربط. أي
-   شيفرة تبحث برقم الكشف في «الرقم الوظيفي» تسقط على هذه العيّنة. */
+/* الترقيمان مختلفان عمدًا وهذا هو بيت القصيد: أرقام ضمان في العيّنة
+   9xx وأرقام جسر من مرتبتين — وهو الفرق الواقعي الذي أفشل أول محاولة
+   ربط. أي شيفرة تبحث برقم الكشف في «الرقم الوظيفي» تسقط على هذه
+   العيّنة. والصفر الأولي في أحدها مقصود: التطبيع يجب أن يُلغيه. */
 const EMPLOYEES = [
-  { "الرقم الوظيفي": "506", "رقم جسر": "49", "اسم العامل": "شكيب ميا", "المهنة": "سائق" },
-  { "الرقم الوظيفي": "504", "رقم جسر": "55", "اسم العامل": "لامين مولا" },
-  { "الرقم الوظيفي": "502", "رقم جسر": "56", "اسم العامل": "مد تفيق مد حسن", "المهنة": "فنّي" },
-  { "الرقم الوظيفي": "507", "رقم جسر": "59", "اسم العامل": "مد فرهاد علي شاركر" },
-  { "الرقم الوظيفي": "503", "رقم جسر": "60", "اسم العامل": "راسل ديوان" },
-  { "الرقم الوظيفي": "501", "رقم جسر": "63", "اسم العامل": "مد طيف ال رحمن شهاب" },
-  { "الرقم الوظيفي": "505", "رقم جسر": "70", "اسم العامل": "محمد شيدال اسلام" },
-  { "الرقم الوظيفي": "500", "رقم جسر": "71", "اسم العامل": "شميم" },
-  { "الرقم الوظيفي": "509", "رقم جسر": "82", "اسم العامل": "مد هلال مد الدين" },
-  { "الرقم الوظيفي": "508", "رقم جسر": "085", "اسم العامل": "ساجر", "المهنة": "عامل" },
+  ...FIXTURE.ROSTER.map((r, i) => ({
+    "الرقم الوظيفي": r.eid,
+    /* «020» بصفر أولي — نفس ما يحدث في السجلّ الحقيقي. */
+    "رقم جسر": i === FIXTURE.ROSTER.length - 1 ? `0${r.jisrNo}` : r.jisrNo,
+    "اسم العامل": `الموظف ${r.eid}`,
+    ...(i % 3 === 0 ? { "المهنة": "عامل" } : {}),
+  })),
   /* التحق في سبتمبر — ليس في كشف أغسطس ولا رقم جسر له. */
-  { "الرقم الوظيفي": "591", "اسم العامل": "موظف جديد", "تاريخ المباشرة": "2026-09-15" },
+  { "الرقم الوظيفي": "991", "اسم العامل": "موظف جديد", "تاريخ المباشرة": "2026-09-15" },
 ];
 
 const RUN = {
@@ -49,7 +52,7 @@ function harness(over = {}) {
       sql,
       getRun: async (id) => (id === RUN_ID ? JSON.parse(JSON.stringify(RUN)) : null),
       listEmployees: async () => EMPLOYEES,
-      fetchFile: async () => JULY_SHEET, // الكشف الحقيقي في المستودع، كعيّنة
+      fetchFile: async () => SANITIZED_SHEET, // عيّنة مُعقَّمة ببنية الكشف الحقيقي
       log: () => {},
       ...over,
     },
@@ -65,38 +68,37 @@ test("الربط يجري عبر «رقم جسر» لا عبر رقم ضمان",
   const r = await backfill(h.opts);
   assert.equal(r.ok, true);
   assert.equal(r.source, "payroll_sheet");
-  assert.deepEqual(r.roster.map((e) => e.jisrNo), ["49", "55", "56", "59", "60", "63", "70", "71", "82", "85"]);
-  assert.deepEqual(
-    r.roster.map((e) => e.eid),
-    ["506", "504", "502", "507", "503", "501", "505", "500", "509", "508"],
-    "المُخزَّن هو رقم ضمان"
-  );
-  assert.ok(!r.roster.some((e) => e.eid === "591"), "موظف سبتمبر لا يدخل مسير أغسطس");
+  assert.deepEqual(r.roster.map((e) => e.jisrNo), FIXTURE.ROSTER.map((x) => x.jisrNo));
+  assert.deepEqual(r.roster.map((e) => e.eid), FIXTURE.ROSTER.map((x) => x.eid), "المُخزَّن هو رقم ضمان");
+  assert.ok(!r.roster.some((e) => e.eid === "991"), "موظف سبتمبر لا يدخل مسير أغسطس");
 });
 
 test("employee_eid المُدرَج هو رقم ضمان لا رقم جسر", async () => {
   const h = harness();
   await backfill(h.opts);
   const written = h.sql.calls.map((c) => String(c.values[1]));
-  for (const v of written) assert.match(v, /^5\d\d$/, `${v} يجب أن يكون رقم ضمان في المدى 5xx`);
-  for (const jisr of ["49", "55", "56", "59", "60", "63", "70", "71", "82", "85"]) {
-    assert.ok(!written.includes(jisr), `رقم جسر ${jisr} يجب ألّا يُكتب في employee_eid`);
+  for (const v of written) assert.match(v, /^9\d\d$/, `${v} يجب أن يكون رقم ضمان لا رقم جسر`);
+  for (const r of FIXTURE.ROSTER) {
+    assert.ok(!written.includes(r.jisrNo), `رقم جسر ${r.jisrNo} يجب ألّا يُكتب في employee_eid`);
   }
 });
 
 test("رقم جسر مخزَّن بأصفار بادئة يُطابق الكشف", async () => {
+  const last = FIXTURE.ROSTER[FIXTURE.ROSTER.length - 1];
   const r = await backfill(harness().opts);
-  const saajir = r.roster.find((e) => e.eid === "508");
-  assert.ok(saajir, "«085» في السجلّ يُطابق «85» في الكشف");
-  assert.equal(saajir.jisrNo, "85");
+  const found = r.roster.find((e) => e.eid === last.eid);
+  assert.ok(found, `«0${last.jisrNo}» في السجلّ يُطابق «${last.jisrNo}» في الكشف`);
+  assert.equal(found.jisrNo, last.jisrNo);
 });
 
 test("الأسماء من جدول الموظفين لا من الكشف المشوّه", async () => {
   const r = await backfill(harness().opts);
-  const first = r.roster.find((e) => e.jisrNo === "49");
-  assert.equal(first.name, "شكيب ميا", "الاسم من السجلّ لا «شكيبميا ه» من الكشف");
-  assert.equal(first.jobTitle, "سائق");
-  assert.equal(r.roster.find((e) => e.jisrNo === "55").jobTitle, null, "مهنة غائبة تُخزَّن null");
+  const first = r.roster.find((e) => e.jisrNo === FIXTURE.ROSTER[0].jisrNo);
+  /* الكشف يُخرج الاسم مبعثرًا («ALPHAON E» في العيّنة، «شكيبميا ه» في
+     الحقيقي)، فالاسم المخزَّن يأتي من السجلّ لا من الوثيقة. */
+  assert.equal(first.name, `الموظف ${FIXTURE.ROSTER[0].eid}`);
+  assert.equal(first.jobTitle, "عامل");
+  assert.equal(r.roster.find((e) => e.jisrNo === FIXTURE.ROSTER[1].jisrNo).jobTitle, null, "مهنة غائبة تُخزَّن null");
 });
 
 /* الاسم وحده لا يُنشئ رابطًا أبدًا، مهما بلغ التطابق. */
@@ -111,27 +113,28 @@ test("تطابق الاسم تمامًا مع غياب رقم جسر لا يرب
 });
 
 test("موظفان يحملان رقم جسر نفسه يوقفان العملية", async () => {
-  const clashing = EMPLOYEES.map((e) => (e["الرقم الوظيفي"] === "504" ? { ...e, "رقم جسر": "49" } : e));
+  const [a, b] = FIXTURE.ROSTER;
+  const clashing = EMPLOYEES.map((e) => (e["الرقم الوظيفي"] === b.eid ? { ...e, "رقم جسر": a.jisrNo } : e));
   const h = harness({ listEmployees: async () => clashing });
   const r = await backfill(h.opts);
   assert.equal(r.ok, false);
   assert.equal(r.reason, "duplicate_jisr_in_platform");
-  assert.equal(r.jisrNo, "49");
-  assert.deepEqual(r.eids.sort(), ["504", "506"]);
+  assert.equal(r.jisrNo, a.jisrNo);
+  assert.deepEqual(r.eids.sort(), [a.eid, b.eid].sort());
   assert.equal(h.sql.calls.length, 0);
 });
 
 test("اكتمال الاستخراج مُتحقَّق بمطابقة صف الإجماليات", async () => {
-  const extraction = await extractRoster(JULY_SHEET);
+  const extraction = await extractRoster(SANITIZED_SHEET);
   assert.equal(extraction.ok, true);
   assert.equal(extraction.staff.length, 10);
   assert.ok(Math.abs(extraction.sumNet - extraction.totalNet) < 0.005);
-  assert.equal(extraction.totalNet.toFixed(2), "15297.53");
+  assert.equal(extraction.totalNet.toFixed(2), FIXTURE.TOTAL_NET.toFixed(2));
 });
 
 test("استخراج ناقص يوقف العملية بدل أن يُنتج مسيرًا ينقصه موظف", async () => {
   const h = harness({
-    extractRoster: async () => ({ ok: false, reason: "totals_mismatch", sumNet: 13900.03, totalNet: 15297.53, staff: [] }),
+    extractRoster: async () => ({ ok: false, reason: "totals_mismatch", sumNet: 13900.03, totalNet: FIXTURE.TOTAL_NET, staff: [] }),
   });
   const r = await backfill(h.opts);
   assert.equal(r.ok, false);
@@ -140,33 +143,37 @@ test("استخراج ناقص يوقف العملية بدل أن يُنتج م�
 });
 
 test("رقم جسر بلا صاحب يوقف العملية، و--exclude يستثنيه مسمًّى", async () => {
-  const partial = EMPLOYEES.filter((e) => e["الرقم الوظيفي"] !== "509"); // صاحب جسر 82
+  const gone = FIXTURE.ROSTER[8];
+  const partial = EMPLOYEES.filter((e) => e["الرقم الوظيفي"] !== gone.eid);
   const blocked = await backfill(harness({ listEmployees: async () => partial }).opts);
   assert.equal(blocked.ok, false);
   assert.equal(blocked.reason, "unknown_jisr_numbers");
-  assert.deepEqual(blocked.unknown.map((u) => u.jisrNo), ["82"]);
+  assert.deepEqual(blocked.unknown.map((u) => u.jisrNo), [gone.jisrNo]);
 
   const h = harness({ listEmployees: async () => partial });
-  const allowed = await backfill({ ...h.opts, exclude: ["82"] });
+  const allowed = await backfill({ ...h.opts, exclude: [gone.jisrNo] });
   assert.equal(allowed.ok, true);
   assert.equal(allowed.roster.length, 9);
-  assert.deepEqual(allowed.excluded.map((u) => u.jisrNo), ["82"]);
+  assert.deepEqual(allowed.excluded.map((u) => u.jisrNo), [gone.jisrNo]);
 });
 
 /* الاستثناء مقيَّد بما سمّيتَه: رقمٌ مجهول آخر يظلّ يوقف العملية. */
 test("--exclude لا يتخطّى إلّا ما سُمِّي", async () => {
-  const partial = EMPLOYEES.filter((e) => !["509", "508"].includes(e["الرقم الوظيفي"]));
+  const named = FIXTURE.ROSTER[8];
+  const unnamed = FIXTURE.ROSTER[9];
+  const partial = EMPLOYEES.filter((e) => ![named.eid, unnamed.eid].includes(e["الرقم الوظيفي"]));
   const h = harness({ listEmployees: async () => partial });
-  const r = await backfill({ ...h.opts, exclude: ["82"] });
-  assert.equal(r.ok, false, "جسر 85 ما زال مجهولًا ولم يُسمَّ");
-  assert.deepEqual(r.unknown.map((u) => u.jisrNo), ["85"]);
+  const r = await backfill({ ...h.opts, exclude: [named.jisrNo] });
+  assert.equal(r.ok, false, `جسر ${unnamed.jisrNo} ما زال مجهولًا ولم يُسمَّ`);
+  assert.deepEqual(r.unknown.map((u) => u.jisrNo), [unnamed.jisrNo]);
   assert.equal(h.sql.calls.length, 0);
 });
 
 test("--exclude يقبل الأصفار البادئة كما يقبلها التطبيع", async () => {
-  const partial = EMPLOYEES.filter((e) => e["الرقم الوظيفي"] !== "509");
+  const gone = FIXTURE.ROSTER[8];
+  const partial = EMPLOYEES.filter((e) => e["الرقم الوظيفي"] !== gone.eid);
   const h = harness({ listEmployees: async () => partial });
-  const r = await backfill({ ...h.opts, exclude: ["082"] });
+  const r = await backfill({ ...h.opts, exclude: [`0${gone.jisrNo}`] });
   assert.equal(r.ok, true);
   assert.equal(r.roster.length, 9);
 });
