@@ -676,3 +676,108 @@ test("التدقيق: أحداث الفتح ليست مقيَّدة — حدّه
     assert.ok(!/WHERE NOT EXISTS/.test(writes[0].text), "أحداث الفتح تُسجَّل كلّها");
   });
 });
+
+/* ════════ و) التزامن والتقليم ════════ */
+
+/* قاعدة ذات حالة تحاكي دلالات العبارة المدمجة: الإدراج يُودَع ثم يُعدّ،
+   فالعدّ يشمل صفّ الطلب نفسه وكل ما أُودع قبله. */
+function statefulDb(users) {
+  const byId = new Map(users.map((u) => [u.id, u]));
+  const fails = [];
+  let nextId = 1;
+  const sessions = new Map();
+  const sql = makeFakeSql((call) => {
+    if (/SELECT \* FROM users WHERE id =/.test(call.text)) {
+      const u = byId.get(call.values[0]);
+      return u ? [u] : [];
+    }
+    /* العبارة المدمجة: تُفحص قبل أي نمط آخر لأنها تحوي INSERT و count معًا. */
+    if (/WITH ins AS/.test(call.text)) {
+      /* لقطة ما قبل الإدراج — كما تفعل Postgres مع CTE كاتب. */
+      const prior = fails.length;
+      const row = { id: nextId++, user_id: call.values[0] };
+      fails.push(row);
+      return [{ attempt_id: row.id, short_count: prior, long_count: prior, critical_count: prior }];
+    }
+    if (/DELETE FROM droua_gate_attempts WHERE id =/.test(call.text)) {
+      const i = fails.findIndex((f) => f.id === call.values[0]);
+      if (i >= 0) fails.splice(i, 1);
+      return [];
+    }
+    if (/DELETE FROM droua_gate_attempts WHERE user_id/.test(call.text)) {
+      fails.length = 0;
+      return [];
+    }
+    if (/INSERT INTO droua_gate_sessions/.test(call.text)) {
+      sessions.set(call.values[0], call.values[1]);
+      return [];
+    }
+    return [];
+  });
+  sql.fails = fails;
+  sql.sessions = sessions;
+  return sql;
+}
+
+test("التزامن: طلبات متزامنة لا تتجاوز عتبة القفل", async () => {
+  /* انحدار لعطل مقيس: كان المسار يقرأ العدّاد ثم يشتقّ scrypt ثم يسجّل،
+     وبين القراءة والتسجيل مئات الميلي‌ثانية — فاثنتا عشرة محاولة متزامنة
+     اجتازت كلّها فحص القفل والعتبة خمس. أي أن التزامن كان يضرب الحدّ في
+     عدد الطلبات. */
+  await withEnv(fullEnv(), async () => {
+    const sql = statefulDb([OWNER_ROW()]);
+    const attempts = Array.from({ length: 12 }, () =>
+      call({ sql, actor: OWNER_ROW(), kind: "api", apiPath: "secure-audit/gate/unlock", method: "POST", body: { password: "wrong" } })
+    );
+    const results = await Promise.all(attempts);
+    assert.ok(results.every((r) => r.statusCode === 403), "كلّها تُردّ — والردّ واحد لا يميّز السبب");
+    /* المحاولة المردودة بالقفل تُحذف، فالباقي هو ما بلغ الاشتقاق فعلًا. */
+    assert.ok(sql.fails.length <= WINDOWS_SHORT_THRESHOLD, `بلغ الاشتقاق ${sql.fails.length} — يجب ألّا يتجاوز العتبة`);
+    assert.ok(sql.fails.length >= 1, "بعضها يجب أن يمرّ قبل أن ينعقد القفل");
+  });
+});
+
+const WINDOWS_SHORT_THRESHOLD = require("../lib/droua/rateLimit").WINDOWS.short.threshold;
+
+test("التزامن: المحاولة المردودة بالقفل لا تُحسب ولا تمدّده", async () => {
+  /* بلا الحذف يمدّد الطرقُ المتكرّر النافذةَ فلا تنتهي — أي قفلٌ دائم بدل
+     ستّين دقيقة، وهو الخطر التشغيليّ الذي حُدّد السقف لأجله. */
+  await withEnv(fullEnv(), async () => {
+    const sql = statefulDb([OWNER_ROW()]);
+    for (let i = 0; i < 30; i++) {
+      await call({ sql, actor: OWNER_ROW(), kind: "api", apiPath: "secure-audit/gate/unlock", method: "POST", body: { password: "wrong" } });
+    }
+    assert.equal(sql.fails.length, WINDOWS_SHORT_THRESHOLD,
+      "ثلاثون محاولة يجب أن تُبقي عدد الصفوف عند العتبة — لا أن تراكم ثلاثين");
+    assert.ok(sql.matching(/DELETE FROM droua_gate_attempts WHERE id =/).length >= 25, "الزائدة تُحذف");
+  });
+});
+
+test("التزامن: النجاح يمسح صفّ محاولته مع ما سبقه", async () => {
+  await withEnv(fullEnv(), async () => {
+    const sql = statefulDb([OWNER_ROW()]);
+    await call({ sql, actor: OWNER_ROW(), kind: "api", apiPath: "secure-audit/gate/unlock", method: "POST", body: { password: "wrong" } });
+    assert.equal(sql.fails.length, 1);
+    const out = await call({ sql, actor: OWNER_ROW(), kind: "api", apiPath: "secure-audit/gate/unlock", method: "POST", body: { password: GATE_PASSWORD } });
+    assert.equal(out.statusCode, 200, JSON.stringify(out.body));
+    assert.equal(sql.fails.length, 0, "النجاح يمسح العدّاد — بما فيه صفّ محاولته هو");
+    assert.equal(sql.sessions.size, 1);
+  });
+});
+
+test("التقليم: كل فتح ناجح يقلّم الجلسات المنتهية والمحاولات القديمة", async () => {
+  /* صفوف الجلسات كانت تتراكم بلا حذف: كل فتح صفّ، ولا شيء ينظّفه. */
+  await withEnv(fullEnv(), async () => {
+    const sql = statefulDb([OWNER_ROW()]);
+    await call({ sql, actor: OWNER_ROW(), kind: "api", apiPath: "secure-audit/gate/unlock", method: "POST", body: { password: GATE_PASSWORD } });
+    assert.equal(sql.matching(/DELETE FROM droua_gate_attempts WHERE ts </).length, 1, "تقليم المحاولات");
+    assert.equal(sql.matching(/DELETE FROM droua_gate_sessions WHERE absolute_exp </).length, 1, "تقليم الجلسات");
+  });
+});
+
+test("التقليم: حذف صفّ جلسة يفشل مغلقًا لا مفتوحًا", () => {
+  const gs = require("../lib/droua/gateSessions");
+  /* توكنٌ يشير إلى صفٍّ محذوف لا يجد جلسته. */
+  assert.equal(gs.isUsable(null, PROTECTED_ID, Date.now()), false);
+  assert.ok(gs.SESSION_PRUNE_GRACE_MS >= 24 * 60 * 60 * 1000, "مهلة يوم بعد السقف تُبقي أثر الجلسات الحديثة");
+});
