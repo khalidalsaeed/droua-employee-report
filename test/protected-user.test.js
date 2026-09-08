@@ -470,3 +470,209 @@ test("الموزّع: حذف حساب عاديّ يعمل كما كان", async 
     assert.equal(sql.matching(/DELETE FROM users/).length, 1);
   });
 });
+
+/* ════════════ د) مسار تغيير كلمة المرور الذاتي ════════════
+   POST /api/auth/change-password
+
+   ما يُثبَت هنا ليس «الفحوص تعمل» بل «الشكل نفسه لا يسمح»: الهدف يُشتقّ من
+   الجلسة ولا يُقبل من العميل بحال، والجسم لا يقبل مفتاحًا واحدًا زائدًا،
+   والمسار لا وجود له لغير الحساب المحميّ ولا حين يغيب الإعداد. */
+
+const SECOND_PROTECTED_ID = "22222222-3333-4444-5555-666666666666";
+
+async function callChangePassword({ sql, actorRow, body, method = "POST" }) {
+  process.env.SESSION_SECRET = TEST_SESSION_SECRET;
+  return withFakeDb(sql, async () => {
+    const { issueSessionToken } = require("../lib/auth/tokens");
+    const handler = require("../api/app");
+    const token = issueSessionToken({ id: actorRow.id, email: actorRow.email, role: actorRow.role }, false);
+    const req = {
+      method,
+      query: { kind: "api", apiPath: "auth/change-password" },
+      headers: { cookie: `session=${encodeURIComponent(token)}` },
+      body,
+    };
+    const { res, out } = makeRes();
+    await handler(req, res);
+    return out;
+  });
+}
+
+const VALID_NEW_PASSWORD = "a-sufficiently-long-new-password";
+
+test("الذاتي: الحساب المحميّ يغيّر كلمة مروره بالقديمة الصحيحة", async () => {
+  await withProtected(PROTECTED_ID, async () => {
+    const me = protectedRowWithPassword("hr"); // دورٌ لا يملك users:edit عمدًا
+    const sql = fakeUserDb([me]);
+    const out = await callChangePassword({
+      sql, actorRow: me,
+      body: { currentPassword: CURRENT_PASSWORD, newPassword: VALID_NEW_PASSWORD },
+    });
+    assert.equal(out.statusCode, 200, JSON.stringify(out.body));
+    assert.equal(out.body.ok, true);
+    /* القيد مُصرَّح به في الردّ لا مسكوت عنه. */
+    assert.equal(out.body.sessionsInvalidated, false);
+    const updates = sql.matching(/UPDATE users SET/);
+    assert.equal(updates.length, 1);
+    /* الهدف هو صاحب الجلسة — آخر معامل في العبارة هو WHERE id. */
+    assert.equal(updates[0].values[updates[0].values.length - 1], PROTECTED_ID);
+  });
+});
+
+test("الذاتي: يعمل بلا صلاحية users:edit — القدرة شخصية لا إدارية", async () => {
+  await withProtected(PROTECTED_ID, async () => {
+    for (const role of ["viewer", "finance", "hr"]) {
+      const me = protectedRowWithPassword(role);
+      const sql = fakeUserDb([me]);
+      const out = await callChangePassword({
+        sql, actorRow: me,
+        body: { currentPassword: CURRENT_PASSWORD, newPassword: VALID_NEW_PASSWORD },
+      });
+      assert.equal(out.statusCode, 200, `${role}: ${JSON.stringify(out.body)}`);
+      assert.equal(sql.matching(/UPDATE users SET/).length, 1);
+    }
+  });
+});
+
+test("الذاتي: القديمة الخاطئة أو الغائبة تُرفض بالرسالة نفسها", async () => {
+  await withProtected(PROTECTED_ID, async () => {
+    for (const body of [
+      { currentPassword: "كلمة-خاطئة", newPassword: VALID_NEW_PASSWORD },
+      { newPassword: VALID_NEW_PASSWORD },
+      { currentPassword: "", newPassword: VALID_NEW_PASSWORD },
+    ]) {
+      const me = protectedRowWithPassword("hr");
+      const sql = fakeUserDb([me]);
+      const out = await callChangePassword({ sql, actorRow: me, body });
+      assert.equal(out.statusCode, 403);
+      assert.equal(out.body.error, rules.MESSAGES.password_unverified);
+      assert.equal(sql.matching(/UPDATE users SET/).length, 0);
+    }
+  });
+});
+
+test("الذاتي: المستخدم غير المحميّ لا يجد المسار أصلًا", async () => {
+  await withProtected(PROTECTED_ID, async () => {
+    const other = userRow({ id: OTHER_ID, email: "other@example.test", role: "hr", passwordHash: require("../lib/auth/passwords").hashPassword(CURRENT_PASSWORD) });
+    const sql = fakeUserDb([other]);
+    const out = await callChangePassword({
+      sql, actorRow: other,
+      body: { currentPassword: CURRENT_PASSWORD, newPassword: VALID_NEW_PASSWORD },
+    });
+    assert.equal(out.statusCode, 404, "لا 403 — المسار لا وجود له لغيره");
+    assert.equal(out.body.error, "Not found");
+    assert.equal(sql.matching(/UPDATE users SET/).length, 0);
+  });
+});
+
+test("الذاتي: مدير النظام ومالك آخر لا يستطيعان استعماله نيابةً عنه", async () => {
+  await withProtected(PROTECTED_ID, async () => {
+    const { hashPassword } = require("../lib/auth/passwords");
+    const admin = userRow({ id: ADMIN_ID, email: "admin@example.test", role: "admin", passwordHash: hashPassword(CURRENT_PASSWORD) });
+    const owner2 = userRow({ id: OWNER2_ID, email: "owner2@example.test", role: "owner", passwordHash: hashPassword(CURRENT_PASSWORD) });
+    for (const actor of [admin, owner2]) {
+      const sql = fakeUserDb([actor, protectedRowWithPassword("hr")]);
+      /* حتى لو عرف كلمة مروره هو وحاول — المسار غير موجود له. */
+      const out = await callChangePassword({
+        sql, actorRow: actor,
+        body: { currentPassword: CURRENT_PASSWORD, newPassword: VALID_NEW_PASSWORD },
+      });
+      assert.equal(out.statusCode, 404, `${actor.role} يجب ألّا يجد المسار`);
+      assert.equal(sql.matching(/UPDATE users SET/).length, 0);
+    }
+  });
+});
+
+test("الذاتي: أي مفتاح زائد في الجسم يُرفض — ولا id يُقبل بحال", async () => {
+  await withProtected(`${PROTECTED_ID},${SECOND_PROTECTED_ID}`, async () => {
+    const extras = [
+      { id: SECOND_PROTECTED_ID },
+      { id: OTHER_ID },
+      { email: "attacker@example.test" },
+      { role: "owner" },
+      { status: "disabled" },
+      { permissions: ["users:manage"] },
+      { name: "اسم" },
+      { أي_حقل_قادم: 1 },
+    ];
+    for (const extra of extras) {
+      const me = protectedRowWithPassword("hr");
+      const sql = fakeUserDb([me]);
+      const out = await callChangePassword({
+        sql, actorRow: me,
+        body: { currentPassword: CURRENT_PASSWORD, newPassword: VALID_NEW_PASSWORD, ...extra },
+      });
+      assert.equal(out.statusCode, 400, `${Object.keys(extra)[0]} يجب أن يُرفض`);
+      assert.match(out.body.error, /كلمة المرور وحدها/);
+      assert.equal(sql.matching(/UPDATE users SET/).length, 0, "لا كتابة عند الرفض");
+    }
+  });
+});
+
+test("الذاتي: حسابٌ محميّ لا يمسّ حسابًا محميًّا آخر", async () => {
+  /* حسابان محميّان معًا: الأول يغيّر كلمة مروره، فيجب أن تقع الكتابة على
+     معرّفه هو لا على الثاني — والهدف مشتقٌّ من الجلسة فلا سبيل إلى غير ذلك. */
+  await withProtected(`${PROTECTED_ID},${SECOND_PROTECTED_ID}`, async () => {
+    const me = protectedRowWithPassword("hr");
+    const second = userRow({ id: SECOND_PROTECTED_ID, email: "second@example.test", role: "owner" });
+    const sql = fakeUserDb([me, second]);
+    const out = await callChangePassword({
+      sql, actorRow: me,
+      body: { currentPassword: CURRENT_PASSWORD, newPassword: VALID_NEW_PASSWORD },
+    });
+    assert.equal(out.statusCode, 200, JSON.stringify(out.body));
+    const updates = sql.matching(/UPDATE users SET/);
+    assert.equal(updates.length, 1);
+    assert.equal(updates[0].values[updates[0].values.length - 1], PROTECTED_ID);
+    assert.notEqual(updates[0].values[updates[0].values.length - 1], SECOND_PROTECTED_ID);
+  });
+});
+
+test("الذاتي: غياب PROTECTED_USER_IDS يُغلق المسار ولا يفتحه للجميع", async () => {
+  await withProtected(null, async () => {
+    const me = protectedRowWithPassword("hr");
+    const sql = fakeUserDb([me]);
+    const out = await callChangePassword({
+      sql, actorRow: me,
+      body: { currentPassword: CURRENT_PASSWORD, newPassword: VALID_NEW_PASSWORD },
+    });
+    assert.equal(out.statusCode, 404, "بلا إعداد لا يوجد المسار لأحد — ولا يصير مفتوحًا");
+    assert.equal(sql.matching(/UPDATE users SET/).length, 0);
+  });
+});
+
+test("الذاتي: سياسة كلمة المرور الجديدة تُفحص بعد إثبات الهوية لا قبله", async () => {
+  await withProtected(PROTECTED_ID, async () => {
+    /* قصيرة جدًا */
+    let me = protectedRowWithPassword("hr");
+    let sql = fakeUserDb([me]);
+    let out = await callChangePassword({ sql, actorRow: me, body: { currentPassword: CURRENT_PASSWORD, newPassword: "قصيرة" } });
+    assert.equal(out.statusCode, 400);
+    assert.equal(sql.matching(/UPDATE users SET/).length, 0);
+
+    /* مطابقة للحالية */
+    me = protectedRowWithPassword("hr");
+    sql = fakeUserDb([me]);
+    out = await callChangePassword({ sql, actorRow: me, body: { currentPassword: CURRENT_PASSWORD, newPassword: CURRENT_PASSWORD } });
+    assert.equal(out.statusCode, 400);
+    assert.equal(sql.matching(/UPDATE users SET/).length, 0);
+
+    /* ومن لا يُثبت هويته لا يتعلّم السياسة: كلمة قصيرة مع قديمة خاطئة
+       تُردّ بردّ الهوية لا بردّ السياسة. */
+    me = protectedRowWithPassword("hr");
+    sql = fakeUserDb([me]);
+    out = await callChangePassword({ sql, actorRow: me, body: { currentPassword: "خاطئة", newPassword: "قصيرة" } });
+    assert.equal(out.statusCode, 403);
+    assert.equal(out.body.error, rules.MESSAGES.password_unverified);
+  });
+});
+
+test("الذاتي: GET مرفوض — الكتابة بـPOST وحدها", async () => {
+  await withProtected(PROTECTED_ID, async () => {
+    const me = protectedRowWithPassword("hr");
+    const sql = fakeUserDb([me]);
+    const out = await callChangePassword({ sql, actorRow: me, method: "GET", body: {} });
+    assert.equal(out.statusCode, 405);
+    assert.equal(sql.matching(/UPDATE users SET/).length, 0);
+  });
+});

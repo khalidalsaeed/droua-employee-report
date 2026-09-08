@@ -204,6 +204,7 @@ async function handleAuth(req, res, action) {
   if (action === "login") return authLogin(req, res);
   if (action === "logout") return authLogout(req, res);
   if (action === "me") return authMe(req, res);
+  if (action === "change-password") return authChangePassword(req, res);
   if (action === "permissions-catalogue") return authCatalogue(req, res);
   res.status(404).json({ ok: false, error: "Not found" });
 }
@@ -277,6 +278,83 @@ async function authMe(req, res) {
     res.setHeader("Set-Cookie", sessionCookie(fresh, false));
   }
   res.status(200).json({ ok: true, user: sessionUser(user) });
+}
+
+/* ---------------- تغيير كلمة مرور الحساب المحميّ (Self-service) ----------------
+   =========================================================================
+   مسارٌ واحدٌ ضيّق، سببه أن اكتمال حماية الحساب المحميّ كان معلَّقًا بدوره:
+   تعديل المستخدمين في handleUsers يشترط users:edit، فحسابٌ محميّ بدور
+   لا يملكها لا يستطيع تغيير كلمة مروره من الواجهة أصلًا. ربط الحماية
+   بالدور هو ما أردنا التخلّص منه، فهذا المسار يفكّ الارتباط.
+
+   ما يجعله آمنًا ليس فحصًا واحدًا بل شكلَه:
+
+     • الهدف لا يأتي من العميل إطلاقًا — يُشتقّ من الجلسة وحدها. فلا
+       معنى لـ id في الجسم، ولا سبيل إلى توجيه المسار نحو حساب آخر مهما
+       كان الطلب. هذا أقوى من فحص actor.id === target.id، لأنه لا يترك
+       مقارنةً يمكن أن تُنسى أو تُكتب خطأً: لا وجود لـ target أصلًا.
+
+     • يغيّر passwordHash وحده. أي مفتاح زائد في الجسم يُرفض بـ400 —
+       لا يُتجاهل بصمت — فلا يستطيع أحد تمرير email أو role أو status أو
+       permissions عبره، ولا حقل يُضاف مستقبلًا.
+
+     • لا يوجد لغير الحساب المحميّ: 404 بنفس شكل أي مسار غير معروف في
+       handleAuth. وحين لا يكون PROTECTED_USER_IDS مضبوطًا لا يوجد لأحد —
+       غيابُ الإعداد يُغلق المسار ولا يفتحه للجميع.
+
+     • لا يشترط users:edit ولا أي صلاحية: القدرةُ هنا شخصية لا إدارية،
+       ومصدرها ملكيةُ الحساب لا موقعٌ في نظام الصلاحيات.
+
+   ⚠️ قيدٌ لا يمكن رفعه في هذه المرحلة: الجلسات القائمة لا تُبطَل.
+   جلسات المنصّة توكناتٌ موقَّعة بلا حالة على الخادم (lib/auth/tokens.js):
+   لا جدول جلسات، ولا عمود يربط التوكن بكلمة المرور. فإبطالها يستلزم إمّا
+   تدوير SESSION_SECRET — وهو إخراجٌ لكل مستخدمي المنصّة — أو تغييرًا في
+   requireUser يمسّ كل حساب. كلاهما خارج نطاق هذه المرحلة، فالردّ يُصرّح
+   بـ sessionsInvalidated: false بدل أن يوهم الواجهة بضمانٍ لا يقع. */
+
+const PASSWORD_CHANGE_KEYS = new Set(["currentPassword", "newPassword"]);
+const MIN_PROTECTED_PASSWORD_LENGTH = 12;
+
+async function authChangePassword(req, res) {
+  if (req.method !== "POST") return res.status(405).json({ ok: false, error: "Method not allowed" });
+  const actor = await requireUser(req);
+  if (!actor) return res.status(401).json({ ok: false, error: "غير مسجّل الدخول" });
+  if (!protectedUsers.isProtected(actor.id)) return res.status(404).json({ ok: false, error: "Not found" });
+
+  const body = parseBody(req);
+  if (Object.keys(body || {}).some((k) => !PASSWORD_CHANGE_KEYS.has(k))) {
+    return res.status(400).json({ ok: false, error: "هذا المسار يغيّر كلمة المرور وحدها" });
+  }
+  const currentPassword = typeof body.currentPassword === "string" ? body.currentPassword : "";
+  const newPassword = typeof body.newPassword === "string" ? body.newPassword : "";
+
+  /* التحقّق من الحالية أوّلًا وقبل أي فحص للجديدة: من لا يثبت أنه صاحب
+     الحساب لا يتعلّم منّا سياسة كلمات المرور ولا أي تفصيل آخر. */
+  if (!currentPassword || !verifyPassword(currentPassword, actor.passwordHash)) {
+    logEvent({
+      type: "protected_user_password_change_denied", actorEmail: actor.email, actorId: actor.id,
+      targetId: actor.id,
+      meta: { route: "self_service", reason: currentPassword ? "wrong_current_password" : "missing_current_password" },
+    });
+    /* رسالة واحدة للحالتين — لا تُميّز «لم تُرسل» من «خاطئة». */
+    return res.status(403).json({ ok: false, error: protectedUsers.MESSAGES.password_unverified });
+  }
+  if (newPassword.length < MIN_PROTECTED_PASSWORD_LENGTH) {
+    return res.status(400).json({ ok: false, error: `كلمة المرور الجديدة يجب ألّا تقلّ عن ${MIN_PROTECTED_PASSWORD_LENGTH} محرفًا` });
+  }
+  if (newPassword === currentPassword) {
+    return res.status(400).json({ ok: false, error: "كلمة المرور الجديدة يجب أن تختلف عن الحالية" });
+  }
+
+  try {
+    /* actor.id لا id من الجسم. والخيارات هي نفسها التي يفرضها حارس
+       lib/auth/users.js، فالمسار يمرّ من الحارس ولا يلتفّ عليه. */
+    await updateUser(actor.id, { passwordHash: hashPassword(newPassword) }, { selfEdit: true, currentPasswordVerified: true });
+  } catch (err) {
+    return res.status(400).json({ ok: false, error: (err && err.message) || "تعذّر تغيير كلمة المرور" });
+  }
+  logEvent({ type: "protected_user_password_changed", actorEmail: actor.email, actorId: actor.id, targetId: actor.id, meta: { route: "self_service" } });
+  res.status(200).json({ ok: true, sessionsInvalidated: false });
 }
 
 /* ---------------- generic data CRUD ---------------- */
