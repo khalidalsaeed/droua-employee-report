@@ -1,0 +1,112 @@
+#!/usr/bin/env node
+/* تهيئة جداول بوابة القسم السرّي.
+   =========================================================================
+   ثلاثة جداول، **كلّها تخصّ البوابة وحدها**: الجلسة، ومحاولات الفتح،
+   والتدقيق الأمنيّ. ⛔ ولا جدول لمسيرات ولا موظفين ولا ملفات — تلك مراحل
+   لاحقة لها سكربتها.
+
+   على نمط scripts/setup-payroll-monthly.js حرفيًا: كل عبارة IF NOT EXISTS،
+   ولا يحذف شيئًا ولا يعدّل جدولًا قائمًا ولا يمسّ بيانات. تشغيله مرّتين لا
+   يفعل شيئًا في الثانية.
+
+   التشغيل:   node scripts/setup-droua-gate.js
+   المعاينة:  node scripts/setup-droua-gate.js --dry-run
+              تطبع ما سيُنفَّذ ولا تتّصل بالقاعدة إطلاقًا. */
+
+const STATEMENTS = [
+  {
+    label: "جدول droua_gate_sessions",
+    sql: `
+      CREATE TABLE IF NOT EXISTS droua_gate_sessions (
+        -- المفتاح هو sha256 لمعرّف الجلسة، لا المعرّف نفسه ولا التوكن.
+        -- التوكن لا يُخزَّن إطلاقًا، فتسريب القاعدة وحده لا يعطي ما يُستعمل.
+        sid_hash      text PRIMARY KEY,
+        user_id       text NOT NULL,
+        issued_at     timestamptz NOT NULL DEFAULT now(),
+        last_seen_at  timestamptz NOT NULL DEFAULT now(),
+        -- ينزلق مع النشاط، ولا يتجاوز absolute_exp أبدًا.
+        idle_exp      timestamptz NOT NULL,
+        -- يُثبَّت عند الفتح ولا يُمدَّد. هو ما يمنع جلسة أبديّة بنشاط مصطنع.
+        absolute_exp  timestamptz NOT NULL,
+        -- الإبطال الحقيقي: توكن موقَّع لا يُبطَل بلا صفّ في القاعدة.
+        revoked_at    timestamptz
+        -- عمدًا بلا ip ولا user_agent: الربط بالـUA حماية ضعيفة تقطع جلسة
+        -- مشروعة مع كل تحديث متصفّح ولا تمنع من ينسخ الترويسة.
+      )`,
+  },
+  {
+    label: "فهرس droua_gate_sessions(user_id)",
+    sql: `CREATE INDEX IF NOT EXISTS idx_droua_gate_sessions_user ON droua_gate_sessions (user_id)`,
+  },
+  {
+    label: "جدول droua_gate_attempts",
+    sql: `
+      CREATE TABLE IF NOT EXISTS droua_gate_attempts (
+        id       bigserial PRIMARY KEY,
+        user_id  text NOT NULL,
+        -- 'fail' | 'success' — ولا شيء عن كلمة المرور: لا هي، ولا طولها،
+        -- ولا أول حرف منها، ولا هاشها.
+        outcome  text NOT NULL,
+        ts       timestamptz NOT NULL DEFAULT now()
+      )`,
+  },
+  {
+    label: "فهرس droua_gate_attempts(user_id, ts)",
+    sql: `CREATE INDEX IF NOT EXISTS idx_droua_gate_attempts ON droua_gate_attempts (user_id, ts DESC)`,
+  },
+  {
+    label: "جدول droua_gate_audit",
+    sql: `
+      CREATE TABLE IF NOT EXISTS droua_gate_audit (
+        id       bigserial PRIMARY KEY,
+        ts       timestamptz NOT NULL DEFAULT now(),
+        event    text NOT NULL,
+        user_id  text,
+        -- يمرّ بمُنقّي قائمة مسموحة في lib/droua/audit.js قبل الكتابة.
+        meta     jsonb NOT NULL DEFAULT '{}'::jsonb,
+        -- HMAC مقطوع بمفتاح البوابة مع فصل مجال. ليس عنوانًا ولا يُعكس.
+        ip_hash  text
+      )`,
+  },
+  {
+    label: "فهرس droua_gate_audit(ts)",
+    sql: `CREATE INDEX IF NOT EXISTS idx_droua_gate_audit_ts ON droua_gate_audit (ts DESC)`,
+  },
+];
+
+/* sql.query() هي واجهة تنفيذ نصٍّ كامل في @neondatabase/serverless.
+   sql.unsafe() ليست دالّة تنفيذ أصلًا — تُرجع وصفًا لا Promise، و await
+   عليه يحلّ فورًا فتُطبع «تم» بلا أن يصل شيء إلى القاعدة. نفس الملاحظة
+   الموثّقة في scripts/setup-payroll-monthly.js، ويحرسها اختبار انحدار. */
+async function run(sql, { onProgress } = {}) {
+  for (const s of STATEMENTS) {
+    await sql.query(s.sql);
+    if (onProgress) onProgress(s);
+  }
+  return STATEMENTS.length;
+}
+
+async function main() {
+  if (process.argv.includes("--dry-run")) {
+    console.log("— معاينة فقط، بلا اتّصال بالقاعدة —\n");
+    for (const s of STATEMENTS) console.log(`${s.label}:\n${s.sql.trim()}\n`);
+    return;
+  }
+  if (!process.env.DATABASE_URL) {
+    console.error("DATABASE_URL غير مُهيّأ. صدّره أوّلًا أو شغّل مع --dry-run.");
+    process.exitCode = 1;
+    return;
+  }
+  const { getSql } = require("../lib/db");
+  const count = await run(getSql(), { onProgress: (s) => console.log(`${s.label} ... تم`) });
+  console.log(`\nاكتملت التهيئة (${count} عبارة). لم تُمسّ أي بيانات قائمة.`);
+}
+
+if (require.main === module) {
+  main().catch((err) => {
+    console.error("\nفشلت التهيئة:", (err && err.message) || err);
+    process.exitCode = 1;
+  });
+}
+
+module.exports = { STATEMENTS, run };

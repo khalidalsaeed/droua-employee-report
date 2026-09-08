@@ -65,9 +65,30 @@ const METHOD_ACTION = { GET: "view", POST: "create", PUT: "edit", DELETE: "delet
 
 const FORBIDDEN = { ok: false, error: "صلاحيات غير كافية" };
 
+/* ─── قسم المراجعة السرّي ───
+   تفويضٌ كامل قبل أي منطق مشترك، و require كسول: طلبٌ لا يخصّ القسم لا
+   يُحمّل شيفرته أصلًا — لا في الذاكرة ولا في مسار التنفيذ.
+
+   المطابقة بادئةٌ كاملة لا احتواء: "secure-auditX" و "data/secure-audit"
+   لا يُفوَّضان. والموجّه يردّ على الطلب كاملًا ولا يرمي، فلا يبلغ
+   catch-all أدناه الذي يُرجع err.message.
+
+   هذه الأسطر هي كامل ما يعرفه هذا الملفّ عن القسم: لا مسار، ولا حارس،
+   ولا استجابة، ولا جدول. */
+const SECURE_SECTION = "secure-audit";
+function isSecureSectionRequest(query) {
+  if (query.kind === "page") return query.page === SECURE_SECTION;
+  if (query.kind === "api") {
+    const p = String(query.apiPath || "");
+    return p === SECURE_SECTION || p.startsWith(SECURE_SECTION + "/");
+  }
+  return false;
+}
+
 module.exports = async function handler(req, res) {
   const { kind } = req.query || {};
   try {
+    if (isSecureSectionRequest(req.query || {})) return await require("../lib/droua/router")(req, res);
     if (kind === "page") return await handlePage(req, res);
     if (kind === "api") return await handleApi(req, res);
     res.status(404).json({ ok: false, error: "Not found" });
