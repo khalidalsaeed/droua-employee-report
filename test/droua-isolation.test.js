@@ -126,6 +126,48 @@ test("العزل: سكربت التهيئة لا يُنشئ إلا جداول ا
   }
 });
 
+test("المخطّط: قيد CHECK على outcome في القاعدة لا في التطبيق وحده", () => {
+  const { STATEMENTS } = require("../scripts/setup-droua-gate");
+  const attempts = STATEMENTS.find((x) => /CREATE TABLE IF NOT EXISTS droua_gate_attempts/.test(x.sql));
+  assert.ok(attempts, "جدول المحاولات يجب أن يوجد");
+  assert.match(attempts.sql, /CHECK\s*\(outcome IN \('fail', 'success'\)\)/,
+    "سلامةُ الحقل الذي يُبنى عليه القفل يجب ألّا تعتمد على ذاكرة كل كاتب مستقبليّ");
+});
+
+test("المخطّط: فهارس المحاولات تطابق شكل الاستعلامات الفعلية", () => {
+  const { STATEMENTS } = require("../scripts/setup-droua-gate");
+  const all = STATEMENTS.map((x) => x.sql.replace(/\s+/g, " ")).join("\n");
+  /* شكل failureCounts و clearFailures: user_id ثم outcome ثم نوافذ ts. */
+  assert.match(all, /ON droua_gate_attempts \(user_id, outcome, ts DESC\)/);
+  /* شكل prune: ts وحده، ولا يخدمه فهرس ts فيه عمود تالٍ. */
+  assert.match(all, /ON droua_gate_attempts \(ts\)/);
+  /* والقديم أُسقط: مقدّمته نفسها، فوجوده كلفةُ كتابةٍ ومساحةٍ بلا مقابل. */
+  assert.ok(!/ON droua_gate_attempts \(user_id, ts DESC\)/.test(all),
+    "الفهرس القديم (user_id, ts DESC) صار زائدًا بعد المركّب");
+});
+
+test("المخطّط: كل مسند يُستعمل في الشيفرة له فهرس يخدمه", () => {
+  /* الربط بين الاستعلام والفهرس مفحوصٌ آليًا: مسندٌ يُضاف بلا فهرس يظهر
+     هنا لا بعد أن يثقل الجدول في الإنتاج. */
+  const { STATEMENTS } = require("../scripts/setup-droua-gate");
+  const indexes = STATEMENTS.map((x) => x.sql.replace(/\s+/g, " ")).join("\n");
+  const rateLimit = fs.readFileSync(path.join(DROUA_DIR, "rateLimit.js"), "utf8");
+  const sessions = fs.readFileSync(path.join(DROUA_DIR, "gateSessions.js"), "utf8");
+  const audit = fs.readFileSync(path.join(DROUA_DIR, "audit.js"), "utf8");
+
+  if (/WHERE ts < /.test(rateLimit)) assert.match(indexes, /droua_gate_attempts \(ts\)/);
+  if (/WHERE user_id = \$\{userId\} AND outcome/.test(rateLimit)) {
+    assert.match(indexes, /droua_gate_attempts \(user_id, outcome/);
+  }
+  /* sid_hash مفتاحٌ أساسيّ فلا يحتاج فهرسًا إضافيًا. */
+  assert.match(sessions, /sid_hash/);
+  assert.match(indexes, /sid_hash text PRIMARY KEY/);
+  if (/WHERE user_id = \$\{userId\} AND revoked_at IS NULL/.test(sessions)) {
+    assert.match(indexes, /droua_gate_sessions \(user_id\)/);
+  }
+  if (/NOT EXISTS/.test(audit)) assert.match(indexes, /droua_gate_audit \(event, ip_hash, ts DESC\)/);
+});
+
 test("العزل: لا طباعة لجسم الطلب في وحدات القسم", () => {
   for (const { file, text } of readAll(drouaFiles())) {
     assert.ok(!/console\.log\s*\(\s*(req\.)?body/.test(text), `${file} قد يطبع جسم الطلب`);

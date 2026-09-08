@@ -46,13 +46,35 @@ const STATEMENTS = [
         user_id  text NOT NULL,
         -- 'fail' | 'success' — ولا شيء عن كلمة المرور: لا هي، ولا طولها،
         -- ولا أول حرف منها، ولا هاشها.
-        outcome  text NOT NULL,
+        --
+        -- القيد في القاعدة لا في التطبيق وحده: سلامةُ الحقل الذي يُبنى
+        -- عليه القفل يجب ألّا تعتمد على أن كل كاتبٍ مستقبليّ سيتذكّر
+        -- القيمتين. قيمةٌ ثالثة تتسلّل تعني عدّادًا يُحسب خطأً — أي قفلًا
+        -- لا يقع حين يجب.
+        -- ('success' غير مكتوب اليوم: النجاح يمسح العدّاد بدل أن يُسجَّل،
+        --  ويبقى مسموحًا في القيد تحسّبًا لتغيّر ذلك.)
+        outcome  text NOT NULL CHECK (outcome IN ('fail', 'success')),
         ts       timestamptz NOT NULL DEFAULT now()
       )`,
   },
   {
-    label: "فهرس droua_gate_attempts(user_id, ts)",
-    sql: `CREATE INDEX IF NOT EXISTS idx_droua_gate_attempts ON droua_gate_attempts (user_id, ts DESC)`,
+    label: "فهرس droua_gate_attempts(user_id, outcome, ts) — لعدّ الإخفاقات",
+    // شكل استعلام failureCounts حرفيًا: WHERE user_id = $ AND outcome =
+    // 'fail' ثم ثلاث نوافذ على ts. الأعمدة الثلاثة بهذا الترتيب تجعل
+    // الاستعلام يُخدَم من الفهرس وحده. ويخدم clearFailures بالمسند نفسه.
+    //
+    // وهو يُغني عن (user_id, ts DESC) تمامًا: عمودُه الرائد نفسه، فكلّ ما
+    // كان ذاك يخدمه يخدمه هذا وزيادة. ولذلك أُسقط القديم من المخطّط قبل
+    // الإنشاء — فهرسان بمقدّمة واحدة كلفةُ كتابةٍ ومساحةٍ بلا مقابل.
+    // (لا حذف من قاعدة: لم تُنشأ بعد.)
+    sql: `CREATE INDEX IF NOT EXISTS idx_droua_gate_attempts_lookup
+            ON droua_gate_attempts (user_id, outcome, ts DESC)`,
+  },
+  {
+    label: "فهرس droua_gate_attempts(ts) — للتقليم",
+    // prune يحذف بـ WHERE ts < $ بلا user_id، و ts عمودٌ تالٍ في الفهرس
+    // أعلاه فلا يُستعمل — فيصير الحذف مسحًا كاملًا يثقل كلّما كبر الجدول.
+    sql: `CREATE INDEX IF NOT EXISTS idx_droua_gate_attempts_ts ON droua_gate_attempts (ts)`,
   },
   {
     label: "جدول droua_gate_audit",
