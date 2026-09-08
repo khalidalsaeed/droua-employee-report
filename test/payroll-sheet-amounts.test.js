@@ -379,3 +379,129 @@ test("صفّ لم تُصبه الكتابة يُبلَّغ في notFound ولا 
   assert.equal(r.updated, 0);
   assert.deepEqual(r.notFound, ["900"]);
 });
+
+/* ── التقرير ──
+   =========================================================================
+   عطلٌ في العرض يمحو أثر عملية سليمة: تقرير الـbackfill انهار يومًا بـ
+   «Cannot read properties of undefined (reading 'sumNet')» بعد أن أدّى
+   عمله كاملًا وصحيحًا، لأن مسار النجاح أسقط حقلًا يقرؤه سطرُ طباعة.
+   وظلّ العطل مستورًا ما دامت كل التشغيلات تفشل قبل الوصول إليه.
+
+   فكل سطر في report يفحص وجود ما يقرؤه، وهذه الاختبارات تُمرّر عليه
+   ردودًا ناقصة الحقول واحدًا واحدًا: لا واحد منها يجوز أن يرفع خطأً. */
+
+const { report, parseArgs, money } = require("../scripts/sync-sheet-amounts.js");
+
+function capture(r, opts = {}) {
+  const out = [];
+  const push = (...a) => out.push(a.join(" "));
+  const ok = report(r, { log: push, error: push, ...opts });
+  return { ok, text: out.join("\n") };
+}
+
+test("التقرير لا ينهار على ردٍّ ناجح ناقص كل حقل اختياري", () => {
+  /* أقلّ ردٍّ ممكن: ok وحده. */
+  const { ok, text } = capture({ ok: true, runId: "2026-08", monthLabel: "أغسطس 2026", url: "u" });
+  assert.equal(ok, true);
+  assert.match(text, /الرواتب المقروءة \(0\)/);
+});
+
+test("انحدار: سطر «تحقّق الاكتمال» لا ينهار حين يغيب extraction", () => {
+  const { ok } = capture({ ok: true, runId: "2026-08", monthLabel: "أ", url: "u", rows: [] });
+  assert.equal(ok, true, "غياب extraction يُسقط السطر لا العملية");
+});
+
+test("انحدار: totals_mismatch بلا extraction لا ينهار", () => {
+  const { ok, text } = capture({ ok: false, reason: "totals_mismatch" });
+  assert.equal(ok, false);
+  assert.match(text, /لا يطابق صف الإجماليات/);
+});
+
+test("انحدار: duplicate_jisr_in_platform بلا eids لا ينهار", () => {
+  const { ok, text } = capture({ ok: false, reason: "duplicate_jisr_in_platform", jisrNo: "11" });
+  assert.equal(ok, false);
+  assert.match(text, /رقم جسر نفسه/);
+});
+
+test("انحدار: sheet_download_failed بلا error لا ينهار", () => {
+  const { ok } = capture({ ok: false, reason: "sheet_download_failed" });
+  assert.equal(ok, false);
+});
+
+test("سببٌ غير معروف يُطبع كما هو لا يُخفى", () => {
+  const { ok, text } = capture({ ok: false, reason: "شيء_لم_نتوقّعه" });
+  assert.equal(ok, false);
+  assert.match(text, /شيء_لم_نتوقّعه/, "سببٌ بلا ترجمة يظهر خامًا بدل أن يُبتلع");
+});
+
+test("current غير موجود يُعرض «جديد» لا «تصحيح (كان undefined)»", () => {
+  const { text } = capture({ ok: true, runId: "r", monthLabel: "م", url: "u",
+    rows: [{ jisrNo: "11", eid: "900", name: "الموظف 900", net: 3412.08 }] });
+  assert.match(text, /جديد/);
+  assert.ok(!/undefined/.test(text), "لا كلمة undefined في تقرير يقرؤه إنسان");
+});
+
+test("التقرير يعرض المنزلتين كاملتين — الثماني هللات لا تُدوَّر", () => {
+  const { text } = capture({ ok: true, runId: "r", monthLabel: "م", url: "u",
+    rows: [{ jisrNo: "11", eid: "900", name: "ن", net: 3412.08, current: null }] });
+  assert.match(text, /3,412\.08/, "التدوير إلى 3,412.1 يخفي الفرق الذي وُجدت الميزة لأجله");
+});
+
+test("التباعد بين الكشف واللقطة يُذكر صريحًا في التقرير", () => {
+  const { text } = capture({ ok: true, runId: "r", monthLabel: "م", url: "u", rows: [],
+    unknown: [{ jisrNo: "99", nameHint: "مبعثر", net: 1 }],
+    missing: [{ eid: "910", name: "بلا صفّ" }],
+    withoutSheetRow: [{ eid: "911", name: "بلا سطر" }] });
+  assert.match(text, /لا يحملها أي موظف \(1\)/);
+  assert.match(text, /بلا صفّ إثبات في هذا المسير \(1\)/);
+  assert.match(text, /بلا سطر في الكشف \(1\)/);
+  /* والأهمّ: يقول صريحًا إنه لم يكتب لهم ولم يُنشئ صفوفًا. */
+  assert.match(text, /لم تُخزَّن/);
+  assert.match(text, /لا تُدرج/);
+  assert.match(text, /لم تُمسّ/);
+});
+
+test("المعاينة تقول إنها لم تكتب، والتنفيذ يقول ما لم يمسّه", () => {
+  const base = { ok: true, runId: "r", monthLabel: "م", url: "u", rows: [], attempted: 3, unchanged: 7 };
+  assert.match(capture(base, { dryRun: true }).text, /لم يُكتب شيء/);
+  const done = capture({ ...base, updated: 3, notFound: [] }).text;
+  assert.match(done, /حُدِّث: 3 · بلا تغيير: 7/);
+  assert.match(done, /لم يُمسّ المسير ولا مرفقاته ولا حالته ولا أي إثبات مرفوع/);
+  assert.match(done, /لم يُرسل أي تنبيه/);
+});
+
+/* ── قراءة الأعلام ── */
+
+test("--run مطلوب صراحةً: لا افتراض لشهرٍ في عملية تكتب", () => {
+  const r = parseArgs([]);
+  assert.equal(r.ok, false);
+  assert.match(r.message, /--run مطلوب/);
+});
+
+test("معرّف بصيغة خاطئة يُرفض قبل أي اتّصال", () => {
+  for (const bad of ["2026-8", "2026", "aug", "2026-08-01", ""]) {
+    assert.equal(parseArgs(["--run", bad]).ok, false, `«${bad}» يجب أن يُرفض`);
+  }
+  assert.equal(parseArgs(["--run", "2026-08"]).ok, true);
+});
+
+test("--dry-run و --exclude يُقرآن كما هما", () => {
+  const r = parseArgs(["--run", "2026-08", "--dry-run", "--exclude", "82, 85 ,"]);
+  assert.equal(r.dryRun, true);
+  assert.deepEqual(r.exclude, ["82", "85"], "المسافات والفواصل الزائدة تُنظَّف");
+  assert.equal(parseArgs(["--run", "2026-08"]).dryRun, false, "التنفيذ ليس الافتراضي الصامت");
+  assert.deepEqual(parseArgs(["--run", "2026-08"]).exclude, []);
+});
+
+test("علَمٌ بلا قيمة لا يبتلع العلَم الذي يليه", () => {
+  /* ‎--exclude --dry-run: لو قُرئ «--dry-run» قيمةً للاستثناء لضاع العلَم. */
+  const r = parseArgs(["--run", "2026-08", "--exclude", "--dry-run"]);
+  assert.deepEqual(r.exclude, []);
+  assert.equal(r.dryRun, true);
+});
+
+test("money يعرض منزلتين دائمًا بفاصلة ألفية", () => {
+  assert.equal(money(3412.08), "3,412.08");
+  assert.equal(money(2100), "2,100.00");
+  assert.equal(money(0), "0.00");
+});

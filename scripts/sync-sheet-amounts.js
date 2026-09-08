@@ -59,23 +59,111 @@ function argValue(argv, flag) {
   return v && !v.startsWith("--") ? v : null;
 }
 
-async function main() {
-  const argv = process.argv.slice(2);
-  const dryRun = argv.includes("--dry-run");
-  const runId = argValue(argv, "--run");
+/* ─── التقرير، مفصولًا عن التنفيذ ───
+   =========================================================================
+   مفصول لسببين. الأول أنه يُختبر: تقرير الـbackfill انهار يومًا بـ
+   «Cannot read properties of undefined (reading 'sumNet')» بعد عمل صحيح
+   تمامًا — لأن مسار النجاح كان يُسقط حقلًا يقرؤه سطرُ طباعة. عطلٌ في
+   العرض يمحو أثر عملية سليمة، فيستحقّ اختباره كما يُختبر المنطق.
 
+   والثاني أنه يُعرَض قبل الوصول إلى Production: يمكن تشغيله على قاعدة
+   مُزيَّفة وعيّنة مُعقَّمة، فيُرى شكل الجدول ويُراجَع قبل أن يُقرأ رقم
+   حقيقي واحد. */
+function report(r, { dryRun = false, log = console.log, error = console.error } = {}) {
+  if (!r.ok) {
+    error(`فشل: ${REASONS[r.reason] || r.reason}`);
+    /* كل سطر تفصيل يفحص وجود ما يقرؤه: تقريرٌ ناقص أهون من انهيار. */
+    if (r.reason === "totals_mismatch" && r.extraction) {
+      error(`  المستخرج: ${money(r.extraction.sumNet)} · المطبوع: ${money(r.extraction.totalNet)}`);
+    }
+    if (r.reason === "duplicate_jisr_in_platform" && Array.isArray(r.eids)) {
+      error(`  رقم جسر ${r.jisrNo} عند الموظفَين: ${r.eids.join(" و ")}`);
+    }
+    if (r.reason === "sheet_download_failed" && r.error) error(`  ${r.error}`);
+    return false;
+  }
+
+  log(`المسير: ${r.monthLabel} (${r.runId})`);
+  log(`الكشف: ${r.url}`);
+  if (r.extraction) {
+    log(`تحقّق الاكتمال: مجموع الصوافي ${money(r.extraction.sumNet)} = صف الإجماليات ${money(r.extraction.totalNet)} ✅`);
+  }
+
+  const rows = r.rows || [];
+  log(`\nالرواتب المقروءة (${rows.length}):`);
+  log("  رقم جسر → رقم ضمان   راتب المسير      الحالة");
+  for (const row of rows) {
+    const state = row.current === null || row.current === undefined ? "جديد"
+      : row.changed ? `تصحيح (كان ${money(row.current)})`
+      : "كما هو";
+    log(`  ${String(row.jisrNo).padStart(7)} → ${String(row.eid).padStart(8)}   ${money(row.net).padStart(12)}   ${state.padEnd(24)} ${row.name}`);
+  }
+
+  /* التباعد بين الكشف واللقطة يُبلَّغ صريحًا ولا يُصلَح بالتخمين: قد
+     يكون موظفًا غادر، وقد يكون كشفًا ناقصًا — وكلاهما قرار إنسان. */
+  const unknown = r.unknown || [];
+  if (unknown.length) {
+    log(`\n⚠️  أرقام جسر في الكشف لا يحملها أي موظف (${unknown.length}):`);
+    for (const u of unknown) log(`  ${u.jisrNo} — الاسم في الكشف تقريبًا: «${u.nameHint}» · صافيه ${money(u.net)}`);
+    log("  رواتبهم لم تُخزَّن. املأ «رقم جسر» لهم في السجلّ ثم أعد التشغيل.");
+  }
+  const missing = r.missing || [];
+  if (missing.length) {
+    log(`\n⚠️  موظفون في الكشف بلا صفّ إثبات في هذا المسير (${missing.length}):`);
+    for (const m of missing) log(`  رقم ضمان ${m.eid} — ${m.name}`);
+    log("  لم يُنشأ لهم صفّ: هذه العملية لا تُدرج، تُحدّث فقط.");
+  }
+  const orphans = r.withoutSheetRow || [];
+  if (orphans.length) {
+    log(`\n⚠️  موظفون في المسير بلا سطر في الكشف (${orphans.length}):`);
+    for (const w of orphans) log(`  رقم ضمان ${w.eid} — ${w.name}`);
+    log("  صفوفهم لم تُمسّ، وراتبهم يبقى غير مقروء.");
+  }
+  const excluded = r.excluded || [];
+  if (excluded.length) log(`\nمستثنى بأمرك: أرقام جسر ${excluded.map((u) => u.jisrNo).join(", ")}`);
+
+  /* العدّادات تغيب حين يُستدعى التقرير على نتيجة القراءة وحدها بلا
+     خطوة الكتابة. وصفرٌ هنا صادق — لم تُحدَّث صفوف فعلًا — أمّا
+     «حُدِّث: undefined» فسطرٌ يكذب على قارئه، وهو أسوأ من انهيار:
+     الانهيار يُرى والكذب يُصدَّق. */
+  const count = (n) => (typeof n === "number" ? n : 0);
+  if (dryRun) {
+    log(`\nسيُحدَّث ${count(r.attempted)} صفًّا، و${count(r.unchanged)} صفًّا يحمل القيمة نفسها فلن يُمسّ.`);
+    log("لم يُكتب شيء. أعد التشغيل بلا --dry-run للتنفيذ.");
+    return true;
+  }
+  log(`\nحُدِّث: ${count(r.updated)} · بلا تغيير: ${count(r.unchanged)}`);
+  if ((r.notFound || []).length) log(`⚠️  صفوف لم تُصَب: ${r.notFound.join(", ")}`);
+  log("لم يُمسّ المسير ولا مرفقاته ولا حالته ولا أي إثبات مرفوع، ولم يُرسل أي تنبيه.");
+  return true;
+}
+
+/* يفصل قراءة الأعلام عن تنفيذها كي تُختبر قواعد الرفض بلا تشغيل. */
+function parseArgs(argv) {
+  const runId = argValue(argv, "--run");
   if (!runId) {
-    console.error("‏--run مطلوب. مثال: node scripts/sync-sheet-amounts.js --run 2026-08 --dry-run");
-    process.exitCode = 1;
-    return;
+    return { ok: false, message: "‏--run مطلوب. مثال: node scripts/sync-sheet-amounts.js --run 2026-08 --dry-run" };
   }
   if (!/^\d{4}-\d{2}$/.test(runId)) {
-    console.error(`معرّف المسير «${runId}» ليس بصيغة YYYY-MM.`);
+    return { ok: false, message: `معرّف المسير «${runId}» ليس بصيغة YYYY-MM.` };
+  }
+  const excludeArg = argValue(argv, "--exclude");
+  return {
+    ok: true,
+    runId,
+    dryRun: argv.includes("--dry-run"),
+    exclude: excludeArg ? excludeArg.split(",").map((x) => x.trim()).filter(Boolean) : [],
+  };
+}
+
+async function main() {
+  const parsed = parseArgs(process.argv.slice(2));
+  if (!parsed.ok) {
+    console.error(parsed.message);
     process.exitCode = 1;
     return;
   }
-  const excludeArg = argValue(argv, "--exclude");
-  const exclude = excludeArg ? excludeArg.split(",").map((x) => x.trim()).filter(Boolean) : [];
+  const { runId, dryRun, exclude } = parsed;
 
   /* حتى ‎--dry-run يقرأ المسير وسجلّ الموظفين من القاعدة. */
   if (!process.env.DATABASE_URL) {
@@ -88,60 +176,7 @@ async function main() {
   if (exclude.length) console.log(`مستثنى بأمرك: أرقام جسر ${exclude.join(", ")}\n`);
 
   const r = await syncSheetAmounts(runId, { dryRun, exclude });
-
-  if (!r.ok) {
-    console.error(`فشل: ${REASONS[r.reason] || r.reason}`);
-    if (r.reason === "totals_mismatch" && r.extraction) {
-      console.error(`  المستخرج: ${money(r.extraction.sumNet)} · المطبوع: ${money(r.extraction.totalNet)}`);
-    }
-    if (r.reason === "duplicate_jisr_in_platform") {
-      console.error(`  رقم جسر ${r.jisrNo} عند الموظفَين: ${r.eids.join(" و ")}`);
-    }
-    if (r.reason === "sheet_download_failed") console.error(`  ${r.error}`);
-    process.exitCode = 1;
-    return;
-  }
-
-  console.log(`المسير: ${r.monthLabel} (${r.runId})`);
-  console.log(`الكشف: ${r.url}`);
-  console.log(`تحقّق الاكتمال: مجموع الصوافي ${money(r.extraction.sumNet)} = صف الإجماليات ${money(r.extraction.totalNet)} ✅\n`);
-
-  console.log(`الرواتب المقروءة (${r.rows.length}):`);
-  console.log("  رقم جسر → رقم ضمان   راتب المسير      الحالة");
-  for (const row of r.rows) {
-    const state = row.current === null ? "جديد"
-      : row.changed ? `تصحيح (كان ${money(row.current)})`
-      : "كما هو";
-    console.log(`  ${String(row.jisrNo).padStart(7)} → ${String(row.eid).padStart(8)}   ${money(row.net).padStart(12)}   ${state}   ${row.name}`);
-  }
-
-  /* التباعد بين الكشف واللقطة يُبلَّغ صريحًا ولا يُصلَح بالتخمين: قد
-     يكون موظفًا غادر، وقد يكون كشفًا ناقصًا — وكلاهما قرار إنسان. */
-  if (r.unknown.length) {
-    console.log(`\n⚠️  أرقام جسر في الكشف لا يحملها أي موظف (${r.unknown.length}):`);
-    for (const u of r.unknown) console.log(`  ${u.jisrNo} — الاسم في الكشف تقريبًا: «${u.nameHint}» · صافيه ${money(u.net)}`);
-    console.log("  رواتبهم لم تُخزَّن. املأ «رقم جسر» لهم في السجلّ ثم أعد التشغيل.");
-  }
-  if (r.missing.length) {
-    console.log(`\n⚠️  موظفون في الكشف بلا صفّ إثبات في هذا المسير (${r.missing.length}):`);
-    for (const m of r.missing) console.log(`  رقم ضمان ${m.eid} — ${m.name}`);
-    console.log("  لم يُنشأ لهم صفّ: هذه العملية لا تُدرج، تُحدّث فقط.");
-  }
-  if (r.withoutSheetRow.length) {
-    console.log(`\n⚠️  موظفون في المسير بلا سطر في الكشف (${r.withoutSheetRow.length}):`);
-    for (const w of r.withoutSheetRow) console.log(`  رقم ضمان ${w.eid} — ${w.name}`);
-    console.log("  صفوفهم لم تُمسّ، وراتبهم يبقى غير مقروء.");
-  }
-  if (r.excluded.length) console.log(`\nمستثنى بأمرك: أرقام جسر ${r.excluded.map((u) => u.jisrNo).join(", ")}`);
-
-  if (dryRun) {
-    console.log(`\nسيُحدَّث ${r.attempted} صفًّا، و${r.unchanged} صفًّا يحمل القيمة نفسها فلن يُمسّ.`);
-    console.log("لم يُكتب شيء. أعد التشغيل بلا --dry-run للتنفيذ.");
-    return;
-  }
-  console.log(`\nحُدِّث: ${r.updated} · بلا تغيير: ${r.unchanged}`);
-  if (r.notFound.length) console.log(`⚠️  صفوف لم تُصَب: ${r.notFound.join(", ")}`);
-  console.log("لم يُمسّ المسير ولا مرفقاته ولا حالته ولا أي إثبات مرفوع، ولم يُرسل أي تنبيه.");
+  if (!report(r, { dryRun })) process.exitCode = 1;
 }
 
 if (require.main === module) {
@@ -151,4 +186,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { REASONS };
+module.exports = { REASONS, report, parseArgs, money };
