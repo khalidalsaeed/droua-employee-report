@@ -383,3 +383,54 @@ test("وIBAN مقطوع سليم يبقى مقروءًا — التحصين لا
   assert.equal(first(r).fields.iban, F.iban(1));
   assert.deepEqual(first(r).fields.issues, []);
 });
+
+/* ═══ انحدار: الرسوم ليست مبلغ التحويل ═══
+   =========================================================================
+   نمط «كل رقم بـSAR» يجمع الرسوم والعمولة والضريبة مع مبلغ التحويل،
+   فيُنتج amount_conflict كاذبًا. أمسكه إيصالٌ يمتدّ صفحتين وصفحته
+   الثانية تحمل «CHARGES: 0.00 SAR» — وكان سيُصنّف كل إيصال يحمل رسومًا
+   needs_review، أي عملًا يدويًا على كل إيصال. */
+
+test("انحدار: رسومٌ في الإيصال لا تُعارض مبلغ التحويل", async () => {
+  const r = await parseReceiptDocument(F.bundleWithSpan());
+  const spanned = r.receipts[0];
+  assert.match(spanned.text, /CHARGES: 0\.00 SAR/, "الرسوم مطبوعة فعلًا");
+  assert.equal(spanned.fields.amount, 2000, "ومبلغ التحويل هو الموسوم به");
+  assert.ok(!spanned.fields.issues.includes("amount_conflict"));
+});
+
+test("الوسم مرجّح لا أساس: بلا وسمٍ إطلاقًا يبقى التعارض مُعلَنًا", () => {
+  const f = extractFields("700.00 SAR\n800.00 SAR");
+  assert.equal(f.amount, null, "رقمان بلا وسم — لا يُخمَّن أيّهما");
+  assert.ok(f.issues.includes("amount_conflict"));
+});
+
+test("وسم الرسوم بالعربية يُستبعد أيضًا", () => {
+  const f = extractFields("مبلغ الخصم: 1,500.00 SAR\nرسوم التحويل: 15.00 SAR\nضريبة: 2.25 SAR");
+  assert.equal(f.amount, 1500);
+  assert.ok(!f.issues.includes("amount_conflict"), "الرسوم والضريبة لا تُعارضان");
+});
+
+test("مبلغان موسومان بالتحويل واختلفا ⇒ تعارض حقيقي", () => {
+  const f = extractFields("AMOUNT: 700.00 SAR\nAMOUNT: 800.00 SAR");
+  assert.equal(f.amount, null);
+  assert.ok(f.issues.includes("amount_conflict"));
+});
+
+test("رسومٌ وحدها بلا مبلغ تحويل ⇒ لا مبلغ لا رسوم", () => {
+  const f = extractFields("CHARGES: 15.00 SAR");
+  assert.equal(f.amount, null, "الرسوم ليست مبلغ التحويل أبدًا");
+  assert.ok(f.issues.includes("no_amount") || f.issues.includes("amount_unparseable"));
+});
+
+test("الموسوم بالتحويل يُقدَّم على رقمٍ بلا وسم", () => {
+  /* الإيصال يطبع أرقامًا أخرى بلا وسم — رصيدًا أو إجماليًا. فوجودُ
+     موسومٍ بالتحويل يحسم، ولا يُعدّ التعدّد تعارضًا. */
+  const f = extractFields("AMOUNT: 1,000.00 SAR\n2,000.00 SAR");
+  assert.equal(f.amount, 1000, "الموسوم يحسم");
+  assert.ok(!f.issues.includes("amount_conflict"));
+  /* وبلا موسومٍ إطلاقًا، الرقمان يتعارضان ولا يُخمَّن أيّهما. */
+  const g = extractFields("1,000.00 SAR\n2,000.00 SAR");
+  assert.equal(g.amount, null);
+  assert.ok(g.issues.includes("amount_conflict"));
+});
