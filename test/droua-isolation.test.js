@@ -187,3 +187,42 @@ test("العزل: معاملات الإنتاج للاشتقاق هي 2^17", () 
   assert.equal(PRODUCTION_PARAMS.r, 8);
   assert.equal(PRODUCTION_PARAMS.p, 1);
 });
+
+/* ─── تخزين القسم: ما لا يجوز أن يُذكر في وحداته ───────────────────────
+   هذان الفحصان يحرسان مستقبل المجلّد كلّه، لا الملفّين الحاليَّين: أي وحدة
+   تُضاف غدًا وتنسى `token` أو تعود إلى الاسم المجرَّد تُوقِف البناء. */
+
+test("العزل: لا وحدة تعتمد على توكن متجر أجير العامّ", () => {
+  /* `@vercel/blob` يقرأ التوكن العامّ تلقائيًا حين لا يُمرَّر `token`.
+     فالاستثناء الوحيد المسموح هو **فحص التساوي** الذي يمسك خطأ اللصق. */
+  for (const { file, text } of readAll(drouaFiles())) {
+    const hits = text.match(/(?<![A-Z_])BLOB_READ_WRITE_TOKEN/g) || [];
+    if (!hits.length) continue;
+    assert.equal(path.basename(file), "storage.js",
+      `${file} يذكر توكن المتجر العامّ — والذكر الوحيد المسموح في storage.js`);
+    assert.equal(hits.length, 1, `${file}: ذكر واحد لا غير`);
+    assert.match(text, /token === process\.env\.BLOB_READ_WRITE_TOKEN/,
+      "الذكر الوحيد يجب أن يكون فحص التساوي");
+  }
+});
+
+test("العزل: لا اسم مفتاح مجرَّد بلا معرّف", () => {
+  /* اسمٌ بلا معرّف يدعو إلى سقوطٍ ضمنيّ إلى «المفتاح» — وهو صنف العطل
+     نفسه الذي يجعل نسيان `token` يكتب في متجر عامّ. */
+  for (const { file, text } of readAll(drouaFiles())) {
+    assert.ok(!/DROUA_FILE_KEY(?!_)/.test(text),
+      `${file} يذكر DROUA_FILE_KEY المجرَّد — المفاتيح تُعرَّف بمعرّف`);
+  }
+});
+
+test("العزل: لا مسار يبلغ التخزين بعدُ — حتى يُكتب فحص الحارس", () => {
+  /* الحارس نفسه لا يمكن اختباره اليوم: لا موجّه يستدعي التخزين أصلًا. وبدل
+     ترك الفراغ بلا حارس، يُقفل الباب: أول ملفّ يستورد `storage` يُسقط هذا
+     الاختبار — فيُكتب حينها فحص `requireDrouaAccess(needGate)` بدلًا منه،
+     لا بعد أسابيع من وصول المسار إلى الإنتاج بلا حراسة. */
+  for (const { file, text } of readAll(drouaFiles())) {
+    if (path.basename(file) === "storage.js") continue;
+    assert.ok(!/require\(["']\.\/storage["']\)/.test(text),
+      `${file} يستورد storage — استبدل هذا الاختبار بفحص الحارس الآن`);
+  }
+});
