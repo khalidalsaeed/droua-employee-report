@@ -72,12 +72,12 @@ test("القارئ: التكرار داخل الملفّ يُبلَّغ", () => 
 });
 
 test("القارئ: الصيغ التي لا قارئ لها تُعلن ذلك ولا تخمّن", () => {
-  for (const format of ["pdf", "xlsx", "xls"]) {
+  for (const format of ["pdf"]) {
     assert.equal(parsers.available(format), false);
     assert.throws(() => parsers.parse({ format, kind: "full", bytes: Buffer.from("x") }),
       (err) => err.code === "parser_unavailable");
   }
-  assert.equal(parsers.available("csv"), true);
+  for (const format of ["csv", "xls", "xlsx"]) assert.equal(parsers.available(format), true, format);
   assert.throws(() => parsers.parse({ format: "docx", kind: "full", bytes: Buffer.from("x") }),
     (err) => err.code === "parser_unavailable");
 });
@@ -335,9 +335,20 @@ test("المقارنة: كل قاعدة في السجلّ لها اختبار ي
   unpaid.cash = fx.cashCsv([{ empNo: "1003", name: "خالد الوهمي", net: 6000 }]);
   for (const f of compare({ docs: monthDocs(unpaid), previousDocs: null }).findings) covered.add(f.rule);
 
-  /* حسابٌ يخالف القائمة: القائمة كاملة والتحويل بحسابٍ آخر. */
-  const wrongIban = fx.consistentMonth({ ibans: { 1001: "SA9999999999999999990000" } });
+  /* حسابٌ يخالف القائمة: التحويل بحسابٍ غير المسجَّل. */
+  const wrongIban = fx.consistentMonth();
+  wrongIban.transfer = fx.transferCsv([
+    { empNo: "1001", name: "أ", iban: "SA9999999999999999990000", net: 9000 },
+    { empNo: "1002", name: "ب", iban: fx.EMPLOYEES[1].iban, net: 7500 },
+    { empNo: "1004", name: "د", iban: fx.EMPLOYEES[3].iban, net: 8200 },
+  ]);
   for (const f of compare({ docs: monthDocs(wrongIban), previousDocs: null }).findings) covered.add(f.rule);
+
+  /* قناةٌ تخالف المسجَّل، وتحويلٌ بلا حسابٍ في القائمة. */
+  const channel = fx.consistentMonth({ methods: { 1003: "بنك" } });
+  for (const f of compare({ docs: monthDocs(channel), previousDocs: null }).findings) covered.add(f.rule);
+  const noIban = fx.consistentMonth({ ibans: { 1001: "" } });
+  for (const f of compare({ docs: monthDocs(noIban), previousDocs: null }).findings) covered.add(f.rule);
 
   const uncovered = RULES.map((r) => r.id).filter((id) => !covered.has(id));
   assert.deepEqual(uncovered, [], `قواعد بلا تغطية: ${uncovered.join(", ")}`);
@@ -395,4 +406,57 @@ test("الثقة: كل نوعٍ يُقاس بما يحمله هو — لا بق�
       `${kind}: ثقة ${doc.meta.confidence} على ملفٍّ سليم`);
     assert.equal(doc.meta.confidence, 1, `${kind} يحمل كل ما يُتوقَّع منه`);
   }
+});
+
+/* ══ قناة الصرف: القائمة مقابل الواقع ══════════════════════════════════ */
+
+test("المقارنة: صُرف بقناةٍ غير المسجَّلة له", () => {
+  /* في مسيراتٍ حقيقية لا يحمل ملفّ الرواتب عمود حساب أصلًا — والقناة
+     المعتمدة تعيش في قائمة الموظفين وحدها. فمقارنتها بالواقع هي الطريق
+     الوحيد لكشف صرفٍ نقديّ لمن اعتُمد له تحويل. */
+  const month = fx.consistentMonth({ methods: { 1003: "بنك" } });
+  const { findings: out } = compare({ docs: monthDocs(month), previousDocs: null });
+  const found = rule(out, "method_vs_channel");
+  assert.equal(found.length, 1, JSON.stringify(out.map((f) => f.rule)));
+  assert.equal(found[0].employeeRef, "1003", "مُسجَّل «بنك» ومصروفٌ كاش");
+  assert.equal(found[0].severity, "warn");
+
+  /* وشهرٌ متّسق لا يُنتج شيئًا: القناة المسجَّلة تطابق الواقع. */
+  assert.equal(rule(compare({ docs: monthDocs(fx.consistentMonth()), previousDocs: null }).findings,
+    "method_vs_channel").length, 0);
+});
+
+test("المقارنة: تحويلٌ بنكيّ بلا حسابٍ مسجَّل", () => {
+  const month = fx.consistentMonth({ ibans: { 1001: "" } });
+  const { findings: out } = compare({ docs: monthDocs(month), previousDocs: null });
+  const found = rule(out, "bank_without_account");
+  assert.equal(found.length, 1);
+  assert.equal(found[0].employeeRef, "1001");
+  assert.match(found[0].description, /لن يُكتشف/);
+});
+
+test("المقارنة: الحساب يُقرأ من قائمة الموظفين حين لا يحمله المسير", () => {
+  /* وهذا هو الواقع: ملفّ التحويل بلا عمود حساب. فبلا السقوط إلى القائمة
+     تصير مقارنةُ الحساب بين شهرين مقارنةَ فراغٍ بفراغ — صفر ملاحظات. */
+  const strip = (month) => ({ ...month, transfer: fx.transferCsv([
+    { empNo: "1001", name: "أ", iban: "", net: 9000 },
+    { empNo: "1002", name: "ب", iban: "", net: 7500 },
+    { empNo: "1004", name: "د", iban: "", net: 8200 },
+  ]) });
+  const previous = monthDocs(strip(fx.consistentMonth()));
+  const current = monthDocs(strip(fx.consistentMonth({ ibans: { 1001: "SA9999999999999999991234" } })));
+  const merged = require("../lib/droua/compare").mergeSplit(current);
+  assert.equal(merged.get("1001").iban4, "1234", "الحساب جاء من القائمة");
+
+  const { findings: out } = compare({ docs: current, previousDocs: previous });
+  const changed = rule(out, "iban_changed");
+  assert.equal(changed.length, 1, JSON.stringify(out.map((f) => f.rule)));
+  assert.equal(changed[0].severity, "critical");
+});
+
+test("المقارنة: توحيد تسمية قناة الصرف", () => {
+  const { channelOf } = require("../lib/droua/compare");
+  for (const v of ["بنك", "تحويل", "حوالة بنكية", "Bank", "transfer"]) assert.equal(channelOf(v), "bank", v);
+  for (const v of ["نقد", "كاش", "Cash", "نقدا"]) assert.equal(channelOf(v), "cash", v);
+  for (const v of ["", null, "غير محدد", "أخرى"]) assert.equal(channelOf(v), null, String(v));
 });
