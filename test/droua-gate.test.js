@@ -419,7 +419,7 @@ test("الجلسة: كوكي صالح يفتح الصفحة ويجدّد الم�
     const sql = fakeDb({ users: [OWNER_ROW()], session: s.row });
     const out = await call({ sql, actor: OWNER_ROW(), kind: "page", gateCookie: s.token });
     assert.equal(out.statusCode, 200);
-    assert.match(out.body, /القسم مفتوح/);
+    assert.match(out.body, /id="v-runs"/);
     assert.ok(!/رواتب|ذروة|مسير/.test(out.body), "الصفحة يجب ألّا تسمّي القسم");
     assert.equal(sql.matching(/UPDATE droua_gate_sessions/).length, 1, "يجب انزلاق مهلة الخمول");
   });
@@ -431,7 +431,7 @@ test("الجلسة: بلا كوكي تُعرض شاشة كلمة المرور ل
     const out = await call({ sql, actor: OWNER_ROW(), kind: "page" });
     assert.equal(out.statusCode, 200);
     assert.match(out.body, /أدخل كلمة المرور/);
-    assert.ok(!/القسم مفتوح/.test(out.body));
+    assert.ok(!/id="v-runs"/.test(out.body));
   });
 });
 
@@ -532,10 +532,27 @@ test("الجلسة: جلسة مستخدم آخر لا تُقبل", async () => {
 test("الجلسة: مسارات غير معروفة داخل القسم تُردّ بـ404", async () => {
   await withEnv(fullEnv(), async () => {
     const sql = fakeDb({ users: [OWNER_ROW()] });
-    for (const p of ["secure-audit/gate/whatever", "secure-audit/runs", "secure-audit/files"]) {
+    for (const p of [
+      "secure-audit/gate/whatever", "secure-audit/nope", "secure-audit/files",
+      "secure-audit/runs/not-a-uuid", "secure-audit/runs/../../etc",
+    ]) {
       const out = await call({ sql, actor: OWNER_ROW(), kind: "api", apiPath: p });
-      assert.equal(out.statusCode, 404, `${p} يجب ألّا يوجد في هذه المرحلة`);
+      assert.equal(out.statusCode, 404, `${p} يجب ألّا يوجد`);
     }
+  });
+});
+
+test("الجلسة: مسار بياناتٍ حقيقيّ ببوابة مقفلة يُردّ 401 لا بيانات", async () => {
+  await withEnv(fullEnv(), async () => {
+    const sql = fakeDb({ users: [OWNER_ROW()] });
+    const out = await call({ sql, actor: OWNER_ROW(), kind: "api", apiPath: "secure-audit/runs" });
+    /* 401 لا 404: من بلغ هنا اجتاز التحقّق من الهويّة أصلًا وهو صاحب
+       الحساب، فالتمييز لا يكشف شيئًا لأحد سواه — ويقول له أن يفتح البوابة
+       بدل أن يظنّ المسار غير موجود. */
+    assert.equal(out.statusCode, 401);
+    assert.equal(out.body.locked, true);
+    assert.equal(out.body.runs, undefined, "لا بيان يخرج قبل فتح البوابة");
+    assert.equal(sql.matching(/droua_payroll_/).length, 0, "ولا استعلام بلغ جداول البيانات");
   });
 });
 

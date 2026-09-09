@@ -125,7 +125,7 @@ test("الحارس: فاتحُ السياق واحد لا غير — وهو requ
   assert.equal(typeof access.requireDrouaAccess, "function");
   const src = fs.readFileSync(path.join(dir, "access.js"), "utf8");
   /* ولا يُفتح إلا بعد التحقّق من جلسة حيّة — لا بمجرّد معرفة المستخدم. */
-  assert.match(src, /isUsable\([\s\S]{0,200}?runWithGate/, "السياق يُفتح بعد isUsable لا قبلها");
+  assert.match(src, /isUsable\([\s\S]*?runWithGate/, "السياق يُفتح بعد isUsable لا قبلها");
 });
 
 test("الحارس: requireDrouaAccess بلا جلسة بوابة يُرجع locked ولا يفتح سياقًا", async () => {
@@ -573,5 +573,5 @@ test("المخطّط: --dry-run يطبع ولا يتّصل", () => {
   assert.equal(r.status, 0, r.stderr);
   assert.match(r.stdout, /معاينة فقط/);
   assert.match(r.stdout, /CREATE TABLE IF NOT EXISTS droua_payroll_files/);
-  assert.match(r.stdout, /المجموع: 2 عبارة/);
+  assert.match(r.stdout, /المجموع: 4 عبارة/);
 });

@@ -20,6 +20,8 @@ const norm = (s) => s.replace(/\s+/g, " ").trim();
 
 function makeFilesDb() {
   const rows = [];
+  const runRows = [];
+  const findingRows = [];
   const auditRows = [];
   const calls = [];
   const armed = { insert: null, update: null, select: null, delete: null };
@@ -64,9 +66,139 @@ function makeFilesDb() {
     return [clone(row)];
   }
 
+  /* ── جدولا المسيرات والملاحظات ──
+     أبسط من جدول الملفّات: القيود التي يقوم عليها المنطق هنا اثنان —
+     التفرّد على `period`، والتفرّد على (run_id, fingerprint). وما عداهما
+     تفاصيل تفرضها القاعدة الحقيقية ولا يبني عليها كود التطبيق قرارًا. */
+  function runsExec(t, values) {
+    if (/^INSERT INTO droua_payroll_runs/.test(t)) {
+      if (runRows.some((r) => r.period === values[1])) {
+        throw new Error('duplicate key value violates unique constraint "droua_payroll_runs_period_key"');
+      }
+      const row = {
+        id: values[0], period: values[1], status: "draft",
+        created_at: new Date().toISOString(), analyzed_at: null, closed_at: null,
+      };
+      runRows.push(row);
+      return [clone(row)];
+    }
+    if (/^SELECT \* FROM droua_payroll_runs WHERE id/.test(t)) {
+      return runRows.filter((r) => r.id === values[0]).map(clone);
+    }
+    if (/^SELECT \* FROM droua_payroll_runs WHERE period/.test(t)) {
+      return runRows.filter((r) => r.period === values[0]).map(clone);
+    }
+    if (/^SELECT \* FROM droua_payroll_runs ORDER BY period DESC/.test(t)) {
+      return runRows.slice().sort((a, b) => b.period.localeCompare(a.period))
+        .slice(0, Number(values[0]) || 36).map(clone);
+    }
+    if (/^UPDATE droua_payroll_runs SET status/.test(t)) {
+      const row = runRows.find((r) => r.id === values[3]);
+      if (!row) return [];
+      row.status = values[0];
+      if (values[1] === "analyzed") row.analyzed_at = new Date().toISOString();
+      if (values[2] === "closed") row.closed_at = new Date().toISOString();
+      return [clone(row)];
+    }
+    if (/^DELETE FROM droua_payroll_runs/.test(t)) {
+      const at = runRows.findIndex((r) => r.id === values[0]);
+      if (at >= 0) runRows.splice(at, 1);
+      return [];
+    }
+    throw new Error("استعلام مسيرات غير معروف: " + t);
+  }
+
+  function findingsExec(t, values) {
+    if (/^SELECT id, fingerprint FROM droua_payroll_findings/.test(t)) {
+      return findingRows.filter((r) => r.run_id === values[0]).map((r) => ({ id: r.id, fingerprint: r.fingerprint }));
+    }
+    if (/^INSERT INTO droua_payroll_findings/.test(t)) {
+      const [id, runId, fingerprint, rule, scope, severity, title, employeeRef,
+        employeeName, field, previousValue, currentValue, delta, description, firstSeen, lastSeen] = values;
+      if (findingRows.some((r) => r.run_id === runId && r.fingerprint === fingerprint)) {
+        throw new Error('duplicate key value violates unique constraint "droua_payroll_findings_run_id_fingerprint_key"');
+      }
+      const row = {
+        id, run_id: runId, fingerprint, rule, scope, severity, title,
+        employee_ref: employeeRef, employee_name: employeeName, field,
+        previous_value: previousValue, current_value: currentValue, delta,
+        description, status: "needs_review", user_note: null,
+        first_seen_at: firstSeen, last_seen_at: lastSeen, resolved_at: null,
+      };
+      findingRows.push(row);
+      return [];
+    }
+    if (/^UPDATE droua_payroll_findings SET severity/.test(t)) {
+      /* ⚠️ عمودٌ لا تُمثّله هذه القاعدة يجب أن **يصرخ** لا أن يُتجاهل: تجاهله
+         يجعل الاختبار يمرّ على شيفرةٍ تمسّ حالة المستخدم — وهو بالضبط ما
+         بُنيت المزامنة لمنعه. اختبارٌ يكذب أخطر من اختبار ساقط. */
+      if (/\bstatus\b|user_note|first_seen_at/.test(t)) {
+        throw new Error("عمودٌ لا تُمثّله القاعدة المُزيَّفة في تحديث المزامنة: " + t);
+      }
+      const row = findingRows.find((r) => r.id === values[8]);
+      if (!row) return [];
+      row.severity = values[0]; row.title = values[1]; row.employee_name = values[2];
+      row.previous_value = values[3]; row.current_value = values[4]; row.delta = values[5];
+      row.description = values[6]; row.last_seen_at = values[7]; row.resolved_at = null;
+      return [];
+    }
+    if (/^UPDATE droua_payroll_findings SET resolved_at/.test(t)) {
+      const out = [];
+      for (const row of findingRows) {
+        if (row.run_id !== values[1] || row.resolved_at) continue;
+        if (!(String(row.last_seen_at) < String(values[2]))) continue;
+        row.resolved_at = values[0];
+        out.push({ id: row.id });
+      }
+      return out;
+    }
+    if (/^UPDATE droua_payroll_findings SET status/.test(t)) {
+      const row = findingRows.find((r) => r.id === values[2]);
+      if (!row) return [];
+      row.status = values[0]; row.user_note = values[1];
+      return [clone(row)];
+    }
+    if (/^SELECT \* FROM droua_payroll_findings WHERE id/.test(t)) {
+      return findingRows.filter((r) => r.id === values[0]).map(clone);
+    }
+    if (/^SELECT \* FROM droua_payroll_findings WHERE run_id/.test(t)) {
+      const open = /resolved_at IS NULL/.test(t);
+      return findingRows
+        .filter((r) => r.run_id === values[0] && (!open || !r.resolved_at))
+        .sort((a, b) => String(b.severity).localeCompare(String(a.severity)))
+        .map(clone);
+    }
+    if (/^SELECT run_id,/.test(t)) {
+      const byRun = new Map();
+      for (const r of findingRows) {
+        const acc = byRun.get(r.run_id) || { run_id: r.run_id, total: 0, open: 0, critical: 0, needs_review: 0 };
+        acc.total += 1;
+        if (!r.resolved_at) {
+          acc.open += 1;
+          if (r.severity === "critical") acc.critical += 1;
+          if (r.status === "needs_review") acc.needs_review += 1;
+        }
+        byRun.set(r.run_id, acc);
+      }
+      return [...byRun.values()];
+    }
+    throw new Error("استعلام ملاحظات غير معروف: " + t);
+  }
+
   function exec(text, values) {
     const t = norm(text);
     calls.push({ text: t, values });
+
+    if (/droua_payroll_runs/.test(t)) return runsExec(t, values);
+    if (/droua_payroll_findings/.test(t)) return findingsExec(t, values);
+    if (/^SELECT run_id, count\(\*\)::int AS present/.test(t)) {
+      const byRun = new Map();
+      for (const r of rows) {
+        if (r.superseded_at) continue;
+        byRun.set(r.run_id, (byRun.get(r.run_id) || 0) + 1);
+      }
+      return [...byRun].map(([run_id, present]) => ({ run_id, present }));
+    }
 
     if (/^INSERT INTO droua_gate_audit/.test(t)) {
       auditRows.push({ event: values[0], userId: values[1], meta: JSON.parse(values[2] || "{}") });
@@ -78,6 +210,7 @@ function makeFilesDb() {
       const armedFailure = takeArmed("select");
       if (armedFailure) throw new Error(armedFailure);
       if (/WHERE id = \?::uuid/.test(t)) return rows.filter((r) => r.id === values[0]).map(clone);
+      if (/WHERE run_id = \?::uuid$/.test(t)) return rows.filter((r) => r.run_id === values[0]).map(clone);
       if (/superseded_at IS NOT NULL AND purged_at IS NULL/.test(t)) {
         return rows.filter((r) => r.superseded_at && !r.purged_at)
           .sort((a, b) => String(a.superseded_at).localeCompare(String(b.superseded_at)))
@@ -168,7 +301,7 @@ function makeFilesDb() {
   sql.query = async (text, values = []) => exec(text, values);
 
   return {
-    sql, rows, audit: auditRows, calls, armed,
+    sql, rows, runRows, findingRows, audit: auditRows, calls, armed,
     arm: (kind, message) => { armed[kind] = message || "فشل مُسلَّح"; },
     seed: (row) => { rows.push({ superseded_at: null, deleted_at: null, purged_at: null, ...row }); },
     events: () => auditRows.map((a) => a.event),

@@ -41,7 +41,11 @@ const FORBIDDEN = [
 test("العزل: وحدات القسم لا تذكر أي جدول أو وحدة تخصّ أجير", () => {
   for (const { file, text } of readAll(drouaFiles())) {
     for (const needle of FORBIDDEN) {
-      assert.ok(!text.includes(needle), `${file} يذكر «${needle}» — ممنوع`);
+      /* جداول القسم تحمل البادئة droua_ وبعضها يشترك في اللاحقة مع جداول
+         أجير (droua_payroll_runs / payroll_runs). فالمنع على الاسم المجرَّد
+         وحده — وإلّا منع الاختبارُ جداولَ القسم نفسها. */
+      const pattern = new RegExp(`(?<![A-Za-z0-9_])${needle.replace(/[/.]/g, "\\$&")}`);
+      assert.ok(!pattern.test(text), `${file} يذكر «${needle}» — ممنوع`);
     }
   }
 });

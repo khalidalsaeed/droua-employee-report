@@ -1,7 +1,8 @@
 #!/usr/bin/env node
-/* تهيئة جدول ملفّات القسم — جدول واحد لا غير.
+/* تهيئة جداول بيانات القسم: المسيرات، والملفّات، والملاحظات.
    =========================================================================
-   ⛔ ولا جدول لمسيرات ولا موظفين ولا ملاحظات: تلك خطوات لاحقة لها سكربتها.
+   ⛔ ولا جدول للموظفين: القسم لا يمسك سجلًّا للموظفين أصلًا — يقرأ ما في
+   ملفّات الشهر ويقارن، ولا يبني قاعدة ثانية عنهم.
 
    على نمط scripts/setup-droua-gate.js حرفيًا: كل عبارة IF NOT EXISTS، ولا
    يحذف شيئًا ولا يعدّل جدولًا قائمًا ولا يمسّ بيانات. تشغيله مرّتين لا يفعل
@@ -13,13 +14,31 @@
 
 const STATEMENTS = [
   {
+    label: "جدول droua_payroll_runs",
+    sql: `
+      CREATE TABLE IF NOT EXISTS droua_payroll_runs (
+        id          uuid PRIMARY KEY,
+        -- شهرٌ واحد لا يتكرّر. والتفرّد هنا هو ما يمنع «سبتمبر» مرّتين
+        -- بملفّين مختلفين — وهو خطأ لا يُكتشف إلا بعد مقارنةٍ كاذبة.
+        period      text NOT NULL UNIQUE CHECK (period ~ '^[0-9]{4}-(0[1-9]|1[0-2])$'),
+        status      text NOT NULL DEFAULT 'draft'
+                    CHECK (status IN ('draft', 'ready', 'analyzed', 'closed')),
+        created_at  timestamptz NOT NULL DEFAULT now(),
+        analyzed_at timestamptz,
+        closed_at   timestamptz
+      )`,
+  },
+  {
     label: "جدول droua_payroll_files",
     sql: `
       CREATE TABLE IF NOT EXISTS droua_payroll_files (
         -- هو fileId نفسه: يُولَّد على الخادم **قبل** التشفير، ويدخل الـAAD.
         -- فتحويره في القاعدة يكسر فكّ التشفير بدل أن يُقدّم ملفًّا آخر.
         id             uuid PRIMARY KEY,
-        run_id         uuid NOT NULL,
+        -- CASCADE عمدًا **لا** RESTRICT: حذف الشهر يمرّ بمسار حذفٍ يمحو
+        -- البايتات صفًّا صفًّا قبل أن يبلغ الشهر نفسه (lib/droua/runs.js).
+        -- فحين تصل القاعدة إلى هنا لم يبقَ إلا شواهد قبورٍ مطهَّرة.
+        run_id         uuid NOT NULL REFERENCES droua_payroll_runs (id) ON DELETE CASCADE,
 
         -- القيد في القاعدة لا في التطبيق وحده: kind جزءٌ من الـAAD، وقيمةٌ
         -- تتسلّل خارج القائمة تعني ملفًّا لا يُفكّ بعد اليوم.
@@ -80,6 +99,46 @@ const STATEMENTS = [
         CONSTRAINT droua_payroll_files_lifecycle CHECK (
           (purged_at IS NULL OR superseded_at IS NOT NULL)
           AND (deleted_at IS NULL OR superseded_at IS NOT NULL))
+      )`,
+  },
+  {
+    label: "جدول droua_payroll_findings",
+    sql: `
+      CREATE TABLE IF NOT EXISTS droua_payroll_findings (
+        id             uuid PRIMARY KEY,
+        run_id         uuid NOT NULL REFERENCES droua_payroll_runs (id) ON DELETE CASCADE,
+
+        -- بصمة الملاحظة: قاعدة + نطاق + موظّف + حقل. وهي ما يجعل إعادة
+        -- التحليل **تُحدِّث** ملاحظةً قائمة بدل أن تُنشئ ثانيةً مثلها —
+        -- فتبقى حالتُها وملاحظةُ المستخدم عليها. وبدونها يفقد المستخدم
+        -- عملَه كلَّه مع كل إعادة رفع، وهو أسوأ ما يمكن أن يفعله النظام به.
+        fingerprint    text NOT NULL,
+        rule           text NOT NULL,
+        scope          text NOT NULL CHECK (scope IN ('within_month', 'vs_previous')),
+        severity       text NOT NULL CHECK (severity IN ('info', 'warn', 'critical')),
+
+        title          text NOT NULL,
+        employee_ref   text,
+        employee_name  text,
+        field          text,
+        -- قيمٌ نصّية مقتطعة. ⛔ ولا رقم حساب كاملًا هنا بحال — تفرضه
+        -- lib/droua/findings.js وتحرسه اختبارات.
+        previous_value text,
+        current_value  text,
+        delta          numeric,
+        description    text,
+
+        status         text NOT NULL DEFAULT 'needs_review'
+                       CHECK (status IN ('needs_review', 'verified', 'approved_change', 'needs_fix')),
+        user_note      text CHECK (user_note IS NULL OR char_length(user_note) <= 2000),
+
+        first_seen_at  timestamptz NOT NULL DEFAULT now(),
+        last_seen_at   timestamptz NOT NULL DEFAULT now(),
+        -- تُضبط حين تختفي الملاحظة من تحليلٍ تالٍ: أي أن الرفع الجديد
+        -- عالجها. ولا تُحذف — اختفاءُ ملاحظةٍ حدثٌ يستحقّ البقاء.
+        resolved_at    timestamptz,
+
+        UNIQUE (run_id, fingerprint)
       )`,
   },
   {
