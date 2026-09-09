@@ -161,3 +161,80 @@ test("التوزيع: api/app.js لا يعرف عن القسم إلا سطر ا�
   assert.ok(mentions <= 8, `api/app.js يذكر القسم ${mentions} مرّة — يجب أن يبقى سطر تفويض لا أكثر`);
   assert.ok(!/droua_gate|gate_unlock|gatePassword|gateToken/.test(text), "منطق البوابة يجب ألّا يظهر هنا");
 });
+
+/* ─── من عنوان المتصفّح إلى الدالّة ─────────────────────────────────────
+   =========================================================================
+   الاختبارات أعلاه تفحص المعالج بعد أن يصله الطلب. وبينهما فجوةٌ لا يراها
+   أيّ اختبار Node: **إعادة الكتابة في `vercel.json`**. فلو سقط سطرها، أو
+   أشار إلى دالّة غير موجودة، أو حمل `page` لا يعرفه شرطُ التفويض — لم يصل
+   الطلب إلى الشيفرة أصلًا، وردّت المنصّة 404 من عندها.
+
+   وهو عطلٌ **صامت في كل الاختبارات وقاتلٌ في الإنتاج**: القسم يختفي كأنه
+   لم يُبنَ، ولا سطر في سجلّ الدالّة لأنها لم تُستدعَ. ولا يُميَّز 404
+   المنصّة من 404 الإخفاء المقصود إلا بالجسم: هذا صفحةُ HTML من Vercel،
+   وذاك نصٌّ قصير من التطبيق.
+
+   فتُقرأ إعادة الكتابة من الملفّ نفسه وتُشغَّل: الوجهة تُفكَّك إلى مسار
+   وquery، ويُتحقّق أن المسار دالّةٌ **موجودة على القرص**، وأن الـquery
+   يُفوَّض فعلًا إلى موجّه القسم. */
+
+const VERCEL = JSON.parse(fs.readFileSync(path.join(PROJECT_ROOT, "vercel.json"), "utf8"));
+
+/* «/api/app?kind=page&page=secure-audit» → { file, query } */
+function resolveDestination(destination) {
+  const [pathname, search = ""] = String(destination).split("?");
+  const query = {};
+  for (const pair of search.split("&")) {
+    if (!pair) continue;
+    const [k, v = ""] = pair.split("=");
+    query[decodeURIComponent(k)] = decodeURIComponent(v);
+  }
+  return { file: path.join(PROJECT_ROOT, `${pathname.replace(/^\//, "")}.js`), pathname, query };
+}
+
+test("التوجيه: كل وجهةِ إعادة كتابة تشير إلى دالّة موجودة على القرص", () => {
+  /* وجهةٌ إلى ملفٍّ غير موجود تُنتج 404 من المنصّة لا من التطبيق — ولا
+     يكشفها اختبارٌ يستدعي المعالج مباشرةً، لأنه يتخطّى التوجيه كلَّه. */
+  for (const rule of VERCEL.rewrites) {
+    const { file, pathname } = resolveDestination(rule.destination);
+    assert.ok(fs.existsSync(file),
+      `إعادة الكتابة «${rule.source}» تشير إلى ${pathname} ولا ملفّ له: ${path.relative(PROJECT_ROOT, file)}`);
+  }
+});
+
+test("التوجيه: مسارا القسم في vercel.json موجودان وبوجهةٍ صحيحة", () => {
+  const bySource = new Map(VERCEL.rewrites.map((r) => [r.source, r.destination]));
+  /* السطران اللذان بلا وجودهما يختفي القسم من الإنتاج كلّه. */
+  for (const source of ["/secure-audit", "/secure-audit/api/:path*"]) {
+    assert.ok(bySource.has(source), `سطر إعادة الكتابة «${source}» مفقود — القسم لا يُفتح إطلاقًا`);
+    assert.match(bySource.get(source), /^\/api\/app\?/, `«${source}» لا يُوجَّه إلى الدالّة المشتركة`);
+  }
+  /* والوسيط يحمل ما يتعرّف عليه شرطُ التفويض، لا اسمًا مقاربًا. */
+  assert.match(bySource.get("/secure-audit"), /(^|[?&])kind=page([&]|$)/);
+  assert.match(bySource.get("/secure-audit"), /(^|[?&])page=secure-audit([&]|$)/);
+  assert.match(bySource.get("/secure-audit/api/:path*"), /(^|[?&])kind=api([&]|$)/);
+  assert.match(bySource.get("/secure-audit/api/:path*"), /apiPath=secure-audit\/:path\*/);
+});
+
+test("التوجيه: وجهةُ صفحة القسم تُفوَّض فعلًا إلى موجّه القسم", async () => {
+  /* الاختبار الحقيقيّ: تُؤخذ الوجهة من الملفّ **كما هي** وتُشغَّل. فلو
+     غُيّر «page=secure-audit» إلى غيره لسقط هنا، ولو بقي الشرط سليمًا. */
+  const dest = VERCEL.rewrites.find((r) => r.source === "/secure-audit").destination;
+  const { query } = resolveDestination(dest);
+  await withSpyRouter(async (handler) => {
+    const out = await dispatch(handler, query);
+    assert.ok(wasDelegated(out), `وجهةُ «/secure-audit» (${dest}) لم تُفوَّض إلى القسم`);
+  });
+});
+
+test("التوجيه: وجهةُ API القسم تُفوَّض بعد استبدال :path*", async () => {
+  const dest = VERCEL.rewrites.find((r) => r.source === "/secure-audit/api/:path*").destination;
+  await withSpyRouter(async (handler) => {
+    for (const real of ["runs", "runs/x/files", "gate/open"]) {
+      /* Vercel يستبدل «:path*» بالمقطع الفعليّ — تُحاكى الاستبدالة نفسها. */
+      const { query } = resolveDestination(dest.replace(":path*", real));
+      const out = await dispatch(handler, query);
+      assert.ok(wasDelegated(out), `«/secure-audit/api/${real}» لم يُفوَّض`);
+    }
+  });
+});
