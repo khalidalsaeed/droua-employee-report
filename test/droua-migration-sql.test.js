@@ -243,3 +243,43 @@ test("الهجرة: ما تردّه القاعدة تردّه الطبقة أو 
     }
   });
 });
+
+/* ══ فاحص ما بعد الهجرة ═══════════════════════════════════════════════ */
+
+test("الفحص البعديّ: توقّعات الفاحص مرآةٌ للهجرة لا نسخةٌ تنحرف عنها", () => {
+  /* الفاحص يحمل قائمة أعمدةٍ متوقَّعة. ولو انحرفت عن المخطّط بصمت لصار
+     يبارك مخطّطًا خاطئًا — وهو أسوأ من ألّا يوجد. */
+  const { EXPECTED } = require("../scripts/verify-droua-schema");
+  const ddl = ddlOf(MIGRATIONS.find((m) => m.name === "setup-droua-files"));
+
+  const TYPES = "uuid|text|bigint|numeric|timestamptz";
+  for (const [table, spec] of Object.entries(EXPECTED)) {
+    const start = ddl.indexOf(`CREATE TABLE IF NOT EXISTS ${table} (`);
+    assert.notEqual(start, -1, `لا CREATE TABLE للجدول ${table}`);
+    const next = Object.keys(EXPECTED)
+      .map((t) => ddl.indexOf(`CREATE TABLE IF NOT EXISTS ${t} (`))
+      .filter((i) => i > start).sort((a, b) => a - b)[0];
+    const block = codeOf(ddl.slice(start, next === undefined ? ddl.length : next));
+
+    const declared = [...block.matchAll(new RegExp(`^\\s{6,}([a-z_][a-z_0-9]*)\\s+(?:${TYPES})\\b`, "gm"))]
+      .map((m) => m[1]);
+    assert.deepEqual(declared.slice().sort(), Object.keys(spec.columns).sort(),
+      `${table}: أعمدة الفاحص لا تطابق أعمدة الهجرة`);
+  }
+});
+
+test("الفحص البعديّ: للقراءة فقط — لا عبارة تكتب أو تُغيّر", () => {
+  const src = fs.readFileSync(path.resolve(__dirname, "..", "scripts", "verify-droua-schema.js"), "utf8")
+    .replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:])\/\/[^\n]*/g, "$1 ");
+  /* الفحص على **عبارات** لا على كلمات: «ON DELETE CASCADE» في توقّعات
+     القيود ليست حذفًا، ومنعُ الكلمة وحدها كان سيمنع وصفَ القيد نفسه. */
+  const WRITES = [
+    /\bINSERT\s+INTO\b/i, /\bUPDATE\s+\w+\s+SET\b/i, /\bDELETE\s+FROM\b/i,
+    /\bCREATE\s+(TABLE|INDEX|UNIQUE)\b/i, /\bALTER\s+TABLE\b/i,
+    /\bDROP\s+(TABLE|INDEX|COLUMN)\b/i, /\bTRUNCATE\b/i,
+  ];
+  for (const pattern of WRITES) {
+    assert.ok(!pattern.test(src), `الفاحص يحمل عبارة كتابة ${pattern} — ويجب أن يقرأ لا أن يكتب`);
+  }
+  assert.ok(src.includes("SELECT"), "وهو يقرأ فعلًا");
+});
