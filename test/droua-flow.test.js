@@ -396,6 +396,31 @@ test("المداخل: خارج سياق البوابة لا تعمل ولو نُ
   }, { openGate: false });
 });
 
+test("المداخل: «كل الملاحظات» مقطعُ مسار لا معاملَ استعلام", async () => {
+  await withDroua(async ({ sql, ctx }) => {
+    const month = fx.consistentMonth();
+    month.cash = fx.cashCsv([{ empNo: "1003", name: "خالد الوهمي", net: 6500 }]);
+    const run = await seedMonth(sql, ctx, "2026-09", month);
+    await analyze.analyzeRun(sql, run.runId, ctx);
+
+    const target = (await findings.listFindings(sql, run.runId)).find((f) => f.rule === "net_mismatch");
+    const fixed = fx.cashCsv([{ empNo: "1003", name: "خالد الوهمي", net: 6000 }]);
+    await upload(sql, ctx, run.runId, "cash", fixed, true);
+    await analyze.analyzeRun(sql, run.runId, ctx);
+
+    const open = await callApi(sql, ctx, "GET", `runs/${run.runId}/findings`);
+    assert.equal(open.body.findings.some((f) => f.findingId === target.findingId), false);
+
+    /* إعادة الكتابة على المنصّة تُمرِّر المسار ولا ضمان لبقاء معاملات
+       الاستعلام — فما يعتمد عليها يعمل محلّيًّا ويصمت في الإنتاج. */
+    const all = await callApi(sql, ctx, "GET", `runs/${run.runId}/findings/all`);
+    const resolved = all.body.findings.find((f) => f.findingId === target.findingId);
+    assert.ok(resolved, "المُعالَجة تظهر في المسار الكامل");
+    assert.ok(resolved.resolvedAt);
+    assert.ok(all.body.findings.length > open.body.findings.length);
+  });
+});
+
 test("المداخل: تعديل الملاحظة عبر الـAPI محصورٌ في الحالة والتعليق", async () => {
   await withDroua(async ({ sql, ctx }) => {
     const month = fx.consistentMonth();
@@ -444,6 +469,32 @@ test("المداخل: تنزيل ملفٍّ عُبث بوصفه يُردّ 404 �
 
 /* ══ الشاشة ═══════════════════════════════════════════════════════════ */
 
+test("الشاشة: حدودها وصيغها مطابقة للخادم — لا رقمان يفترقان", () => {
+  /* حدٌّ في الواجهة أوسع من حدّ الخادم يجعل المستخدم ينتظر رفعًا سيُرفض؛
+     وأضيقُ منه يمنعه من ملفٍّ مقبول. والصيغ كذلك. */
+  const view = require("../lib/droua/views/open");
+  const storage = require("../lib/droua/storage");
+  assert.equal(view.MAX_UPLOAD_BYTES, api.MAX_UPLOAD_BYTES);
+  assert.deepEqual(view.FORMATS.slice().sort(), Object.keys(storage.SAFE_CONTENT_TYPES).sort());
+});
+
+test("الشاشة: تعرض الحالات الثلاث — جارية وناجحة وفاشلة", () => {
+  const html = require("../lib/droua/views/open")("n");
+  const script = /<script nonce="n">([\s\S]*?)<\/script>/.exec(html)[1];
+  /* عدّاد لا علمٌ ثنائيّ: نداءان متزامنان ينتهي أوّلهما فيرفع «جارٍ» عن
+     الثاني، فيظنّ المستخدم أن كل شيء انتهى. */
+  assert.match(script, /busy\s*=\s*Math\.max\(0,\s*busy\s*-\s*1\)/);
+  assert.match(script, /aria-busy/);
+  assert.match(script, /note err|'note '\+\(x\?'err'/, "الفشل يُعرض بإطارٍ يميّزه");
+  assert.match(html, /class="empty"/, "حالة الفراغ معلنة");
+  assert.match(html, /class="scroll"/, "الجداول تنزلق أفقيًّا على الشاشات الضيّقة");
+  assert.match(html, /aria-live="polite"/);
+  /* والتحقّق قبل الرفع: صيغة، وحجم، وفراغ. */
+  assert.match(script, /صيغة غير مقبولة/);
+  assert.match(script, /file\.size>MAX/);
+  assert.match(script, /الملفّ فارغ/);
+});
+
 test("الشاشة: الشيفرة المضمَّنة تُحلَّل بلا خطأ نحويّ", () => {
   /* الصفحة تُبنى نصًّا، فخطأ نحويّ فيها لا يظهر في أي اختبار منطق — يظهر
      شاشةً بيضاء عند المستخدم. وهذا أرخص فحص يمنع ذلك. */
@@ -458,4 +509,40 @@ test("الشاشة: الشيفرة المضمَّنة تُحلَّل بلا خط
   assert.ok(!/ذروة|رواتب|payroll|salary/i.test(html.replace(/<script[\s\S]*?<\/script>/g, "")),
     "لا اسم يكشف القسم في نصّ الصفحة");
   assert.match(html, /dir="rtl"/);
+});
+
+test("المداخل: فشلُ تنزيلٍ ليس فسادًا يُسجَّل — ولا يختفي وراء 404", async () => {
+  await withDroua(async ({ db, sql, ctx }) => {
+    const run = await runs.createRun(sql, "2026-09");
+    const { file } = await upload(sql, ctx, run.runId, "full", fx.consistentMonth().full);
+
+    /* مفتاحٌ غائب: ليس فشل سلامة، فلا يُسجَّل في files.readFile — ولولا
+       التسجيل هنا لاشتكى المستخدم أن الملفّ «غير موجود» بلا أثر يقول لماذا. */
+    const keyring = require("../lib/droua/keyring");
+    const saved = process.env[keyring.ENV_PREFIX + "K1"];
+    delete process.env[keyring.ENV_PREFIX + "K1"];
+    try {
+      const out = await callApi(sql, ctx, "GET", `files/${file.fileId}/download`);
+      assert.equal(out.statusCode, 404, "والرد يبقى غير مميّز");
+      assert.ok(db.events().includes("file_download_failed"));
+      const entry = db.audit.find((a) => a.event === "file_download_failed");
+      assert.equal(entry.meta.fileId, file.fileId);
+      assert.ok(!("fileName" in entry.meta));
+    } finally {
+      process.env[keyring.ENV_PREFIX + "K1"] = saved;
+    }
+  });
+});
+
+test("المداخل: التنزيل الناجح يحمل رؤوس منعِ التنفيذ", async () => {
+  await withDroua(async ({ sql, ctx }) => {
+    const run = await runs.createRun(sql, "2026-09");
+    const { file } = await upload(sql, ctx, run.runId, "full", fx.consistentMonth().full);
+    const out = await callApi(sql, ctx, "GET", `files/${file.fileId}/download`);
+    assert.equal(out.statusCode, 200);
+    assert.equal(out.headers["x-content-type-options"], "nosniff");
+    assert.equal(out.headers["content-security-policy"], "default-src 'none'; sandbox");
+    assert.match(out.headers["cache-control"], /no-store/);
+    assert.equal(out.headers["content-length"], String(out.body.length));
+  });
 });
