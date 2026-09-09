@@ -328,8 +328,13 @@ test("المصدر الغائب: ملاحظةٌ واحدة لكل مصدر تس�
   assert.equal(out[0].rule, "not_evaluable");
   assert.equal(out[0].scope, "within_month");
   assert.equal(out[0].field, "current:cash");
-  /* والقواعد المعطَّلة كلّها مسمّاة في الوصف: من يقرأ يعرف ما لم يُفحص. */
-  for (const entry of notEvaluable) assert.match(out[0].description, new RegExp(entry.rule));
+  /* والقواعد المعطَّلة كلّها مسمّاة — بالعربية لمن يقرأ، وبالمعرّف لمن
+     يحسب. فالوصفُ للإنسان و`currentValue` للواجهة. */
+  for (const entry of notEvaluable) {
+    assert.match(out[0].description, new RegExp(analyze.RULE_LABELS[entry.rule]), entry.rule);
+    assert.match(out[0].currentValue, new RegExp(entry.rule), entry.rule);
+  }
+  assert.equal(out[0].delta, notEvaluable.length, "العدد يطابق ما تعطّل فعلًا");
 
   /* والبصمة على المصدر لا على عدد القواعد: تحليلٌ ثانٍ يُحدِّث ولا يُنشئ. */
   const again = analyze.notEvaluableFindings(
@@ -416,6 +421,34 @@ test("القارئ: «إسم البنك» عمودٌ يُقرأ بنكًا لا 
   assert.equal(doc.meta.mapping.bank, "إسم البنك");
   assert.equal(doc.rows[0].bank, "مصرفٌ تجريبيّ");
   assert.deepEqual(doc.meta.unknownColumns, []);
+});
+
+test("المصدر الغائب: مجموع التغطية لا يُضاعف قاعدةً عطّلها مصدران", () => {
+  /* شريط التغطية يجمع `delta`. فلو نُسبت القاعدة الواحدة إلى مصدرين
+     لصار المجموع أكبر من عدد القواعد نفسها — ولأُبلغ المستخدم بنقصٍ
+     أوسع من الواقع، وهو كذبٌ في الاتّجاه المعاكس. */
+  const twoSources = [
+    { rule: "iban_changed", scope: "vs_previous",
+      missing: [{ month: "previous", kind: "cash" }, { month: "current", doc: "merged", field: "bank" }] },
+    { rule: "bank_changed", scope: "vs_previous", missing: [{ month: "previous", kind: "cash" }] },
+  ];
+  const out = analyze.notEvaluableFindings(twoSources, "2026-07");
+  assert.equal(out.length, 2, "ملاحظةٌ لكل مصدرٍ ناقص — ليُرى أثر كلٍّ منهما");
+  assert.equal(out.reduce((t, f) => t + f.delta, 0), 2, "وقاعدتان اثنتان لا ثلاث");
+  /* ومع ذلك تُذكر القاعدة في ملاحظتَي مصدرَيها معًا: العدّ شيء والعرض آخر. */
+  assert.ok(out.every((f) => /iban_changed/.test(f.currentValue)));
+});
+
+test("المصدر الغائب: العدد في delta لا في نصٍّ قابلٍ للاقتطاع", () => {
+  /* عمود القيمة يُقتطع عند 120 محرفًا. فقائمةُ معرّفاتٍ طويلة تفقد
+     أواخرها — ومن يعدّها من النصّ يحسب النقص أصغر ممّا هو. */
+  const many = RULES.map((r) => r.id).map((id) => (
+    { rule: id, scope: "within_month", missing: [{ month: "current", kind: "cash" }] }));
+  const raw = analyze.notEvaluableFindings(many, null)[0];
+  assert.equal(raw.delta, RULES.length);
+  const stored = findings.normalize({ ...raw });
+  assert.ok(stored.currentValue.length < raw.currentValue.length, "النصّ اقتُطع فعلًا");
+  assert.equal(stored.delta, RULES.length, "والعدد نجا كاملًا");
 });
 
 test("المصدر الغائب: الشهر السابق مذكورٌ باسمه في الملاحظة", () => {
