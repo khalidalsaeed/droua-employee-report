@@ -3,8 +3,9 @@ const assert = require("node:assert/strict");
 
 const csvParser = require("../lib/droua/parsers/csv");
 const parsers = require("../lib/droua/parsers");
-const { compare, RULES } = require("../lib/droua/compare");
+const { compare, RULES, FIELD_SOURCES } = require("../lib/droua/compare");
 const findings = require("../lib/droua/findings");
+const analyze = require("../lib/droua/analyze");
 const fx = require("./helpers/payroll-fixtures");
 
 /* ─── القراءة والمقارنة ─────────────────────────────────────────────────
@@ -221,6 +222,243 @@ test("المقارنة: لكل قاعدة معرّف فريد ونطاق معر�
     assert.ok(["within_month", "vs_previous"].includes(r.scope), r.id);
     assert.equal(typeof r.run, "function", r.id);
   }
+});
+
+/* ══ المصادر الغائبة: لا تُخمَّن ولا يُسكت عنها ══════════════════════════
+
+   الحالة الواقعية التي بُني لها هذا: شهرٌ سابق بلا مسير كاش مستقلّ عندنا.
+   وغيابُ الملفّ **معلومةٌ مفقودة عن الماضي** لا خللٌ في الرواتب — فلا
+   يجوز أن يُقرأ صفرًا في الكاش، ولا أن يُخرج «مستحقٌّ بلا صرف» لكل من
+   صُرف له كاشًا، ولا أن يُعلن «تغيّر الحساب» لمن لم يكن حسابُه معروفًا
+   أصلًا. */
+
+test("المقارنة: كل قاعدة تُعلن مصادرها، والمُعلَن نوعٌ معروف", () => {
+  const KINDS = ["full", "transfer", "cash", "employees"];
+  for (const r of RULES) {
+    if (!r.needs) continue;
+    for (const key of Object.keys(r.needs)) {
+      assert.ok(["current", "previous", "previousAny"].includes(key), `${r.id}: ${key}`);
+      for (const kind of r.needs[key]) assert.ok(KINDS.includes(kind), `${r.id}: ${kind}`);
+    }
+    if (r.scope === "within_month") {
+      assert.ok(!r.needs.previous && !r.needs.previousAny,
+        `${r.id}: قاعدةٌ داخل الشهر لا تطلب مصدرًا من السابق`);
+    }
+  }
+});
+
+test("المصدر الغائب: غياب كاش السابق لا يُنتج ملاحظةً واحدة كاذبة", () => {
+  const previous = monthDocs(fx.consistentMonth());
+  previous.cash = null;                    // لا مسير كاش مستقلّ للشهر السابق
+  const current = monthDocs(fx.consistentMonth());
+
+  const { findings: out, notEvaluable } = compare({ docs: current, previousDocs: previous });
+
+  /* الشهران متطابقان تمامًا: أي ملاحظة هنا اختُرعت من العدم. */
+  assert.deepEqual(out.map((f) => `${f.rule}:${f.employeeRef || ""}`), [],
+    "غيابُ ملفٍّ تاريخيّ ليس خللًا في الرواتب");
+  assert.equal(rule(out, "missing_in_split").length, 0);
+
+  /* ولا يُبلَّغ عن نقصٍ لا أثر له: مسير السابق **الكامل** يحمل مبالغ كل
+     موظّف — من صُرف له كاشًا ومن حُوِّل له — فلا قاعدةَ مقارنةٍ واحدة
+     تحتاج ملفّ الكاش التاريخيّ. وإعلانُ «تعذّر التقييم» هنا إنذارٌ كاذب
+     في الاتّجاه الآخر: يوهم بفجوةٍ في التغطية لا وجود لها. */
+  assert.deepEqual(notEvaluable, [], "لا قاعدةَ مقارنةٍ تستند إلى كاش السابق");
+});
+
+test("المصدر الغائب: شهرٌ بلا كاش يُقيَّم داخليًّا بما توفّر ويُعلن ما تعذّر", () => {
+  /* وحين يُحلَّل ذلك الشهر **نفسه** يتغيّر الحكم: قواعد «الكامل = التحويل
+     + الكاش» تحتاج الطرفين، فتُعلَن غير مُقيَّمة بدل أن تُقرأ صفرًا. */
+  const month = monthDocs(fx.consistentMonth());
+  month.cash = null;
+  const { applied, notEvaluable } = compare({ docs: month, previousDocs: null });
+  const stalled = notEvaluable.map((e) => e.rule).sort();
+  assert.deepEqual(stalled,
+    ["extra_in_split", "method_vs_channel", "missing_in_split", "net_mismatch", "paid_twice", "totals_mismatch"],
+    "ما يحتاج طرفَي الصرف وحده يتوقّف");
+  for (const id of stalled) assert.ok(!applied.includes(id), `${id}: لا يُحسب مطبَّقًا`);
+  /* وما لا يحتاجه يُطبَّق: النقص لا يعطّل الشهر كلّه. */
+  assert.ok(applied.includes("not_in_payroll") && applied.includes("duplicate_emp_no"));
+});
+
+test("المصدر الغائب: كاش الشهر الجاري لا يُقرأ صفرًا", () => {
+  const month = monthDocs(fx.consistentMonth());
+  month.cash = null;
+  const { findings: out, notEvaluable } = compare({ docs: month, previousDocs: null });
+  assert.equal(rule(out, "missing_in_split").length, 0, "«1003» يُصرف كاشًا — وملفّه غائبٌ لا صفر");
+  assert.equal(rule(out, "totals_mismatch").length, 0, "ولا يُجمع مجموعٌ ينقصه طرف");
+  assert.ok(notEvaluable.some((e) => e.rule === "missing_in_split"));
+});
+
+test("المصدر الغائب: تغيّر الحساب لا يُعلَن حين لا مصدر تاريخيّ له", () => {
+  /* الحساب يعيش في «التحويل» و«قائمة الموظفين». فبغيابهما معًا في السابق
+     تصير المقارنة فراغًا بفراغ — وإعلانُ «لم يتغيّر» كذبٌ كإعلان تغيّره. */
+  const previous = monthDocs(fx.consistentMonth());
+  previous.transfer = null;
+  previous.employees = null;
+  const current = monthDocs(fx.consistentMonth({ ibans: { 1001: "SA1111111111111111111111" } }));
+
+  const { findings: out, notEvaluable } = compare({ docs: current, previousDocs: previous });
+  assert.equal(rule(out, "iban_changed").length, 0, "لا مصدر تاريخيّ للحساب");
+  assert.equal(rule(out, "bank_changed").length, 0);
+  const stalled = notEvaluable.map((e) => e.rule);
+  assert.ok(stalled.includes("iban_changed") && stalled.includes("bank_changed"));
+
+  /* وحين يتوفّر أحدهما — القائمة وحدها — تُقيَّم القاعدة وتُصيب. */
+  const withList = monthDocs(fx.consistentMonth());
+  withList.transfer = null;
+  const { findings: out2, notEvaluable: none } = compare({ docs: current, previousDocs: withList });
+  assert.equal(rule(out2, "iban_changed").length, 1, "قائمةُ الموظفين وحدها تكفي مصدرًا");
+  assert.equal(none.filter((e) => e.rule === "iban_changed").length, 0);
+});
+
+test("المصدر الغائب: «لا شهر سابق» تخطٍّ لا نقصُ مصدر", () => {
+  const { skipped, notEvaluable } = compare({ docs: monthDocs(fx.consistentMonth()), previousDocs: null });
+  assert.ok(skipped.length > 0, "قواعد المقارنة تُتخطّى في أول شهر");
+  assert.deepEqual(notEvaluable, [], "وليس ذلك نقصَ مصدرٍ يُبلَّغ عنه");
+});
+
+test("المصدر الغائب: ملاحظةٌ واحدة لكل مصدر تسرد قواعده", () => {
+  const month = monthDocs(fx.consistentMonth());
+  month.cash = null;
+  const { notEvaluable } = compare({ docs: month, previousDocs: null });
+
+  const out = analyze.notEvaluableFindings(notEvaluable, null);
+  assert.equal(out.length, 1, "مصدرٌ واحد ناقص ⇒ ملاحظةٌ واحدة لا واحدة لكل قاعدة");
+  assert.equal(out[0].rule, "not_evaluable");
+  assert.equal(out[0].scope, "within_month");
+  assert.equal(out[0].field, "current:cash");
+  /* والقواعد المعطَّلة كلّها مسمّاة — بالعربية لمن يقرأ، وبالمعرّف لمن
+     يحسب. فالوصفُ للإنسان و`currentValue` للواجهة. */
+  for (const entry of notEvaluable) {
+    assert.match(out[0].description, new RegExp(analyze.RULE_LABELS[entry.rule]), entry.rule);
+    assert.match(out[0].currentValue, new RegExp(entry.rule), entry.rule);
+  }
+  assert.equal(out[0].delta, notEvaluable.length, "العدد يطابق ما تعطّل فعلًا");
+
+  /* والبصمة على المصدر لا على عدد القواعد: تحليلٌ ثانٍ يُحدِّث ولا يُنشئ. */
+  const again = analyze.notEvaluableFindings(
+    [...notEvaluable, { rule: "z_extra", scope: "within_month", missing: [{ month: "current", kind: "cash" }] }],
+    null);
+  assert.equal(findings.normalize({ ...out[0], severity: "info" }).fingerprint,
+    findings.normalize({ ...again[0], severity: "info" }).fingerprint);
+});
+
+/* ── العمود الغائب: الصفر الصامت ──
+   الحالة الواقعية: مسير التحويل عندنا كشفُ مبالغ مقسومٌ بالقناة، **بلا
+   عمود حساب ولا عمود بنك**. فقاعدةٌ تقارن الحساب تمرّ على الجميع فلا تجد
+   ما تقارنه وتُخرج صفرًا — يُقرأ «لا مخالفة» ومعناه «لم يُفحص شيء». */
+
+test("العمود الغائب: كل قاعدة تُعلن حقلها من مصدرٍ معروف", () => {
+  for (const r of RULES) {
+    if (!r.needsField) continue;
+    for (const key of Object.keys(r.needsField)) {
+      assert.ok(["current", "previous"].includes(key), `${r.id}: ${key}`);
+      for (const spec of r.needsField[key]) {
+        assert.ok(FIELD_SOURCES.includes(spec.doc), `${r.id}: مصدرٌ مجهول ${spec.doc}`);
+        assert.equal(typeof spec.field, "string", `${r.id}: حقلٌ بلا اسم`);
+      }
+      if (key === "previous") assert.equal(r.scope, "vs_previous", r.id);
+    }
+  }
+});
+
+test("العمود الغائب: مسير تحويلٍ بلا عمود حساب لا يُخرج صفرًا صامتًا", () => {
+  const month = fx.consistentMonth();
+  /* مسير تحويل واقعيّ: رقمٌ واسمٌ وصافٍ — ولا عمود حساب. */
+  month.transfer = fx.csv(["رقم الموظف", "الاسم", "الصافي"],
+    [["1001", "أ", 9000], ["1002", "ب", 7500], ["1004", "د", 8200]]);
+  const { applied, notEvaluable, findings: out } = compare({ docs: monthDocs(month), previousDocs: null });
+
+  assert.equal(rule(out, "iban_vs_list").length, 0);
+  assert.ok(!applied.includes("iban_vs_list"), "ولا تُحسب مطبَّقة: صفرُها لا يعني سلامة");
+  const gap = notEvaluable.find((e) => e.rule === "iban_vs_list");
+  assert.ok(gap, "بل يُعلَن أن الحقل غائب");
+  assert.deepEqual(gap.missing, [{ month: "current", doc: "transfer", field: "iban4" }]);
+});
+
+test("العمود الغائب: عمودٌ موجودٌ فارغٌ في كل صفّ كعمودٍ غائب", () => {
+  const month = fx.consistentMonth();
+  month.transfer = fx.csv(["رقم الموظف", "الاسم", "الايبان", "الصافي"],
+    [["1001", "أ", "", 9000], ["1002", "ب", "", 7500], ["1004", "د", "", 8200]]);
+  const { notEvaluable } = compare({ docs: monthDocs(month), previousDocs: null });
+  assert.ok(notEvaluable.some((e) => e.rule === "iban_vs_list"),
+    "عمودٌ لا قيمة فيه لا يُثبت أكثر ممّا يُثبت غيابُه");
+});
+
+test("العمود الغائب: الآليّة ليست شاملة — الحقل المتوفّر يُقيَّم ويُصيب", () => {
+  /* وإلّا لكانت «تعذّر التقييم» بابًا يُسكِت القواعد كلّها. */
+  const month = fx.consistentMonth({ ibans: { 1001: "SA9999999999999999990000" } });
+  /* الحساب في القائمة لا في مسير التحويل: نُبقيه في التحويل ليُقارَن. */
+  const { applied, notEvaluable, findings: out } = compare({ docs: monthDocs(month), previousDocs: null });
+  assert.ok(applied.includes("iban_vs_list"));
+  assert.equal(notEvaluable.filter((e) => e.rule === "iban_vs_list").length, 0);
+  assert.ok(applied.includes("method_vs_channel"), "طريقة الصرف متوفّرة في القائمة");
+});
+
+test("العمود الغائب: تغيّر البنك يتوقّف حين لا عمود بنك في الشهرين", () => {
+  const strip = (month) => {
+    const docs = monthDocs(month);
+    for (const kind of ["transfer", "employees"]) {
+      for (const row of docs[kind].rows) row.bank = null;
+    }
+    return docs;
+  };
+  const { applied, notEvaluable, findings: out } =
+    compare({ docs: strip(fx.consistentMonth()), previousDocs: strip(fx.consistentMonth()) });
+  assert.equal(rule(out, "bank_changed").length, 0);
+  assert.ok(!applied.includes("bank_changed"));
+  const gap = notEvaluable.find((e) => e.rule === "bank_changed");
+  assert.ok(gap && gap.missing.every((m) => m.doc === "merged" && m.field === "bank"));
+  /* وتغيّرُ الحساب يبقى مُقيَّمًا: نقصُ حقلٍ لا يجرّ حقلًا آخر معه. */
+  assert.ok(applied.includes("iban_changed"));
+});
+
+test("القارئ: «إسم البنك» عمودٌ يُقرأ بنكًا لا مجهولًا", () => {
+  /* قائمةُ موظفي بعض الشهور تحمله وبعضها لا — وبلا مرادفه تصير مقارنةُ
+     البنك فراغًا بفراغ. */
+  const doc = parse("employees", "الرقم الوظيفي,الاسم,إسم البنك\n1001,أ,مصرفٌ تجريبيّ\n");
+  assert.equal(doc.meta.mapping.bank, "إسم البنك");
+  assert.equal(doc.rows[0].bank, "مصرفٌ تجريبيّ");
+  assert.deepEqual(doc.meta.unknownColumns, []);
+});
+
+test("المصدر الغائب: مجموع التغطية لا يُضاعف قاعدةً عطّلها مصدران", () => {
+  /* شريط التغطية يجمع `delta`. فلو نُسبت القاعدة الواحدة إلى مصدرين
+     لصار المجموع أكبر من عدد القواعد نفسها — ولأُبلغ المستخدم بنقصٍ
+     أوسع من الواقع، وهو كذبٌ في الاتّجاه المعاكس. */
+  const twoSources = [
+    { rule: "iban_changed", scope: "vs_previous",
+      missing: [{ month: "previous", kind: "cash" }, { month: "current", doc: "merged", field: "bank" }] },
+    { rule: "bank_changed", scope: "vs_previous", missing: [{ month: "previous", kind: "cash" }] },
+  ];
+  const out = analyze.notEvaluableFindings(twoSources, "2026-07");
+  assert.equal(out.length, 2, "ملاحظةٌ لكل مصدرٍ ناقص — ليُرى أثر كلٍّ منهما");
+  assert.equal(out.reduce((t, f) => t + f.delta, 0), 2, "وقاعدتان اثنتان لا ثلاث");
+  /* ومع ذلك تُذكر القاعدة في ملاحظتَي مصدرَيها معًا: العدّ شيء والعرض آخر. */
+  assert.ok(out.every((f) => /iban_changed/.test(f.currentValue)));
+});
+
+test("المصدر الغائب: العدد في delta لا في نصٍّ قابلٍ للاقتطاع", () => {
+  /* عمود القيمة يُقتطع عند 120 محرفًا. فقائمةُ معرّفاتٍ طويلة تفقد
+     أواخرها — ومن يعدّها من النصّ يحسب النقص أصغر ممّا هو. */
+  const many = RULES.map((r) => r.id).map((id) => (
+    { rule: id, scope: "within_month", missing: [{ month: "current", kind: "cash" }] }));
+  const raw = analyze.notEvaluableFindings(many, null)[0];
+  assert.equal(raw.delta, RULES.length);
+  const stored = findings.normalize({ ...raw });
+  assert.ok(stored.currentValue.length < raw.currentValue.length, "النصّ اقتُطع فعلًا");
+  assert.equal(stored.delta, RULES.length, "والعدد نجا كاملًا");
+});
+
+test("المصدر الغائب: الشهر السابق مذكورٌ باسمه في الملاحظة", () => {
+  const out = analyze.notEvaluableFindings(
+    [{ rule: "iban_changed", scope: "vs_previous", missing: [{ month: "previous", kind: "employees|transfer" }] }],
+    "2026-07");
+  assert.equal(out.length, 1);
+  assert.equal(out[0].severity, "warn", "نقصُ السابق تحذير — ولا `file_missing` يغطّيه");
+  assert.match(out[0].title, /2026-07/, "الشهر المقصود مذكور — لا «السابق» مجرّدة");
+  assert.match(out[0].title, / أو /, "«أيٌّ من المصدرين» لا «كلاهما»");
 });
 
 /* ══ الملاحظات: البصمة والتقنيع ═══════════════════════════════════════ */
