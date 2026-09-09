@@ -52,11 +52,19 @@ const STATEMENTS = [
         -- للعرض والتنزيل فقط. لا يدخل المسار ولا الـAAD.
         -- ومنع محارف التحكّم هنا هو الطبقة الثانية تحت ترويسة التنزيل:
         -- سطرٌ جديد في اسم ملفّ = حقن ترويسات في Content-Disposition.
+        --
+        -- ⚠️ chr(92) هو الشرطة المائلة العكسية — **ولا تُكتب حرفيًّا هنا**.
+        -- هذا النصّ يعيش داخل template literal في JavaScript، وفيه يبتلع
+        -- المحرِّفُ الشرطةَ فيصير النصّ فارغًا قبل أن يبلغ القاعدة. وPostgres
+        -- تُرجع strpos(x, '') = 1 لكل نصّ — فينقلب الشرط إلى «1 = 0»،
+        -- ويفشل **كل إدخال ملفّ** بلا أن يكون في الاسم شيء.
+        -- وchr(92) لا يمرّ بمحرِّف: لا في JavaScript، ولا في الصدفة، ولا في
+        -- أي أداة هجرة مستقبلًا.
         file_name      text NOT NULL CHECK (
                          char_length(file_name) BETWEEN 1 AND 255
                          AND file_name !~ '[[:cntrl:]]'
                          AND strpos(file_name, '/') = 0
-                         AND strpos(file_name, '\') = 0),
+                         AND strpos(file_name, chr(92)) = 0),
 
         format         text NOT NULL CHECK (format IN ('pdf', 'xlsx', 'xls', 'csv')),
         content_type   text NOT NULL,
