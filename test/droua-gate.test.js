@@ -101,10 +101,13 @@ function userRow(o) {
 const OWNER_ROW = () => userRow({ id: PROTECTED_ID, email: PROTECTED_EMAIL, role: "hr" });
 
 /* قاعدة مُزيَّفة: مستخدمون + جداول البوابة الثلاثة. */
-function fakeDb({ users = [], session = null, failCounts = { short: 0, long: 0, critical: 0 } } = {}) {
+function fakeDb({ users = [], session = null, failCounts = { short: 0, long: 0, critical: 0 }, data = null } = {}) {
   const byId = new Map(users.map((u) => [u.id, u]));
   const state = { session, inserts: [] };
   const sql = makeFakeSql((call) => {
+    /* جداول البيانات تُفوَّض إلى القاعدة المُزيَّفة ذات الصفوف الحقيقية —
+       فيُختبر المسار من الطلب إلى الصفّ بلا تقسيمٍ في المنتصف. */
+    if (data && /droua_payroll_/.test(call.text)) return data.exec(call.text, call.values);
     if (/SELECT \* FROM users WHERE id =/.test(call.text)) {
       const found = byId.get(call.values[0]);
       return found ? [found] : [];
@@ -419,7 +422,7 @@ test("الجلسة: كوكي صالح يفتح الصفحة ويجدّد الم�
     const sql = fakeDb({ users: [OWNER_ROW()], session: s.row });
     const out = await call({ sql, actor: OWNER_ROW(), kind: "page", gateCookie: s.token });
     assert.equal(out.statusCode, 200);
-    assert.match(out.body, /القسم مفتوح/);
+    assert.match(out.body, /id="v-runs"/);
     assert.ok(!/رواتب|ذروة|مسير/.test(out.body), "الصفحة يجب ألّا تسمّي القسم");
     assert.equal(sql.matching(/UPDATE droua_gate_sessions/).length, 1, "يجب انزلاق مهلة الخمول");
   });
@@ -431,7 +434,7 @@ test("الجلسة: بلا كوكي تُعرض شاشة كلمة المرور ل
     const out = await call({ sql, actor: OWNER_ROW(), kind: "page" });
     assert.equal(out.statusCode, 200);
     assert.match(out.body, /أدخل كلمة المرور/);
-    assert.ok(!/القسم مفتوح/.test(out.body));
+    assert.ok(!/id="v-runs"/.test(out.body));
   });
 });
 
@@ -532,10 +535,27 @@ test("الجلسة: جلسة مستخدم آخر لا تُقبل", async () => {
 test("الجلسة: مسارات غير معروفة داخل القسم تُردّ بـ404", async () => {
   await withEnv(fullEnv(), async () => {
     const sql = fakeDb({ users: [OWNER_ROW()] });
-    for (const p of ["secure-audit/gate/whatever", "secure-audit/runs", "secure-audit/files"]) {
+    for (const p of [
+      "secure-audit/gate/whatever", "secure-audit/nope", "secure-audit/files",
+      "secure-audit/runs/not-a-uuid", "secure-audit/runs/../../etc",
+    ]) {
       const out = await call({ sql, actor: OWNER_ROW(), kind: "api", apiPath: p });
-      assert.equal(out.statusCode, 404, `${p} يجب ألّا يوجد في هذه المرحلة`);
+      assert.equal(out.statusCode, 404, `${p} يجب ألّا يوجد`);
     }
+  });
+});
+
+test("الجلسة: مسار بياناتٍ حقيقيّ ببوابة مقفلة يُردّ 401 لا بيانات", async () => {
+  await withEnv(fullEnv(), async () => {
+    const sql = fakeDb({ users: [OWNER_ROW()] });
+    const out = await call({ sql, actor: OWNER_ROW(), kind: "api", apiPath: "secure-audit/runs" });
+    /* 401 لا 404: من بلغ هنا اجتاز التحقّق من الهويّة أصلًا وهو صاحب
+       الحساب، فالتمييز لا يكشف شيئًا لأحد سواه — ويقول له أن يفتح البوابة
+       بدل أن يظنّ المسار غير موجود. */
+    assert.equal(out.statusCode, 401);
+    assert.equal(out.body.locked, true);
+    assert.equal(out.body.runs, undefined, "لا بيان يخرج قبل فتح البوابة");
+    assert.equal(sql.matching(/droua_payroll_/).length, 0, "ولا استعلام بلغ جداول البيانات");
   });
 });
 
@@ -780,4 +800,75 @@ test("التقليم: حذف صفّ جلسة يفشل مغلقًا لا مفتو
   /* توكنٌ يشير إلى صفٍّ محذوف لا يجد جلسته. */
   assert.equal(gs.isUsable(null, PROTECTED_ID, Date.now()), false);
   assert.ok(gs.SESSION_PRUNE_GRACE_MS >= 24 * 60 * 60 * 1000, "مهلة يوم بعد السقف تُبقي أثر الجلسات الحديثة");
+});
+
+/* ─── التكامل: من الطلب إلى الصفّ عبر api/app.js كاملًا ────────────────
+   الاختبارات أعلاه تقيس البوابة، وdroua-flow يقيس الطبقات. وهذا يقيس ما
+   بينهما: أن إعادة الكتابة والموجّه والحارس والسياق والمداخل موصولة فعلًا. */
+test("التكامل: بوابةٌ مفتوحة تُنشئ شهرًا وترفع ملفًّا عبر المسار الكامل", async () => {
+  const Module = require("node:module");
+  const keyring = require("../lib/droua/keyring");
+  const { makeFilesDb, makeFakeBlob } = require("./helpers/files-db");
+  const gateToken = require("../lib/droua/gateToken");
+  const fx = require("./helpers/payroll-fixtures");
+  const BLOB_ID = require.resolve("@vercel/blob");
+
+  const blob = makeFakeBlob();
+  const stub = new Module(BLOB_ID, null);
+  stub.filename = BLOB_ID; stub.loaded = true; stub.exports = blob.api;
+  const previousBlob = require.cache[BLOB_ID];
+  require.cache[BLOB_ID] = stub;
+
+  try {
+    await withEnv({
+      ...fullEnv(),
+      DROUA_BLOB_READ_WRITE_TOKEN: "vercel_blob_rw_DROUA_TEST_TOKEN",
+      DROUA_FILE_ACTIVE_KEY_ID: "k1",
+      DROUA_FILE_KEY_K1: "a1".repeat(32),
+    }, async () => {
+      const data = makeFilesDb();
+      const sid = crypto.randomBytes(16).toString("hex");
+      const now = Date.now();
+      const issued = gateToken.issue(
+        { userId: PROTECTED_ID, sid, now, idleMs: 900000, absoluteExp: now + 3600000 }, GATE_SECRET
+      );
+      const sql = fakeDb({
+        users: [OWNER_ROW()], data,
+        session: sessionRow({ sidHash: gateToken.hashSid(sid), now }),
+      });
+
+      const created = await call({
+        sql, actor: OWNER_ROW(), kind: "api", apiPath: "secure-audit/runs",
+        method: "POST", body: { period: "2026-09" }, gateCookie: issued.token,
+      });
+      assert.equal(created.statusCode, 200, JSON.stringify(created.body));
+      const runId = created.body.run.runId;
+      assert.equal(data.runRows.length, 1);
+
+      const month = fx.consistentMonth();
+      const uploaded = await call({
+        sql, actor: OWNER_ROW(), kind: "api", apiPath: `secure-audit/runs/${runId}/files`,
+        method: "POST", gateCookie: issued.token,
+        body: { kind: "full", fileName: "f.csv", format: "csv",
+          data: Buffer.from(month.full, "utf8").toString("base64") },
+      });
+      assert.equal(uploaded.statusCode, 200, JSON.stringify(uploaded.body));
+      assert.equal(data.rows.length, 1);
+      assert.equal(blob.objects.size, 1, "البايتات بلغت المتجر مشفَّرة");
+      assert.ok(!blob.objects.get(data.rows[0].blob_pathname).toString("utf8").includes("الاسم"));
+      /* والتوكن الممرَّر توكن القسم لا توكن المتجر العامّ. */
+      assert.equal(blob.calls[0].opts.token, "vercel_blob_rw_DROUA_TEST_TOKEN");
+      assert.equal(blob.calls[0].opts.access, "private");
+
+      /* وبلا كوكي بوابة لا يمرّ شيء. */
+      const locked = await call({
+        sql, actor: OWNER_ROW(), kind: "api", apiPath: "secure-audit/runs", method: "GET",
+      });
+      assert.equal(locked.statusCode, 401);
+      assert.equal(locked.body.runs, undefined);
+    });
+  } finally {
+    if (previousBlob) require.cache[BLOB_ID] = previousBlob;
+    else delete require.cache[BLOB_ID];
+  }
 });

@@ -41,7 +41,11 @@ const FORBIDDEN = [
 test("العزل: وحدات القسم لا تذكر أي جدول أو وحدة تخصّ أجير", () => {
   for (const { file, text } of readAll(drouaFiles())) {
     for (const needle of FORBIDDEN) {
-      assert.ok(!text.includes(needle), `${file} يذكر «${needle}» — ممنوع`);
+      /* جداول القسم تحمل البادئة droua_ وبعضها يشترك في اللاحقة مع جداول
+         أجير (droua_payroll_runs / payroll_runs). فالمنع على الاسم المجرَّد
+         وحده — وإلّا منع الاختبارُ جداولَ القسم نفسها. */
+      const pattern = new RegExp(`(?<![A-Za-z0-9_])${needle.replace(/[/.]/g, "\\$&")}`);
+      assert.ok(!pattern.test(text), `${file} يذكر «${needle}» — ممنوع`);
     }
   }
 });
@@ -186,4 +190,61 @@ test("العزل: معاملات الإنتاج للاشتقاق هي 2^17", () 
   assert.equal(PRODUCTION_PARAMS.logN, 17);
   assert.equal(PRODUCTION_PARAMS.r, 8);
   assert.equal(PRODUCTION_PARAMS.p, 1);
+});
+
+/* ─── تخزين القسم: ما لا يجوز أن يُذكر في وحداته ───────────────────────
+   هذان الفحصان يحرسان مستقبل المجلّد كلّه، لا الملفّين الحاليَّين: أي وحدة
+   تُضاف غدًا وتنسى `token` أو تعود إلى الاسم المجرَّد تُوقِف البناء. */
+
+test("العزل: لا وحدة تعتمد على توكن متجر أجير العامّ", () => {
+  /* `@vercel/blob` يقرأ التوكن العامّ تلقائيًا حين لا يُمرَّر `token`.
+     فالاستثناء الوحيد المسموح هو **فحص التساوي** الذي يمسك خطأ اللصق. */
+  for (const { file, text } of readAll(drouaFiles())) {
+    const hits = text.match(/(?<![A-Z_])BLOB_READ_WRITE_TOKEN/g) || [];
+    if (!hits.length) continue;
+    assert.equal(path.basename(file), "storage.js",
+      `${file} يذكر توكن المتجر العامّ — والذكر الوحيد المسموح في storage.js`);
+    assert.equal(hits.length, 1, `${file}: ذكر واحد لا غير`);
+    assert.match(text, /token === process\.env\.BLOB_READ_WRITE_TOKEN/,
+      "الذكر الوحيد يجب أن يكون فحص التساوي");
+  }
+});
+
+test("العزل: لا اسم مفتاح مجرَّد بلا معرّف", () => {
+  /* اسمٌ بلا معرّف يدعو إلى سقوطٍ ضمنيّ إلى «المفتاح» — وهو صنف العطل
+     نفسه الذي يجعل نسيان `token` يكتب في متجر عامّ. */
+  for (const { file, text } of readAll(drouaFiles())) {
+    assert.ok(!/DROUA_FILE_KEY(?!_)/.test(text),
+      `${file} يذكر DROUA_FILE_KEY المجرَّد — المفاتيح تُعرَّف بمعرّف`);
+  }
+});
+
+test("العزل: كل ما يلمس الملفّات يمرّ بالحارس — سندًا للحاجز الزمنيّ", () => {
+  /* الضمان الحقيقيّ زمنُ تشغيل: files.js تفتح بـ`gateContext.requireGate()`،
+     والسياق لا يفتحه إلا `requireDrouaAccess` بعد التحقّق من جلسة حيّة. فأي
+     مسار يُنسى فيه الحارس يأخذ استثناءً لا يقدّم ملفًّا.
+
+     وهذا الفحص سندٌ ساكن فوقه: يمسك الاستيراد المباشر لـstorage من وحدةٍ
+     لا تذكر الحارس أصلًا — أي محاولة الالتفاف على files.js من أسفلها. */
+  for (const { file, text } of readAll(drouaFiles())) {
+    const base = path.basename(file);
+    if (base === "storage.js" || base === "gateContext.js") continue;
+    if (!/require\(["']\.\/(storage|files)["']\)/.test(text)) continue;
+    assert.match(text, /requireGate\s*\(|requireDrouaAccess/,
+      `${file} يلمس الملفّات بلا ذكر الحارس`);
+  }
+});
+
+test("العزل: files.js تبدأ كل دالّة مُصدَّرة بالحارس", () => {
+  /* الفحص على العدد لا على الشكل: دالّة تُضاف غدًا بلا سطر الحارس تُسقط
+     هذا الاختبار قبل أن تصل إلى موجّه. */
+  /* على الشيفرة مجرّدةً من التعليقات: شرحُ الحارس في رأس الملفّ يذكره
+     أيضًا، فعدُّ النصّ الخام كان سيعدّ الشرح حارسًا. */
+  const entry = readAll(drouaFiles()).find((f) => path.basename(f.file) === "files.js");
+  const src = entry.text;
+  const exported = Object.keys(require("../lib/droua/files"))
+    .filter((k) => typeof require("../lib/droua/files")[k] === "function" && k !== "publicView");
+  const guards = (src.match(/gateContext\.requireGate\(\)/g) || []).length;
+  assert.equal(guards, exported.length,
+    `عدد الحرّاس ${guards} لا يطابق عدد الدوالّ المُصدَّرة ${exported.length}`);
 });
