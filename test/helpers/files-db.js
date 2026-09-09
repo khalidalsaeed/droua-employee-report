@@ -163,9 +163,19 @@ function makeFilesDb() {
     }
     if (/^SELECT \* FROM droua_payroll_findings WHERE run_id/.test(t)) {
       const open = /resolved_at IS NULL/.test(t);
+      /* الترتيب يُقرأ من نصّ الاستعلام نفسه لا يُعاد كتابته هنا: قاعدةٌ
+         مُزيَّفة ترتّب بطريقتها تُخفي عطلًا في ترتيب القاعدة الحقيقية —
+         وهو بالضبط ما أخفى «الحرج في آخر القائمة». */
+      const ranks = [...t.matchAll(/WHEN '(\w+)' THEN (\d+)/g)]
+        .reduce((acc, m) => ({ ...acc, [m[1]]: Number(m[2]) }), {});
+      const fallback = /ELSE (\d+)/.exec(t);
+      const rank = (r) => (r.severity in ranks ? ranks[r.severity]
+        : (fallback ? Number(fallback[1]) : 0));
       return findingRows
         .filter((r) => r.run_id === values[0] && (!open || !r.resolved_at))
-        .sort((a, b) => String(b.severity).localeCompare(String(a.severity)))
+        .sort((a, b) => rank(a) - rank(b)
+          || String(a.employee_ref || "").localeCompare(String(b.employee_ref || ""))
+          || String(a.first_seen_at).localeCompare(String(b.first_seen_at)))
         .map(clone);
     }
     if (/^SELECT run_id,/.test(t)) {

@@ -546,3 +546,25 @@ test("المداخل: التنزيل الناجح يحمل رؤوس منعِ ا�
     assert.equal(out.headers["content-length"], String(out.body.length));
   });
 });
+
+test("الملاحظات: الحرج أوّلًا — لا ترتيبًا أبجديًّا يدفنه", async () => {
+  /* «ORDER BY severity DESC» ترتيبٌ أبجديّ: warn ثمّ info ثمّ critical —
+     فيهبط الحرج إلى آخر القائمة. عطلٌ لا يُسقط شيئًا ولا يرمي استثناء،
+     ويدفع ثمنَه المستخدم وحده حين يقرأ العشرين الأولى ولا يرى فيها ما يجب
+     أن يراه أوّلًا. */
+  await withDroua(async ({ sql, ctx }) => {
+    const runId = (await runs.createRun(sql, "2026-09")).runId;
+    await findings.sync(sql, runId, [
+      { rule: "a", scope: "within_month", severity: "info", title: "معلومة", employeeRef: "1" },
+      { rule: "b", scope: "within_month", severity: "warn", title: "تنبيه", employeeRef: "2" },
+      { rule: "c", scope: "within_month", severity: "critical", title: "حرج", employeeRef: "3" },
+      { rule: "d", scope: "within_month", severity: "critical", title: "حرج ثانٍ", employeeRef: "4" },
+    ]);
+    const list = await findings.listFindings(sql, runId);
+    assert.deepEqual(list.map((f) => f.severity), ["critical", "critical", "warn", "info"]);
+    assert.deepEqual(list.map((f) => f.employeeRef), ["3", "4", "2", "1"], "وترتيبٌ ثابت داخل الرتبة");
+
+    const api = await callApi(sql, ctx, "GET", `runs/${runId}/findings`);
+    assert.equal(api.body.findings[0].severity, "critical", "والـAPI يعطي الترتيب نفسه");
+  });
+});
