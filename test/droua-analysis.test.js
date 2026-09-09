@@ -698,3 +698,144 @@ test("المقارنة: توحيد تسمية قناة الصرف", () => {
   for (const v of ["نقد", "كاش", "Cash", "نقدا"]) assert.equal(channelOf(v), "cash", v);
   for (const v of ["", null, "غير محدد", "أخرى"]) assert.equal(channelOf(v), null, String(v));
 });
+
+/* ── العمود الرقميّ: الصفر الذي يبدو قيمة ──
+   المطبِّع يجعل العمود الغائب صفرًا لا فراغًا. فمقارنةُ شهرين بلا عمود
+   بدلات تُخرج «لم تتغيّر البدلات» بثقة، ولم تُقرأ بدلاتٌ أصلًا. وفحصُ
+   الامتلاء أعمى عنه — الصفر قيمة — فيُكشف من المطابقة وحدها. */
+
+const bare = (rows) => fx.csv(["رقم الموظف", "الاسم", "الصافي"], rows);
+
+test("الصفر الخادع: مسيرٌ بلا عمود بدلات لا يُخرج «لم تتغيّر»", () => {
+  const month = () => {
+    const docs = monthDocs(fx.consistentMonth());
+    docs.full = parse("full", bare([["1001", "أ", 9000], ["1002", "ب", 7500]]));
+    return docs;
+  };
+  const { applied, notEvaluable, findings: out } = compare({ docs: month(), previousDocs: month() });
+  for (const id of ["allowances_changed", "deductions_changed", "basic_changed"]) {
+    assert.equal(rule(out, id).length, 0);
+    assert.ok(!applied.includes(id), `${id}: صفرٌ لا يُحسب فحصًا`);
+    assert.ok(notEvaluable.some((e) => e.rule === id), `${id}: يُعلَن أنه لم يُقيَّم`);
+  }
+  /* والصافي عمودٌ مطلوب فيبقى مُقيَّمًا: النقص لا يجرّ ما ليس ناقصًا. */
+  assert.ok(applied.includes("net_changed"));
+});
+
+test("الصفر الخادع: العمود الموجود يُقيَّم ويُصيب — والأجزاء كالمجموع", () => {
+  const previous = monthDocs(fx.consistentMonth());
+  const current = monthDocs(fx.consistentMonth({ allowances: { 1001: 500 } }));
+  const { applied, findings: out } = compare({ docs: current, previousDocs: previous });
+  assert.equal(rule(out, "allowances_changed").length, 1, "عمود «البدلات» المجموع يُقرأ");
+  assert.ok(applied.includes("allowances_changed"));
+
+  /* ومسيرٌ يفصّل البدل أعمدةً — كمسيراتنا الحقيقية — يُقيَّم كذلك. */
+  const split = (allow) => parse("full", fx.csv(
+    ["رقم الموظف", "الاسم", "الراتب الاساسي", "بدل سكن", "بدل مواصلات", "الصافي"],
+    [["1001", "أ", 9000, allow, 0, 9000 + allow]]));
+  const a = { ...previous, full: split(0) };
+  const b = { ...current, full: split(700) };
+  const res = compare({ docs: b, previousDocs: a });
+  assert.ok(res.applied.includes("allowances_changed"), "أجزاء البدل مطابقةٌ كالمجموع");
+  assert.equal(rule(res.findings, "allowances_changed").length, 1);
+});
+
+test("القائمة بلا عمود حساب: ملاحظةٌ واحدة لا واحدة لكل محوَّلٍ له", () => {
+  /* كان يُخرج «تحويلٌ بلا حسابٍ مسجَّل» لكل موظّفٍ بنكيّ — عشراتُ ملاحظات
+     متطابقة عن سببٍ واحد: العمود نفسه غير موجود. وإغراقُ الشاشة يُدرّب
+     المستخدم على تجاهل التنبيه، فيفوته الحقيقيّ بينها. */
+  const month = fx.consistentMonth();
+  month.employees = fx.csv(["رقم الموظف", "الاسم", "الحالة", "طريقة التحويل"],
+    [["1001", "أ", "نشط", "بنك"], ["1002", "ب", "نشط", "بنك"],
+     ["1003", "ج", "نشط", "نقد"], ["1004", "د", "نشط", "بنك"]]);
+  const { applied, notEvaluable, findings: out } = compare({ docs: monthDocs(month), previousDocs: null });
+
+  assert.equal(rule(out, "bank_without_account").length, 0, "لا ملاحظة لكل موظّف");
+  assert.ok(!applied.includes("bank_without_account"));
+  assert.ok(notEvaluable.some((e) => e.rule === "bank_without_account"), "بل واحدةٌ عن العمود");
+
+  /* والعمودُ الموجود يُقيَّم: الموظّف الذي لا حساب له وحده يُبلَّغ عنه. */
+  const partial = fx.consistentMonth({ ibans: { 1001: "" } });
+  const res = compare({ docs: monthDocs(partial), previousDocs: null });
+  assert.ok(res.applied.includes("bank_without_account"));
+  assert.deepEqual(rule(res.findings, "bank_without_account").map((f) => f.employeeRef), ["1001"]);
+});
+
+/* ══ الخصوصية: ما يدخل كاملًا لا يخرج كاملًا ═══════════════════════════
+   =========================================================================
+   القواعد المكتوبة في التعليقات لا تحرس شيئًا. فهذا يُدخل حسابات وهويّات
+   **كاملة** (مصنوعة) ويفتّش كل ما يخرج: الصفوف المطبَّعة والملاحظات
+   المطبَّعة معًا. وأيّ تسريبٍ يُسقط الاختبار باسم الحقل الذي سرّبه. */
+
+test("الخصوصية: لا حساب كامل ولا هويّة كاملة في صفٍّ أو ملاحظة", () => {
+  const FULL_IBAN = "SA4420000001234567891234";
+  const FULL_ID = "2345678901";
+  const month = {
+    full: fx.fullCsv([{ empNo: "1001", name: "أ", basic: 9000, allowances: 0, deductions: 0 }]),
+    transfer: fx.csv(["رقم الموظف", "الاسم", "الايبان", "البنك", "الصافي"],
+      [["1001", "أ", FULL_IBAN, "مصرفٌ تجريبيّ", 9000]]),
+    cash: fx.cashCsv([]),
+    employees: fx.csv(["رقم الموظف", "الاسم", "الحالة", "رقم الهوية", "رقم الحساب", "طريقة التحويل"],
+      [["1001", "أ", "نشط", FULL_ID, "SA9999999999999999999999", "بنك"]]),
+  };
+  const docs = monthDocs(month);
+
+  const scan = (label, value) => {
+    const text = JSON.stringify(value);
+    assert.ok(!text.includes(FULL_IBAN), `${label}: تسرّب حسابٌ كامل`);
+    assert.ok(!text.includes(FULL_ID), `${label}: تسرّبت هويّةٌ كاملة`);
+    /* وأي سلسلةٍ طويلة على هيئة حساب — لا هذا الحساب وحده. */
+    assert.equal((text.match(/SA\d{10,}/g) || []).length, 0, `${label}: نمطُ حسابٍ كامل`);
+  };
+  for (const [kind, doc] of Object.entries(docs)) scan(`صفوف ${kind}`, doc.rows);
+  /* والمقتطع موجود فعلًا: الاختبار لا ينجح لأن الحقل فارغ. */
+  assert.equal(docs.transfer.rows[0].iban4, "1234");
+  assert.equal(docs.employees.rows[0].idLast4, "8901");
+
+  const produced = compare({ docs, previousDocs: null }).findings;
+  scan("الملاحظات الخام", produced);
+  scan("الملاحظات المطبَّعة", produced.map((f) => findings.normalize(f)));
+});
+
+test("الخصوصية: تعليقُ المستخدم يُقنَّع أيضًا — ولو كتب الحساب بيده", () => {
+  /* أضعفُ حلقة: حقلٌ حرّ يكتب فيه إنسان. */
+  const masked = findings.maskIban("الحساب الصحيح هو SA4420000001234567891234 فليُصحَّح");
+  assert.ok(!masked.includes("SA4420000001234567891234"));
+  assert.match(masked, /1234/, "وتبقى الخانات الأربع لتُميَّز");
+});
+
+/* ── الصرف المجزّأ: حالةٌ مشروعة تُشبه الازدواج تمامًا ──
+   موظّفٌ يظهر في التحويل والكاش معًا قد يكون صُرف له مرّتين، وقد يكون
+   صرفًا واحدًا مقسومًا على قناتين. والفرق بينهما **المجموع** لا الظهور.
+
+   ولو جمعت قاعدةُ الصافي قناةً واحدة لأخرجت «حرجًا» على كل صرفٍ مجزّأ
+   مشروع — إنذارٌ كاذب بأعلى درجة، على أكثر الحالات مشروعية. */
+
+test("الصرف المجزّأ: المجموع يطابق المستحقّ ⇒ تنبيهٌ لا خطأ", () => {
+  const month = fx.consistentMonth();
+  /* «1001» مستحقُّه 9000: 6000 تحويلًا و3000 كاشًا. */
+  month.transfer = fx.csv(["رقم الموظف", "الاسم", "الايبان", "البنك", "الصافي"],
+    [["1001", "أ", fx.EMPLOYEES[0].iban, "بنك تجريبيّ", 6000],
+     ["1002", "ب", fx.EMPLOYEES[1].iban, "بنك تجريبيّ", 7500],
+     ["1004", "د", fx.EMPLOYEES[3].iban, "بنك تجريبيّ", 8200]]);
+  month.cash = fx.cashCsv([{ empNo: "1003", name: "ج", net: 6000 }, { empNo: "1001", name: "أ", net: 3000 }]);
+
+  const out = compare({ docs: monthDocs(month), previousDocs: null }).findings;
+  assert.deepEqual(rule(out, "paid_twice").map((f) => f.employeeRef), ["1001"], "يُنبَّه عليه");
+  assert.equal(rule(out, "paid_twice")[0].severity, "warn", "تنبيهٌ لا خطأ: قد يكون مشروعًا");
+  assert.equal(rule(out, "net_mismatch").length, 0, "والمجموع صحيح فلا خطأ حسابيّ");
+  assert.equal(rule(out, "extra_in_split").length, 0);
+});
+
+test("الصرف المزدوج: المجموع يتجاوز المستحقّ ⇒ خطأٌ حرج معه", () => {
+  const month = fx.consistentMonth();
+  /* المبلغ نفسه مرّتين — مالٌ خرج بلا استحقاق. */
+  month.cash = fx.cashCsv([{ empNo: "1003", name: "ج", net: 6000 }, { empNo: "1001", name: "أ", net: 9000 }]);
+
+  const out = compare({ docs: monthDocs(month), previousDocs: null }).findings;
+  assert.deepEqual(rule(out, "paid_twice").map((f) => f.employeeRef), ["1001"]);
+  const bad = rule(out, "net_mismatch");
+  assert.deepEqual(bad.map((f) => f.employeeRef), ["1001"], "والحسابُ يكشفه");
+  assert.equal(bad[0].severity, "critical");
+  assert.equal(bad[0].delta, 9000, "والفرقُ هو المبلغ المكرّر بعينه");
+});
