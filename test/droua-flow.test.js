@@ -736,3 +736,106 @@ test("المزامنة: الكتابات متوازيةٌ بحدّ — لا مت
   assert.ok(peak > 1, "متسلسلةٌ تمامًا — زمنُ السلك يُضرب في عدد الملاحظات");
   assert.ok(peak <= 8, `بلا سقف (${peak}) — ألف اتّصال دفعةً تخنق التجمّع`);
 });
+
+/* ══ الصيغة التي تُرفع فعلًا ═══════════════════════════════════════════
+   =========================================================================
+   القرّاء مُختبَرون بمصنّفات مبنيّة في الاختبار، والدورة مُختبَرة بـCSV.
+   وبينهما الطريق الذي تسلكه الملفّات في الواقع ولم يُقطع كاملًا مرّة:
+   مصنّفٌ ثنائيّ يُرمَّز، ويُشفَّر، ويُخزَّن، ويُفكّ، ويُقرأ، ثمّ يُقارَن.
+
+   وأي بايتٍ يُبدَّل في هذا الطريق يُنتج إمّا فشلَ وسمٍ صريحًا وإمّا —
+   وهو الأخطر — أرقامًا سليمةَ الشكل في أعمدةٍ خاطئة. */
+
+const { buildXlsx, buildXls } = require("./helpers/workbook-builder");
+
+const SHEET = {
+  full: [["رقم الموظف", "الاسم", "الراتب الاساسي", "بدل سكن", "خصم تاخير", "صافي الراتب"],
+    ["1001", "أ", 9000, 500, 200, 9300],
+    ["1002", "ب", 7500, 300, 0, 7800]],
+  transfer: [["رقم الموظف", "الاسم", "الصافي"], ["1001", "أ", 9300]],
+  cash: [["رقم الموظف", "الاسم", "الصافي"], ["1002", "ب", 7800]],
+  employees: [["الرقم الوظيفي", "الاسم", "الحالة", "طريقة التحويل"],
+    ["1001", "أ", "نشط", "بنك"], ["1002", "ب", "نشط", "نقد"]],
+};
+
+async function uploadWorkbook(sql, ctx, runId, kind, bytes, format) {
+  const out = await callApi(sql, ctx, "POST", `runs/${runId}/files`,
+    { kind, fileName: `${kind}.${format}`, format, data: b64(bytes) });
+  assert.equal(out.statusCode, 200, `رفع ${kind}.${format}: ${JSON.stringify(out.body)}`);
+  return out;
+}
+
+for (const [label, build, format] of [["xlsx", buildXlsx, "xlsx"], ["xls", buildXls, "xls"]]) {
+  test(`الصيغة الحقيقية: دورةُ ${label} كاملة — رفعٌ وتشفيرٌ وقراءةٌ وتحليل`, async () => {
+    await withDroua(async ({ sql, ctx }) => {
+      const run = await runs.createRun(sql, "2026-05");
+      for (const kind of files.KINDS) {
+        await uploadWorkbook(sql, ctx, run.runId, kind, build(SHEET[kind]), format);
+      }
+
+      const result = await analyze.analyzeRun(sql, run.runId, ctx);
+      assert.equal(result.missing.length, 0, "الأربعة وصلت");
+      assert.equal(result.unreadable.length, 0, "وقُرئت كلّها");
+
+      const list = (await callApi(sql, ctx, "GET", `runs/${run.runId}/findings`)).body.findings;
+      /* الشهر متّسق تمامًا: كامل = تحويل + كاش، والقائمة تطابق، والقنوات
+         مطابقة. فأي ملاحظةٍ هنا تعني أن الطريق شوّه البيانات. */
+      const noise = list.filter((f) => f.rule !== "not_evaluable");
+      assert.deepEqual(noise.map((f) => `${f.rule}:${f.employeeRef || ""}`), [],
+        `${label}: ملاحظاتٌ اختُرعت في الطريق`);
+
+      /* والقراءة صحيحةٌ لا فارغة: الأرقام وصلت بقيمها. */
+      const docs = (await analyze.loadDocs(sql, run.runId, ctx)).docs;
+      assert.equal(docs.full.rows.length, 2);
+      assert.equal(docs.full.rows[0].net, 9300, `${label}: الصافي تشوّه`);
+      assert.equal(docs.full.rows[0].allowances, 500, `${label}: البدل تشوّه`);
+      assert.equal(docs.full.rows[0].deductions, 200, `${label}: الخصم تشوّه`);
+      assert.equal(docs.employees.rows[1].method, "نقد", `${label}: النصّ العربيّ تشوّه`);
+    });
+  });
+}
+
+test("الصيغة الحقيقية: مصنّفٌ تالفٌ يُرفع ويُبلَّغ ولا يُسقط الشهر", async () => {
+  await withDroua(async ({ sql, ctx }) => {
+    const run = await runs.createRun(sql, "2026-05");
+    for (const kind of ["full", "transfer", "cash"]) {
+      await uploadWorkbook(sql, ctx, run.runId, kind, buildXlsx(SHEET[kind]), "xlsx");
+    }
+    /* بايتاتٌ ليست مصنّفًا أصلًا — كما لو رُفع ملفٌّ خطأ أو انقطع النقل. */
+    await uploadWorkbook(sql, ctx, run.runId, "employees", Buffer.from("ليست مصنّفًا"), "xlsx");
+
+    const result = await analyze.analyzeRun(sql, run.runId, ctx);
+    assert.equal(result.unreadable.length, 1, "يُبلَّغ عنه");
+    assert.equal(result.unreadable[0].kind, "employees");
+
+    const list = (await callApi(sql, ctx, "GET", `runs/${run.runId}/findings`)).body.findings;
+    assert.ok(list.some((f) => f.rule === "file_unreadable"), "ملاحظةٌ مرئيّة لا استثناء صامت");
+    /* وما لا يعتمد على القائمة يُفحص رغم ذلك: ملفٌّ واحد لا يُعطّل الشهر. */
+    assert.equal(list.filter((f) => f.rule === "net_mismatch").length, 0);
+    /* وما يعتمد عليها يُعلَن أنه لم يُقيَّم لا أنه سليم. */
+    assert.ok(list.some((f) => f.rule === "not_evaluable" && /employees/.test(f.field)));
+  });
+});
+
+test("الصيغة الحقيقية: فسادُ أي ملفّ لا يُسقط الشهر ولا يُسرّب نصّ الخطأ", async () => {
+  /* أخطرُها فسادُ «الكامل» نفسه: هو محورُ كل قاعدة تقريبًا. */
+  for (const broken of files.KINDS) {
+    await withDroua(async ({ sql, ctx }) => {
+      const run = await runs.createRun(sql, "2026-05");
+      for (const kind of files.KINDS) {
+        const bytes = kind === broken ? Buffer.from("بايتاتٌ ليست مصنّفًا") : buildXlsx(SHEET[kind]);
+        await uploadWorkbook(sql, ctx, run.runId, kind, bytes, "xlsx");
+      }
+      const result = await analyze.analyzeRun(sql, run.runId, ctx);
+      assert.deepEqual(result.unreadable.map((u) => u.kind), [broken], broken);
+      assert.equal(result.unreadable[0].reason, "parse_failed", "رمزٌ ثابت لا رسالةُ مكتبة");
+
+      const list = (await callApi(sql, ctx, "GET", `runs/${run.runId}/findings`)).body.findings;
+      const note = list.find((f) => f.rule === "file_unreadable");
+      assert.ok(note, `${broken}: لا ملاحظة`);
+      /* ولا نصّ الخطأ الأصليّ في شيءٍ يُعرض: قد يحمل فُتاتًا من المحتوى. */
+      const shown = JSON.stringify(note);
+      assert.ok(!/ZIP|OLE2|BIFF|Unexpected|Error:/i.test(shown), `${broken}: تسرّب نصّ عطلٍ داخليّ`);
+    });
+  }
+});
