@@ -68,7 +68,17 @@ async function main() {
       step("put(access:'private') مقبول", true);
     } catch (err) {
       step("put(access:'private') مقبول", false, `${err.name}: ${err.message}`);
-      console.log("\n  ⇒ المتجر لا يدعم الرفع الخاصّ. لا داعي لبقية الخطوات.\n");
+      /* الخصوصية خاصّية **متجر** تُضبط عند إنشائه، لا خاصّية عملية رفع.
+         فالرسالة أدناه ليست «الميزة غير متاحة» بل «هذا المتجر عامّ». */
+      if (/public store|configured with private access/i.test(err.message || "")) {
+        console.log("\n  ⇒ المتجر المستهدَف عامّ. الخصوصية تُضبط عند إنشاء المتجر لا عند الرفع.");
+        console.log("     أنشئ متجرًا خاصًّا مستقلًّا ثم أعد الفحص بتوكنه:");
+        console.log("       vercel blob create-store <name> --access private");
+        console.log("     ⚠️ واحرص أن يُسمّى توكنه بمتغيّر مستقلّ — لا أن يستبدل");
+        console.log("        BLOB_READ_WRITE_TOKEN القائم، فذاك يكسر رفع ملفّات أجير.\n");
+      } else {
+        console.log("\n  ⇒ الرفع الخاصّ لم ينجح. لا داعي لبقية الخطوات.\n");
+      }
       return;
     }
 
