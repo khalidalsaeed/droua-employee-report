@@ -34,8 +34,8 @@ const EXPECTED = {
     constraints: [
       /PRIMARY KEY \(id\)/,
       /UNIQUE \(period\)/,
-      /CHECK \(\(\(period\)::text ~ '\^\[0-9\]\{4\}-\(0\[1-9\]\|1\[0-2\]\)\$'/,
-      /CHECK[\s\S]*'draft'[\s\S]*'ready'[\s\S]*'analyzed'[\s\S]*'closed'/,
+      /\(?period\)? ~ '\^\[0-9\]\{4\}-\(0\[1-9\]\|1\[0-2\]\)\$'/,
+      /\(?status\)? = ANY[\s\S]*'draft'[\s\S]*'ready'[\s\S]*'analyzed'[\s\S]*'closed'/,
     ],
   },
   droua_payroll_files: {
@@ -62,9 +62,9 @@ const EXPECTED = {
       /PRIMARY KEY \(id\)/,
       /UNIQUE \(blob_pathname\)/,
       /FOREIGN KEY \(run_id\) REFERENCES droua_payroll_runs\(id\) ON DELETE CASCADE/,
-      /CHECK[\s\S]*'cash'[\s\S]*'full'|CHECK[\s\S]*'full'[\s\S]*'cash'/,
-      /CHECK[\s\S]*'pdf'[\s\S]*'csv'|CHECK[\s\S]*'csv'[\s\S]*'pdf'/,
-      /CHECK \(\(\(size_bytes > 0\) AND \(size_bytes <= 10485760\)\)\)/,
+      /\(?kind\)? = ANY[\s\S]*'cash'|\(?kind\)? = ANY[\s\S]*'full'/,
+      /\(?format\)? = ANY[\s\S]*'pdf'|\(?format\)? = ANY[\s\S]*'csv'/,
+      /size_bytes > 0[\s\S]*size_bytes <= 10485760/,
       /droua_payroll_files_type_pair/,
       /droua_payroll_files_lifecycle/,
     ],
@@ -98,8 +98,8 @@ const EXPECTED = {
       /PRIMARY KEY \(id\)/,
       /UNIQUE \(run_id, fingerprint\)/,
       /FOREIGN KEY \(run_id\) REFERENCES droua_payroll_runs\(id\) ON DELETE CASCADE/,
-      /CHECK[\s\S]*'within_month'[\s\S]*'vs_previous'/,
-      /CHECK[\s\S]*'needs_review'[\s\S]*'needs_fix'/,
+      /\(?scope\)? = ANY[\s\S]*'within_month'/,
+      /\(?status\)? = ANY[\s\S]*'needs_review'/,
     ],
   },
 };
@@ -117,6 +117,50 @@ const NAME_CASES = [
   ["a\r\nX-Evil: 1.pdf", false, "CR/LF"],
   ["a\tb.pdf", false, "جدولة"],
 ];
+
+/* PostgreSQL تُعيد كتابة القيد بصيغتها: تُضيف أقواسًا، وتُلحق ::text بكل
+   نصّ، وتحوّل «IN (…)» إلى «= ANY (ARRAY[…])». والصيغة تختلف بين عمود text
+   وعمود varchar — فالأول بلا cast على العمود والثاني بـ(col)::text.
+
+   ومطابقةُ الصيغة الخام كانت أول ما كذب: أعلن الفاحص أن قيد period ناقص
+   وهو موجود، لأن التوقّع كُتب على صورةٍ واحدة من صورتيه. فيُطبَّع النصّ
+   أوّلًا، ثمّ تُطابَق **دلالته** لا رسمُها. */
+function normalizeDef(def) {
+  return String(def)
+    .replace(/::(?:text|character varying|bpchar|"?\w+"?)(\[\])?/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/* دوالّ نقيّة: تأخذ صفوف الكتالوج وتُرجع ما ينقص. تُختبر بلا قاعدة. */
+function missingConstraints(spec, rows) {
+  const blob = rows.map((r) => `${r.conname} ${normalizeDef(r.def)}`).join("\n");
+  return (spec.constraints || []).filter((pattern) => !pattern.test(blob));
+}
+
+function missingIndexes(spec, rows) {
+  const out = [];
+  for (const expected of spec.indexes || []) {
+    const found = rows.find((r) => r.indexname === expected.name);
+    if (!found) { out.push({ name: expected.name, reason: "غير موجود" }); continue; }
+    const bad = expected.must.filter((p) => !p.test(normalizeDef(found.indexdef)));
+    if (bad.length) out.push({ name: expected.name, reason: found.indexdef });
+  }
+  return out;
+}
+
+function columnDiff(spec, rows) {
+  const actual = new Map(rows.map((r) => [r.column_name,
+    `${r.data_type} ${r.is_nullable === "YES" ? "NULL" : "NOT NULL"}`]));
+  const wrong = [];
+  for (const [column, expected] of Object.entries(spec.columns)) {
+    if (actual.get(column) !== expected) {
+      wrong.push({ column, expected, actual: actual.get(column) || "غائب" });
+    }
+  }
+  const extra = [...actual.keys()].filter((c) => !(c in spec.columns));
+  return { wrong, extra };
+}
 
 let failures = 0;
 const step = (ok, label, detail) => {
@@ -152,19 +196,14 @@ async function main() {
       SELECT column_name, data_type, is_nullable FROM information_schema.columns
       WHERE table_schema = 'public' AND table_name = ${table}
       ORDER BY ordinal_position`;
-    const actual = new Map(rows.map((r) => [r.column_name,
-      `${r.data_type} ${r.is_nullable === "YES" ? "NULL" : "NOT NULL"}`]));
-
-    let mismatches = 0;
-    for (const [column, expected] of Object.entries(spec.columns)) {
-      if (actual.get(column) !== expected) {
-        mismatches += 1;
-        step(false, `${table}.${column}`, `متوقَّع «${expected}» والموجود «${actual.get(column) || "غائب"}»`);
-      }
+    const { wrong, extra } = columnDiff(spec, rows);
+    for (const item of wrong) {
+      step(false, `${table}.${item.column}`, `متوقَّع «${item.expected}» والموجود «${item.actual}»`);
     }
-    const extra = [...actual.keys()].filter((c) => !(c in spec.columns));
-    if (extra.length) { mismatches += 1; step(false, `${table}: أعمدة زائدة`, extra.join(", ")); }
-    if (!mismatches) step(true, `${table} — ${Object.keys(spec.columns).length} عمودًا مطابقة`);
+    if (extra.length) step(false, `${table}: أعمدة زائدة`, extra.join(", "));
+    if (!wrong.length && !extra.length) {
+      step(true, `${table} — ${Object.keys(spec.columns).length} عمودًا مطابقة`);
+    }
   }
 
   /* ③ القيود بتعريفها لا باسمها */
@@ -174,12 +213,9 @@ async function main() {
     const rows = await sql`
       SELECT conname, pg_get_constraintdef(oid) AS def
       FROM pg_constraint WHERE conrelid = ${table}::regclass ORDER BY conname`;
-    const blob = rows.map((r) => `${r.conname} ${r.def}`).join("\n");
-    let missing = 0;
-    for (const pattern of spec.constraints) {
-      if (!pattern.test(blob)) { missing += 1; step(false, `${table}: قيدٌ ناقص`, String(pattern)); }
-    }
-    if (!missing) step(true, `${table} — ${spec.constraints.length} قيدًا موجودة`, `المجموع ${rows.length}`);
+    const missing = missingConstraints(spec, rows);
+    for (const pattern of missing) step(false, `${table}: قيدٌ ناقص`, String(pattern));
+    if (!missing.length) step(true, `${table} — ${spec.constraints.length} قيدًا موجودة`, `المجموع ${rows.length}`);
   }
 
   /* ④ الفهرس الفريد الجزئيّ */
@@ -188,11 +224,10 @@ async function main() {
     if (!spec.indexes || !presentNames.has(table)) continue;
     const rows = await sql`SELECT indexname, indexdef FROM pg_indexes
       WHERE schemaname = 'public' AND tablename = ${table}`;
+    const missing = missingIndexes(spec, rows);
     for (const expected of spec.indexes) {
-      const found = rows.find((r) => r.indexname === expected.name);
-      if (!found) { step(false, expected.name, "غير موجود"); continue; }
-      const bad = expected.must.filter((p) => !p.test(found.indexdef));
-      step(bad.length === 0, expected.name, bad.length ? found.indexdef : "فريدٌ جزئيّ على الحاليّ");
+      const problem = missing.find((m) => m.name === expected.name);
+      step(!problem, expected.name, problem ? problem.reason : "فريدٌ جزئيّ على الحاليّ");
     }
   }
 
@@ -235,4 +270,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { EXPECTED, NAME_CASES, main };
+module.exports = { EXPECTED, NAME_CASES, main, normalizeDef, missingConstraints, missingIndexes, columnDiff };

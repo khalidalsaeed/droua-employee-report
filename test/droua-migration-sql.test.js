@@ -283,3 +283,73 @@ test("الفحص البعديّ: للقراءة فقط — لا عبارة تك�
   }
   assert.ok(src.includes("SELECT"), "وهو يقرأ فعلًا");
 });
+
+/* ══ انحدار: الفاحص يقرأ صيغة PostgreSQL لا صيغةً واحدة منها ═════════ */
+
+test("الفحص البعديّ: يقبل صيغتَي PostgreSQL لقيد period — text وvarchar", () => {
+  /* الانحدار الذي أوجد هذا الاختبار: أعلن الفاحص أن قيد period **ناقص**
+     وهو موجود في القاعدة تمامًا. السبب أن التوقّع كُتب على صورةٍ واحدة من
+     صورتي الإخراج: PostgreSQL تكتب «(period)::text ~ …» لعمود varchar
+     و«period ~ …» لعمود text. فطابق الفاحصُ الرسمَ لا الدلالة.
+
+     وخطورته أنه **إنذارٌ كاذب**: يوقف الدمج على عطلٍ لا وجود له، ويدرّب
+     الناظر على تجاهل الأحمر — وهو أسوأ ما يصيب فاحصًا. */
+  const { EXPECTED, missingConstraints, normalizeDef } = require("../scripts/verify-droua-schema");
+
+  const asText = [
+    { conname: "droua_payroll_runs_pkey", def: "PRIMARY KEY (id)" },
+    { conname: "droua_payroll_runs_period_key", def: "UNIQUE (period)" },
+    { conname: "droua_payroll_runs_period_check", def: "CHECK ((period ~ '^[0-9]{4}-(0[1-9]|1[0-2])$'::text))" },
+    { conname: "droua_payroll_runs_status_check", def: "CHECK ((status = ANY (ARRAY['draft'::text, 'ready'::text, 'analyzed'::text, 'closed'::text])))" },
+  ];
+  /* صورة varchar كما تكتبها PostgreSQL فعلًا: الـcast يقع داخل تعبير
+     CHECK وحده — أمّا UNIQUE فتسمّي العمود بلا cast. وفِبركةُ صورةٍ لا
+     تكتبها القاعدة تختبر خيالنا لا الفاحص. */
+  const asVarchar = asText.map((r) => (r.def.startsWith("CHECK")
+    ? { ...r, def: r.def.replace(/\bperiod\b/g, "(period)::text").replace(/\bstatus\b/g, "(status)::text") }
+    : r));
+
+  assert.deepEqual(missingConstraints(EXPECTED.droua_payroll_runs, asText), [],
+    "صيغة عمود text يجب أن تُقبل");
+  assert.deepEqual(missingConstraints(EXPECTED.droua_payroll_runs, asVarchar), [],
+    "وصيغة عمود varchar كذلك — الدلالة واحدة");
+
+  /* والتطبيع يُسقط الـcast ولا يُسقط المعنى. */
+  assert.equal(normalizeDef("CHECK ((period ~ '^x$'::text))"), "CHECK ((period ~ '^x$'))");
+  assert.ok(normalizeDef("(kind = ANY (ARRAY['cash'::text]))").includes("'cash'"));
+});
+
+test("الفحص البعديّ: يمسك قيدًا ناقصًا فعلًا — وإلّا لم يكن يفحص", () => {
+  const { EXPECTED, missingConstraints, missingIndexes, columnDiff } = require("../scripts/verify-droua-schema");
+
+  /* قيد period محذوف حقًّا ⇒ يجب أن يُبلَّغ. */
+  const withoutPeriodCheck = [
+    { conname: "pk", def: "PRIMARY KEY (id)" },
+    { conname: "uq", def: "UNIQUE (period)" },
+    { conname: "st", def: "CHECK ((status = ANY (ARRAY['draft'::text, 'ready'::text, 'analyzed'::text, 'closed'::text])))" },
+  ];
+  assert.equal(missingConstraints(EXPECTED.droua_payroll_runs, withoutPeriodCheck).length, 1);
+
+  /* فهرسٌ فريدٌ **غير** جزئيّ ⇒ يُبلَّغ: يمنع التاريخ كلَّه. */
+  assert.equal(missingIndexes(EXPECTED.droua_payroll_files, [
+    { indexname: "idx_droua_payroll_files_current", indexdef: "CREATE UNIQUE INDEX idx_droua_payroll_files_current ON public.droua_payroll_files USING btree (run_id, kind)" },
+  ]).length, 1, "فريدٌ بلا مسند = re-upload مكسور");
+
+  /* والفهرس الصحيح يمرّ. */
+  assert.deepEqual(missingIndexes(EXPECTED.droua_payroll_files, [
+    { indexname: "idx_droua_payroll_files_current", indexdef: "CREATE UNIQUE INDEX idx_droua_payroll_files_current ON public.droua_payroll_files USING btree (run_id, kind) WHERE (superseded_at IS NULL)" },
+  ]), []);
+
+  /* عمودٌ بنوعٍ خاطئ أو زائد ⇒ يُبلَّغ. */
+  const rows = Object.entries(EXPECTED.droua_payroll_runs.columns).map(([column_name, spec]) => ({
+    column_name,
+    data_type: spec.replace(/ (NOT )?NULL$/, ""),
+    is_nullable: spec.endsWith("NOT NULL") ? "NO" : "YES",
+  }));
+  assert.deepEqual(columnDiff(EXPECTED.droua_payroll_runs, rows), { wrong: [], extra: [] });
+
+  const broken = rows.map((r) => (r.column_name === "period" ? { ...r, data_type: "character varying" } : r));
+  assert.equal(columnDiff(EXPECTED.droua_payroll_runs, broken).wrong.length, 1);
+  assert.deepEqual(columnDiff(EXPECTED.droua_payroll_runs,
+    [...rows, { column_name: "surprise", data_type: "text", is_nullable: "YES" }]).extra, ["surprise"]);
+});

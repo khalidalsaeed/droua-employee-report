@@ -254,3 +254,145 @@ test("الملاحظات: مدخلٌ غير صالح يُردّ", () => {
   assert.throws(() => findings.normalize({ rule: "r", scope: "within_month", severity: "x" }), /شدّة/);
   assert.throws(() => findings.normalize({ rule: "r", scope: "within_month", delta: "كثير" }), /عددًا/);
 });
+
+/* ══ بقيّة قواعد المقارنة الشهرية ══════════════════════════════════════ */
+
+test("المقارنة مع السابق: تغيّر الأساسيّ والبدلات مفصولان عن الصافي", () => {
+  const previous = monthDocs(fx.consistentMonth());
+  /* الأساسيّ ثابت والبدل ارتفع ⇒ بدلٌ لا زيادةَ راتب. */
+  const current = monthDocs(fx.consistentMonth({ allowances: { 1001: 1500 } }));
+  const { findings: out } = compare({ docs: current, previousDocs: previous });
+
+  const allowance = rule(out, "allowances_changed")[0];
+  assert.ok(allowance, JSON.stringify(out.map((f) => f.rule)));
+  assert.equal(allowance.employeeRef, "1001");
+  assert.equal(allowance.delta, 1500);
+  assert.equal(allowance.severity, "info", "بدلٌ دون نصف الأساسيّ = معلومة");
+  assert.equal(rule(out, "basic_changed").length, 0, "الأساسيّ لم يتغيّر");
+  /* والصافي تغيّر معه — فتظهر ملاحظتان مستقلّتان لا واحدة. */
+  assert.equal(rule(out, "net_changed")[0].employeeRef, "1001");
+});
+
+test("المقارنة مع السابق: بدلٌ يبتلع نصف الأساسيّ يرتفع إلى تنبيه", () => {
+  const previous = monthDocs(fx.consistentMonth());
+  const current = monthDocs(fx.consistentMonth({ allowances: { 1001: 6000 } }));
+  const { findings: out } = compare({ docs: current, previousDocs: previous });
+  assert.equal(rule(out, "allowances_changed")[0].severity, "warn");
+});
+
+test("المقارنة مع السابق: تغيّر الأساسيّ يُبلَّغ مستقلًّا", () => {
+  const previous = monthDocs(fx.consistentMonth());
+  const current = monthDocs(fx.consistentMonth({ salaries: { 1001: 11000, 1002: 7500, 1003: 6000, 1004: 8200 } }));
+  const { findings: out } = compare({ docs: current, previousDocs: previous });
+  const basic = rule(out, "basic_changed")[0];
+  assert.equal(basic.employeeRef, "1001");
+  assert.equal(basic.delta, 2000);
+  assert.equal(basic.severity, "warn");
+});
+
+test("المقارنة: تغيّر البنك يُبلَّغ، ويُقرأ مع تغيّر الحساب حين يقعان معًا", () => {
+  const previous = monthDocs(fx.consistentMonth());
+  const current = monthDocs(fx.consistentMonth({
+    ibans: { 1001: "SA9999999999999999991234" }, banks: { 1001: "بنك آخر تجريبيّ" },
+  }));
+  const { findings: out } = compare({ docs: current, previousDocs: previous });
+  const bank = rule(out, "bank_changed")[0];
+  assert.equal(bank.employeeRef, "1001");
+  assert.equal(bank.currentValue, "بنك آخر تجريبيّ");
+  assert.equal(rule(out, "iban_changed")[0].employeeRef, "1001", "والحساب معه — إشارتان متعاضدتان");
+});
+
+test("المقارنة: كل قاعدة في السجلّ لها اختبار يُشغّلها", () => {
+  /* حارسٌ ضدّ قاعدةٍ تُضاف بلا اختبار: القواعد تُقاس بما تمسكه، وقاعدةٌ لا
+     يُشغّلها شيء قد تكون معطوبة منذ يوم كتابتها. */
+  const covered = new Set();
+  const month = fx.consistentMonth();
+  const broken = fx.consistentMonth({
+    salaries: { 1001: 12000, 1002: 7500, 1003: 6000, 1005: 5000 },
+    deductions: { 1001: 300 }, allowances: { 1002: 400 },
+    ibans: { 1001: "SA9999999999999999991234" }, banks: { 1001: "بنك آخر" },
+  });
+  broken.cash = fx.cashCsv([
+    { empNo: "1003", name: "خالد الوهمي", net: 6500 },
+    { empNo: "9999", name: "غريب", net: 4000 },
+    { empNo: "1002", name: "سارة التجريبية", net: 100 },
+  ]);
+  broken.employees = fx.employeesCsv(fx.EMPLOYEES.slice(1));
+  const both = compare({ docs: monthDocs(broken), previousDocs: monthDocs(month) });
+  for (const f of both.findings) covered.add(f.rule);
+
+  /* الحالات التي تحتاج تركيبًا خاصًّا تُشغَّل منفردةً. */
+  const dup = fx.consistentMonth();
+  dup.full = fx.fullCsv([{ empNo: "1001", name: "أ", basic: 9000 }, { empNo: "1001", name: "أ", basic: 9000 }]);
+  for (const f of compare({ docs: monthDocs(dup), previousDocs: null }).findings) covered.add(f.rule);
+
+  const zero = fx.consistentMonth({ salaries: { 1001: 0 } });
+  for (const f of compare({ docs: monthDocs(zero), previousDocs: null }).findings) covered.add(f.rule);
+
+  /* مستحقٌّ بلا صرف: يُنزع من التحويل والكاش معًا. */
+  const unpaid = fx.consistentMonth();
+  unpaid.transfer = fx.transferCsv([{ empNo: "1001", name: "أحمد المثال", iban: fx.EMPLOYEES[0].iban, net: 9000 }]);
+  unpaid.cash = fx.cashCsv([{ empNo: "1003", name: "خالد الوهمي", net: 6000 }]);
+  for (const f of compare({ docs: monthDocs(unpaid), previousDocs: null }).findings) covered.add(f.rule);
+
+  /* حسابٌ يخالف القائمة: القائمة كاملة والتحويل بحسابٍ آخر. */
+  const wrongIban = fx.consistentMonth({ ibans: { 1001: "SA9999999999999999990000" } });
+  for (const f of compare({ docs: monthDocs(wrongIban), previousDocs: null }).findings) covered.add(f.rule);
+
+  const uncovered = RULES.map((r) => r.id).filter((id) => !covered.has(id));
+  assert.deepEqual(uncovered, [], `قواعد بلا تغطية: ${uncovered.join(", ")}`);
+});
+
+/* ══ طبقة المطابقة والثقة ══════════════════════════════════════════════ */
+
+test("المطابقة: يُعلن أي عمودٍ صار أي حقل", () => {
+  const doc = parse("full", fx.fullCsv([{ empNo: "1", name: "أ", basic: 100, allowances: 0, deductions: 0 }]));
+  assert.equal(doc.meta.mapping.net, "الصافي");
+  assert.equal(doc.meta.mapping.empNo, "رقم الموظف");
+  assert.deepEqual(doc.meta.unknownColumns, []);
+  assert.equal(doc.meta.needsManualReview, false);
+});
+
+test("المطابقة: عمودٌ غير معروف يُعلَن ولا يُبتلع", () => {
+  const doc = parse("full", "رقم الموظف,الصافي,ملاحظات المحاسب,القسم\n1,100,ok,مالية\n");
+  assert.deepEqual(doc.meta.unknownColumns, ["ملاحظات المحاسب", "القسم"]);
+  assert.equal(doc.meta.rowCount, 1, "والصفوف تُقرأ رغم ذلك");
+});
+
+test("الثقة: تنخفض بنقص الحقول، وتُرفع علم المراجعة اليدوية", () => {
+  const rich = parse("transfer", fx.transferCsv([
+    { empNo: "1", name: "أ", iban: "SA0380000000608010167519", net: 100 },
+  ]));
+  assert.ok(rich.meta.confidence >= 0.7, `ثقة ${rich.meta.confidence}`);
+  assert.equal(rich.meta.needsManualReview, false);
+
+  const poor = parse("full", "رقم الموظف,الصافي\n1,100\n");
+  assert.ok(poor.meta.confidence < rich.meta.confidence);
+
+  /* غياب عمودٍ **مطلوب** يرفع العلم مهما كثرت الأعمدة الأخرى. */
+  const noNet = parse("full", "رقم الموظف,الاسم,الراتب الأساسي,البدلات,الاستقطاعات,البنك\n1,أ,100,0,0,بنك\n");
+  assert.equal(noNet.meta.needsManualReview, true, "بلا «الصافي» لا تُنقذه بقيّة الأعمدة");
+
+  const empty = parse("full", "");
+  assert.equal(empty.meta.confidence, 0);
+  assert.equal(empty.meta.needsManualReview, true);
+});
+
+test("الثقة: عمودان لحقلٍ واحد يُبلَّغان ويُؤخذ الأول", () => {
+  const doc = parse("full", "رقم الموظف,الصافي,المستحق\n1,100,999\n");
+  assert.equal(doc.rows[0].net, 100, "الأول يفوز");
+  assert.ok(doc.meta.warnings.some((w) => /عمودان لحقلٍ واحد/.test(w)));
+});
+
+test("الثقة: كل نوعٍ يُقاس بما يحمله هو — لا بقائمةٍ واحدة للجميع", () => {
+  /* الانحدار الذي أوجد هذا الاختبار: ملفّ الكاش السليم — رقمٌ واسمٌ وصافٍ
+     لا غير — كان يُقاس على قائمةٍ تتوقّع بدلاتٍ وحسابات بنكية، فتهبط ثقته
+     إلى 0.5 ويُرفع علم «يحتاج مراجعة» على ملفٍّ لا عيب فيه. */
+  const month = fx.consistentMonth();
+  for (const [kind, text] of Object.entries(month)) {
+    const doc = parse(kind, text);
+    assert.equal(doc.meta.needsManualReview, false,
+      `${kind}: ثقة ${doc.meta.confidence} على ملفٍّ سليم`);
+    assert.equal(doc.meta.confidence, 1, `${kind} يحمل كل ما يُتوقَّع منه`);
+  }
+});

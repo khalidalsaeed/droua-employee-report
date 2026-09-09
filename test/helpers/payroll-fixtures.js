@@ -54,13 +54,19 @@ function consistentMonth(over = {}) {
     || { empNo: no, name: `موظّف ${no}`, jobTitle: "—", status: "نشط", iban: `SA00000000000000000${no}` };
   const list = Object.keys(salaries);
 
+  const allowanceOf = (no) => (over.allowances || {})[no] || 0;
   const full = list.map((no) => ({
-    empNo: no, name: emp(no).name, basic: salaries[no], allowances: 0,
+    empNo: no, name: emp(no).name, basic: salaries[no], allowances: allowanceOf(no),
     deductions: (over.deductions || {})[no] || 0,
   }));
-  const netOf = (no) => salaries[no] - ((over.deductions || {})[no] || 0);
+  const netOf = (no) => salaries[no] + allowanceOf(no) - ((over.deductions || {})[no] || 0);
   const transfer = list.filter((no) => !cashOnly.includes(no))
-    .map((no) => ({ empNo: no, name: emp(no).name, iban: (over.ibans || {})[no] || emp(no).iban, net: netOf(no) }));
+    .map((no) => ({
+      empNo: no, name: emp(no).name,
+      iban: (over.ibans || {})[no] || emp(no).iban,
+      bank: (over.banks || {})[no] || "بنك تجريبيّ",
+      net: netOf(no),
+    }));
   const cash = list.filter((no) => cashOnly.includes(no))
     .map((no) => ({ empNo: no, name: emp(no).name, net: netOf(no) }));
 
