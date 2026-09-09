@@ -839,3 +839,21 @@ test("الصيغة الحقيقية: فسادُ أي ملفّ لا يُسقط ا
     });
   }
 });
+
+test("الصيغة الحقيقية: «حلّل الشهر» على ملفٍّ تالف يردّ نتيجةً لا «غير موجود»", async () => {
+  /* الموجّه يُحوّل كل استثناءٍ متسرّب إلى 404 حفاظًا على الإخفاء، ولا
+     يُسجّل رسالته. فعطلٌ يصعد من التحليل يصل المستخدم «غير موجود» —
+     يظنّ القسم اختفى — ويترك في السجلّ سطرًا بلا سببٍ ولا اسم ملفّ.
+     ولذلك يُختبر من المدخل: ما يراه المستخدم، لا ما تُرجعه الدالّة. */
+  await withDroua(async ({ sql, ctx }) => {
+    const run = await runs.createRun(sql, "2026-05");
+    for (const kind of files.KINDS) {
+      const bytes = kind === "full" ? Buffer.from("ملفٌّ خطأ") : buildXlsx(SHEET[kind]);
+      await uploadWorkbook(sql, ctx, run.runId, kind, bytes, "xlsx");
+    }
+    const out = await callApi(sql, ctx, "POST", `runs/${run.runId}/analyze`);
+    assert.equal(out.statusCode, 200, "التحليل يُنهي عمله ويردّ");
+    assert.ok(out.body.ok);
+    assert.equal(out.body.analysis.unreadable[0].kind, "full");
+  });
+});
