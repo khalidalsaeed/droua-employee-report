@@ -215,14 +215,32 @@ test("العزل: لا اسم مفتاح مجرَّد بلا معرّف", () => 
   }
 });
 
-test("العزل: لا مسار يبلغ التخزين بعدُ — حتى يُكتب فحص الحارس", () => {
-  /* الحارس نفسه لا يمكن اختباره اليوم: لا موجّه يستدعي التخزين أصلًا. وبدل
-     ترك الفراغ بلا حارس، يُقفل الباب: أول ملفّ يستورد `storage` يُسقط هذا
-     الاختبار — فيُكتب حينها فحص `requireDrouaAccess(needGate)` بدلًا منه،
-     لا بعد أسابيع من وصول المسار إلى الإنتاج بلا حراسة. */
+test("العزل: كل ما يلمس الملفّات يمرّ بالحارس — سندًا للحاجز الزمنيّ", () => {
+  /* الضمان الحقيقيّ زمنُ تشغيل: files.js تفتح بـ`gateContext.requireGate()`،
+     والسياق لا يفتحه إلا `requireDrouaAccess` بعد التحقّق من جلسة حيّة. فأي
+     مسار يُنسى فيه الحارس يأخذ استثناءً لا يقدّم ملفًّا.
+
+     وهذا الفحص سندٌ ساكن فوقه: يمسك الاستيراد المباشر لـstorage من وحدةٍ
+     لا تذكر الحارس أصلًا — أي محاولة الالتفاف على files.js من أسفلها. */
   for (const { file, text } of readAll(drouaFiles())) {
-    if (path.basename(file) === "storage.js") continue;
-    assert.ok(!/require\(["']\.\/storage["']\)/.test(text),
-      `${file} يستورد storage — استبدل هذا الاختبار بفحص الحارس الآن`);
+    const base = path.basename(file);
+    if (base === "storage.js" || base === "gateContext.js") continue;
+    if (!/require\(["']\.\/(storage|files)["']\)/.test(text)) continue;
+    assert.match(text, /requireGate\s*\(|requireDrouaAccess/,
+      `${file} يلمس الملفّات بلا ذكر الحارس`);
   }
+});
+
+test("العزل: files.js تبدأ كل دالّة مُصدَّرة بالحارس", () => {
+  /* الفحص على العدد لا على الشكل: دالّة تُضاف غدًا بلا سطر الحارس تُسقط
+     هذا الاختبار قبل أن تصل إلى موجّه. */
+  /* على الشيفرة مجرّدةً من التعليقات: شرحُ الحارس في رأس الملفّ يذكره
+     أيضًا، فعدُّ النصّ الخام كان سيعدّ الشرح حارسًا. */
+  const entry = readAll(drouaFiles()).find((f) => path.basename(f.file) === "files.js");
+  const src = entry.text;
+  const exported = Object.keys(require("../lib/droua/files"))
+    .filter((k) => typeof require("../lib/droua/files")[k] === "function" && k !== "publicView");
+  const guards = (src.match(/gateContext\.requireGate\(\)/g) || []).length;
+  assert.equal(guards, exported.length,
+    `عدد الحرّاس ${guards} لا يطابق عدد الدوالّ المُصدَّرة ${exported.length}`);
 });
