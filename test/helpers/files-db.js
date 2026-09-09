@@ -301,7 +301,7 @@ function makeFilesDb() {
   sql.query = async (text, values = []) => exec(text, values);
 
   return {
-    sql, rows, runRows, findingRows, audit: auditRows, calls, armed,
+    sql, exec, rows, runRows, findingRows, audit: auditRows, calls, armed,
     arm: (kind, message) => { armed[kind] = message || "فشل مُسلَّح"; },
     seed: (row) => { rows.push({ superseded_at: null, deleted_at: null, purged_at: null, ...row }); },
     events: () => auditRows.map((a) => a.event),

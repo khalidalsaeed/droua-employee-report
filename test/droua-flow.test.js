@@ -441,3 +441,21 @@ test("المداخل: تنزيل ملفٍّ عُبث بوصفه يُردّ 404 �
     assert.ok(!("fileName" in entry.meta));
   });
 });
+
+/* ══ الشاشة ═══════════════════════════════════════════════════════════ */
+
+test("الشاشة: الشيفرة المضمَّنة تُحلَّل بلا خطأ نحويّ", () => {
+  /* الصفحة تُبنى نصًّا، فخطأ نحويّ فيها لا يظهر في أي اختبار منطق — يظهر
+     شاشةً بيضاء عند المستخدم. وهذا أرخص فحص يمنع ذلك. */
+  const html = require("../lib/droua/views/open")("test-nonce");
+  const scripts = [...html.matchAll(/<script nonce="test-nonce">([\s\S]*?)<\/script>/g)];
+  assert.equal(scripts.length, 1);
+  assert.doesNotThrow(() => new Function(scripts[0][1]));
+
+  const styles = [...html.matchAll(/<style nonce="test-nonce">/g)];
+  assert.equal(styles.length, 1, "النمط مضمَّن بـnonce — لا ملفّ أصلٍ باسم يخصّ القسم");
+  /* ولا اسم للقسم في أي نصّ ظاهر. */
+  assert.ok(!/ذروة|رواتب|payroll|salary/i.test(html.replace(/<script[\s\S]*?<\/script>/g, "")),
+    "لا اسم يكشف القسم في نصّ الصفحة");
+  assert.match(html, /dir="rtl"/);
+});
