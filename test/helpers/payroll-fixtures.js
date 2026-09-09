@@ -38,8 +38,8 @@ function cashCsv(rows) {
 }
 
 function employeesCsv(rows = EMPLOYEES) {
-  return csv(["رقم الموظف", "الاسم", "المسمى الوظيفي", "الحالة", "رقم الحساب"],
-    rows.map((r) => [r.empNo, r.name, r.jobTitle, r.status, r.iban]));
+  return csv(["رقم الموظف", "الاسم", "المسمى الوظيفي", "الحالة", "رقم الحساب", "طريقة التحويل"],
+    rows.map((r) => [r.empNo, r.name, r.jobTitle, r.status, r.iban, r.method || "بنك"]));
 }
 
 /* شهرٌ متّسق تمامًا: الكامل = التحويل + الكاش، والقائمة تطابق. */
@@ -74,7 +74,13 @@ function consistentMonth(over = {}) {
     full: fullCsv(full),
     transfer: transferCsv(transfer),
     cash: cashCsv(cash),
-    employees: employeesCsv(list.map(emp).concat(over.keepAll ? EMPLOYEES.filter((e) => !list.includes(e.empNo)) : [])),
+    employees: employeesCsv(list.map((no) => ({
+      ...emp(no),
+      iban: (over.ibans || {})[no] !== undefined ? (over.ibans || {})[no] : emp(no).iban,
+      /* القناة المعتمدة: بنكٌ افتراضًا، ونقدٌ لمن يُصرف كاشًا — فالعيّنة
+         المتّسقة لا تُنتج ملاحظة قناة. */
+      method: (over.methods || {})[no] || (cashOnly.includes(no) ? "نقد" : "بنك"),
+    })).concat(over.keepAll ? EMPLOYEES.filter((e) => !list.includes(e.empNo)) : [])),
   };
 }
 
