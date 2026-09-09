@@ -568,3 +568,171 @@ test("الملاحظات: الحرج أوّلًا — لا ترتيبًا أبج
     assert.equal(api.body.findings[0].severity, "critical", "والـAPI يعطي الترتيب نفسه");
   });
 });
+
+/* ══ دورةُ «لم يُقيَّم» كاملةً ══════════════════════════════════════════
+   =========================================================================
+   الآليّة اختُبرت نقيّةً في droua-analysis. وهنا تُختبر **حيّةً**: من
+   الملفّ المشفَّر إلى الصفّ في القاعدة إلى ردّ الـAPI. فبين الاثنين طبقاتٌ
+   تُسقط الحقول بصمت — عمودٌ لا يُكتب، أو بصمةٌ تتغيّر فتتكرّر الملاحظة،
+   أو حالةٌ يكتبها المستخدم ثمّ يمحوها التحليل التالي. */
+
+async function seedPartial(sql, ctx, period, month, skip = []) {
+  const run = await runs.createRun(sql, period);
+  for (const kind of files.KINDS) {
+    if (skip.includes(kind)) continue;
+    await upload(sql, ctx, run.runId, kind, month[kind]);
+  }
+  return run;
+}
+
+test("لم يُقيَّم: شهرٌ بلا كاش يُنتج ملاحظةً تصل القاعدة والـAPI", async () => {
+  await withDroua(async ({ sql, ctx }) => {
+    const run = await seedPartial(sql, ctx, "2026-03", fx.consistentMonth(), ["cash"]);
+    const result = await analyze.analyzeRun(sql, run.runId, ctx);
+
+    assert.ok(result.rulesNotEvaluable.length > 0, "التحليل يُعلن ما تعذّر");
+    const out = await callApi(sql, ctx, "GET", `runs/${run.runId}/findings`);
+    const list = out.body.findings.filter((f) => f.rule === "not_evaluable");
+    assert.equal(list.length, 1, "ملاحظةٌ واحدة لمصدرٍ واحد ناقص");
+
+    /* الحقول التي تعيش عليها الشاشة — أيّها يسقط يُعطّل شريط التغطية. */
+    assert.equal(list[0].scope, "within_month");
+    assert.equal(list[0].field, "current:cash");
+    assert.ok(Number(list[0].delta) > 0, "العدد وصل رقمًا لا نصًّا");
+    assert.match(list[0].currentValue, /missing_in_split/, "ومعرّفات القواعد وصلت");
+    /* ولا يُقرأ صفرًا: «مستحقٌّ بلا صرف» لم يُخترع لمن صُرف له كاشًا. */
+    assert.equal(out.body.findings.filter((f) => f.rule === "missing_in_split").length, 0);
+  });
+});
+
+test("لم يُقيَّم: رفعُ الملفّ الناقص يُعالج الملاحظة تلقائيًّا", async () => {
+  /* وهذا ما يجعلها ملاحظةً لا لافتة: تُحلّ بالفعل الذي يرفع سببها. */
+  await withDroua(async ({ sql, ctx }) => {
+    const month = fx.consistentMonth();
+    const run = await seedPartial(sql, ctx, "2026-03", month, ["cash"]);
+    await analyze.analyzeRun(sql, run.runId, ctx);
+
+    await upload(sql, ctx, run.runId, "cash", month.cash);
+    await analyze.analyzeRun(sql, run.runId, ctx);
+
+    const open = await callApi(sql, ctx, "GET", `runs/${run.runId}/findings`);
+    assert.equal(open.body.findings.filter((f) => f.rule === "not_evaluable").length, 0,
+      "زال سببها فزالت من المفتوحة");
+    const all = await callApi(sql, ctx, "GET", `runs/${run.runId}/findings/all`);
+    const was = all.body.findings.find((f) => f.rule === "not_evaluable");
+    assert.ok(was && was.resolvedAt, "ولا تُحذف: اختفاؤها حدثٌ يبقى في السجلّ");
+  });
+});
+
+test("لم يُقيَّم: إعادةُ التحليل لا تُكرّرها ولا تمحو قرار المستخدم", async () => {
+  await withDroua(async ({ sql, ctx }) => {
+    const run = await seedPartial(sql, ctx, "2026-03", fx.consistentMonth(), ["cash"]);
+    await analyze.analyzeRun(sql, run.runId, ctx);
+
+    const first = (await callApi(sql, ctx, "GET", `runs/${run.runId}/findings`))
+      .body.findings.find((f) => f.rule === "not_evaluable");
+    const saved = await callApi(sql, ctx, "PATCH", `findings/${first.findingId}`,
+      { status: "verified", userNote: "راجعتُها يدويًّا — لا مسير كاش لهذا الشهر" });
+    assert.equal(saved.statusCode, 200);
+
+    /* وحقلٌ باسمٍ مقارب يُردّ بصوتٍ عالٍ لا يُبتلع: المدخل يُصفّي ما لا
+       يعرفه، وطبقةُ البيانات ترفض التعديل الفارغ الناتج. فمن أخطأ اسم
+       الحقل يرى خطأً — لا «حُفظت» وقد ضاع ما كتب. */
+    const typo = await callApi(sql, ctx, "PATCH", `findings/${first.findingId}`,
+      { note: "نصٌّ يضيع لو قُبل صامتًا" });
+    assert.equal(typo.statusCode, 400, "تعديلٌ لا يكتب شيئًا لا يُردّ نجاحًا");
+
+    await analyze.analyzeRun(sql, run.runId, ctx);
+    await analyze.analyzeRun(sql, run.runId, ctx);
+
+    const after = (await callApi(sql, ctx, "GET", `runs/${run.runId}/findings/all`))
+      .body.findings.filter((f) => f.rule === "not_evaluable");
+    assert.equal(after.length, 1, "ثلاثةُ تحليلات وملاحظةٌ واحدة — البصمة على المصدر");
+    assert.equal(after[0].findingId, first.findingId, "الصفّ نفسه حُدِّث");
+    assert.equal(after[0].status, "verified", "وقرارُ المستخدم نجا");
+    assert.match(after[0].userNote, /راجعتُها/);
+  });
+});
+
+test("لم يُقيَّم: عمودٌ غائب في ملفٍّ موجود يُعلَن تحذيرًا لا معلومة", async () => {
+  /* لا `file_missing` يغطّيه: الملفّ مرفوعٌ ومقروء. فلو صار «معلومة»
+     لاختفى بين ملاحظاتٍ لا تستدعي فعلًا. */
+  await withDroua(async ({ sql, ctx }) => {
+    const month = fx.consistentMonth();
+    month.transfer = fx.csv(["رقم الموظف", "الاسم", "الصافي"],
+      [["1001", "أ", 9000], ["1002", "ب", 7500], ["1004", "د", 8200]]);
+    const run = await seedMonth(sql, ctx, "2026-03", month);
+    await analyze.analyzeRun(sql, run.runId, ctx);
+
+    const list = (await callApi(sql, ctx, "GET", `runs/${run.runId}/findings`))
+      .body.findings.filter((f) => f.rule === "not_evaluable");
+    const gap = list.find((f) => f.field === "current:transfer.iban4");
+    assert.ok(gap, "نقصُ العمود يُعلَن باسم الملفّ والحقل");
+    assert.equal(gap.severity, "warn");
+    assert.equal(list.filter((f) => f.field === "current:cash").length, 0,
+      "ولا يُخلط بنقص ملفّ: الكاش مرفوع");
+  });
+});
+
+test("لم يُقيَّم: أوّل شهرٍ لا سابق له لا يُنتج ملاحظةَ نقص", async () => {
+  await withDroua(async ({ sql, ctx }) => {
+    const run = await seedMonth(sql, ctx, "2026-03", fx.consistentMonth());
+    const result = await analyze.analyzeRun(sql, run.runId, ctx);
+    assert.equal(result.previousPeriod, null);
+    assert.ok(result.rulesSkipped.length > 0, "قواعد المقارنة تُتخطّى");
+    assert.deepEqual(result.rulesNotEvaluable, [], "والتخطّي المتوقَّع لا يُبلَّغ نقصًا");
+    const list = (await callApi(sql, ctx, "GET", `runs/${run.runId}/findings`)).body.findings;
+    assert.equal(list.filter((f) => f.rule === "not_evaluable").length, 0);
+  });
+});
+
+test("لم يُقيَّم: شهرٌ سابقٌ ناقصُ الكاش لا يُفسد المقارنة", async () => {
+  /* الحالة الواقعية: لا مسير كاش مستقلّ للشهر السابق. والمسير الكامل
+     يحمل مبالغ الجميع — فلا قاعدةَ مقارنةٍ تتعطّل، ولا ملاحظةَ تُخترع. */
+  await withDroua(async ({ sql, ctx }) => {
+    const month = fx.consistentMonth();
+    await seedPartial(sql, ctx, "2026-02", month, ["cash"]);
+    const current = await seedMonth(sql, ctx, "2026-03", month);
+    const result = await analyze.analyzeRun(sql, current.runId, ctx);
+
+    assert.equal(result.previousPeriod, "2026-02");
+    const list = (await callApi(sql, ctx, "GET", `runs/${current.runId}/findings`)).body.findings;
+    /* الشهران متطابقان: أي ملاحظة مقارنةٍ هنا اختُرعت. */
+    assert.deepEqual(list.filter((f) => f.scope === "vs_previous").map((f) => f.rule), []);
+    assert.equal(list.filter((f) => f.rule === "not_evaluable").length, 0);
+  });
+});
+
+/* ══ زمن المزامنة ═══════════════════════════════════════════════════════
+   الكتابة واحدةً بعد واحدة تدفع زمن الذهاب والإياب مرّة لكل ملاحظة. وشهرٌ
+   كبير يُنتج ألوفًا منها — فتُقتل الدالّة قبل أن تُنهي، ويبقى التحليل
+   نصفَ مكتوب. وهو عطلٌ لا يظهر على 68 موظّفًا ويظهر على 500. */
+
+test("المزامنة: الكتابات متوازيةٌ بحدّ — لا متسلسلة ولا بلا سقف", async () => {
+  const gateContext = require("../lib/droua/gateContext");
+  let live = 0;
+  let peak = 0;
+  let writes = 0;
+  const sql = async (strings) => {
+    const text = strings.join("?");
+    if (/^\s*SELECT id, fingerprint/.test(text)) return [];
+    writes += 1;
+    live += 1;
+    peak = Math.max(peak, live);
+    await new Promise((r) => setImmediate(r));
+    live -= 1;
+    return [];
+  };
+  const produced = Array.from({ length: 60 }, (_, i) => ({
+    rule: "net_changed", scope: "vs_previous", severity: "warn",
+    employeeRef: String(1000 + i), field: "net", title: "t", description: "d",
+  }));
+  const runId = "11111111-2222-4333-8444-555555555555";
+  const out = await gateContext.runWithGate({ userId: "u", sidHash: "s" },
+    () => findings.sync(sql, runId, produced));
+
+  assert.equal(out.created, 60, "كلّها كُتبت");
+  assert.equal(writes, 61, "كتابةٌ لكل ملاحظة ثمّ عبارةُ المعالَجة");
+  assert.ok(peak > 1, "متسلسلةٌ تمامًا — زمنُ السلك يُضرب في عدد الملاحظات");
+  assert.ok(peak <= 8, `بلا سقف (${peak}) — ألف اتّصال دفعةً تخنق التجمّع`);
+});
