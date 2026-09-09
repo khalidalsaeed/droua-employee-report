@@ -15,6 +15,7 @@ const {
   catalogue,
 } = require("../lib/auth/permissions");
 const { findByEmailRaw, findByIdRaw, listUsers, createUser, updateUser, deleteUser, touchLastLogin } = require("../lib/auth/users");
+const protectedUsers = require("../lib/auth/protectedUsers");
 const { verifyPassword, hashPassword, generatePassword } = require("../lib/auth/passwords");
 const { issueSessionToken, verify: verifyToken } = require("../lib/auth/tokens");
 const { getCookie, sessionCookie, clearSessionCookie } = require("../lib/auth/cookies");
@@ -64,9 +65,30 @@ const METHOD_ACTION = { GET: "view", POST: "create", PUT: "edit", DELETE: "delet
 
 const FORBIDDEN = { ok: false, error: "صلاحيات غير كافية" };
 
+/* ─── قسم المراجعة السرّي ───
+   تفويضٌ كامل قبل أي منطق مشترك، و require كسول: طلبٌ لا يخصّ القسم لا
+   يُحمّل شيفرته أصلًا — لا في الذاكرة ولا في مسار التنفيذ.
+
+   المطابقة بادئةٌ كاملة لا احتواء: "secure-auditX" و "data/secure-audit"
+   لا يُفوَّضان. والموجّه يردّ على الطلب كاملًا ولا يرمي، فلا يبلغ
+   catch-all أدناه الذي يُرجع err.message.
+
+   هذه الأسطر هي كامل ما يعرفه هذا الملفّ عن القسم: لا مسار، ولا حارس،
+   ولا استجابة، ولا جدول. */
+const SECURE_SECTION = "secure-audit";
+function isSecureSectionRequest(query) {
+  if (query.kind === "page") return query.page === SECURE_SECTION;
+  if (query.kind === "api") {
+    const p = String(query.apiPath || "");
+    return p === SECURE_SECTION || p.startsWith(SECURE_SECTION + "/");
+  }
+  return false;
+}
+
 module.exports = async function handler(req, res) {
   const { kind } = req.query || {};
   try {
+    if (isSecureSectionRequest(req.query || {})) return await require("../lib/droua/router")(req, res);
     if (kind === "page") return await handlePage(req, res);
     if (kind === "api") return await handleApi(req, res);
     res.status(404).json({ ok: false, error: "Not found" });
@@ -203,6 +225,7 @@ async function handleAuth(req, res, action) {
   if (action === "login") return authLogin(req, res);
   if (action === "logout") return authLogout(req, res);
   if (action === "me") return authMe(req, res);
+  if (action === "change-password") return authChangePassword(req, res);
   if (action === "permissions-catalogue") return authCatalogue(req, res);
   res.status(404).json({ ok: false, error: "Not found" });
 }
@@ -276,6 +299,83 @@ async function authMe(req, res) {
     res.setHeader("Set-Cookie", sessionCookie(fresh, false));
   }
   res.status(200).json({ ok: true, user: sessionUser(user) });
+}
+
+/* ---------------- تغيير كلمة مرور الحساب المحميّ (Self-service) ----------------
+   =========================================================================
+   مسارٌ واحدٌ ضيّق، سببه أن اكتمال حماية الحساب المحميّ كان معلَّقًا بدوره:
+   تعديل المستخدمين في handleUsers يشترط users:edit، فحسابٌ محميّ بدور
+   لا يملكها لا يستطيع تغيير كلمة مروره من الواجهة أصلًا. ربط الحماية
+   بالدور هو ما أردنا التخلّص منه، فهذا المسار يفكّ الارتباط.
+
+   ما يجعله آمنًا ليس فحصًا واحدًا بل شكلَه:
+
+     • الهدف لا يأتي من العميل إطلاقًا — يُشتقّ من الجلسة وحدها. فلا
+       معنى لـ id في الجسم، ولا سبيل إلى توجيه المسار نحو حساب آخر مهما
+       كان الطلب. هذا أقوى من فحص actor.id === target.id، لأنه لا يترك
+       مقارنةً يمكن أن تُنسى أو تُكتب خطأً: لا وجود لـ target أصلًا.
+
+     • يغيّر passwordHash وحده. أي مفتاح زائد في الجسم يُرفض بـ400 —
+       لا يُتجاهل بصمت — فلا يستطيع أحد تمرير email أو role أو status أو
+       permissions عبره، ولا حقل يُضاف مستقبلًا.
+
+     • لا يوجد لغير الحساب المحميّ: 404 بنفس شكل أي مسار غير معروف في
+       handleAuth. وحين لا يكون PROTECTED_USER_IDS مضبوطًا لا يوجد لأحد —
+       غيابُ الإعداد يُغلق المسار ولا يفتحه للجميع.
+
+     • لا يشترط users:edit ولا أي صلاحية: القدرةُ هنا شخصية لا إدارية،
+       ومصدرها ملكيةُ الحساب لا موقعٌ في نظام الصلاحيات.
+
+   ⚠️ قيدٌ لا يمكن رفعه في هذه المرحلة: الجلسات القائمة لا تُبطَل.
+   جلسات المنصّة توكناتٌ موقَّعة بلا حالة على الخادم (lib/auth/tokens.js):
+   لا جدول جلسات، ولا عمود يربط التوكن بكلمة المرور. فإبطالها يستلزم إمّا
+   تدوير SESSION_SECRET — وهو إخراجٌ لكل مستخدمي المنصّة — أو تغييرًا في
+   requireUser يمسّ كل حساب. كلاهما خارج نطاق هذه المرحلة، فالردّ يُصرّح
+   بـ sessionsInvalidated: false بدل أن يوهم الواجهة بضمانٍ لا يقع. */
+
+const PASSWORD_CHANGE_KEYS = new Set(["currentPassword", "newPassword"]);
+const MIN_PROTECTED_PASSWORD_LENGTH = 12;
+
+async function authChangePassword(req, res) {
+  if (req.method !== "POST") return res.status(405).json({ ok: false, error: "Method not allowed" });
+  const actor = await requireUser(req);
+  if (!actor) return res.status(401).json({ ok: false, error: "غير مسجّل الدخول" });
+  if (!protectedUsers.isProtected(actor.id)) return res.status(404).json({ ok: false, error: "Not found" });
+
+  const body = parseBody(req);
+  if (Object.keys(body || {}).some((k) => !PASSWORD_CHANGE_KEYS.has(k))) {
+    return res.status(400).json({ ok: false, error: "هذا المسار يغيّر كلمة المرور وحدها" });
+  }
+  const currentPassword = typeof body.currentPassword === "string" ? body.currentPassword : "";
+  const newPassword = typeof body.newPassword === "string" ? body.newPassword : "";
+
+  /* التحقّق من الحالية أوّلًا وقبل أي فحص للجديدة: من لا يثبت أنه صاحب
+     الحساب لا يتعلّم منّا سياسة كلمات المرور ولا أي تفصيل آخر. */
+  if (!currentPassword || !verifyPassword(currentPassword, actor.passwordHash)) {
+    logEvent({
+      type: "protected_user_password_change_denied", actorEmail: actor.email, actorId: actor.id,
+      targetId: actor.id,
+      meta: { route: "self_service", reason: currentPassword ? "wrong_current_password" : "missing_current_password" },
+    });
+    /* رسالة واحدة للحالتين — لا تُميّز «لم تُرسل» من «خاطئة». */
+    return res.status(403).json({ ok: false, error: protectedUsers.MESSAGES.password_unverified });
+  }
+  if (newPassword.length < MIN_PROTECTED_PASSWORD_LENGTH) {
+    return res.status(400).json({ ok: false, error: `كلمة المرور الجديدة يجب ألّا تقلّ عن ${MIN_PROTECTED_PASSWORD_LENGTH} محرفًا` });
+  }
+  if (newPassword === currentPassword) {
+    return res.status(400).json({ ok: false, error: "كلمة المرور الجديدة يجب أن تختلف عن الحالية" });
+  }
+
+  try {
+    /* actor.id لا id من الجسم. والخيارات هي نفسها التي يفرضها حارس
+       lib/auth/users.js، فالمسار يمرّ من الحارس ولا يلتفّ عليه. */
+    await updateUser(actor.id, { passwordHash: hashPassword(newPassword) }, { selfEdit: true, currentPasswordVerified: true });
+  } catch (err) {
+    return res.status(400).json({ ok: false, error: (err && err.message) || "تعذّر تغيير كلمة المرور" });
+  }
+  logEvent({ type: "protected_user_password_changed", actorEmail: actor.email, actorId: actor.id, targetId: actor.id, meta: { route: "self_service" } });
+  res.status(200).json({ ok: true, sessionsInvalidated: false });
 }
 
 /* ---------------- generic data CRUD ---------------- */
@@ -527,6 +627,25 @@ async function handleUsers(req, res, actor) {
     if (!id) return res.status(400).json({ ok: false, error: "معرّف المستخدم مطلوب" });
     const target = await findByIdRaw(id);
     if (!target) return res.status(404).json({ ok: false, error: "المستخدم غير موجود" });
+    /* الحساب المحميّ: لا أحد غير صاحبه يعدّله — مهما كان دوره، مالكًا كان
+       أو مدير نظام. الفحص هنا مبكّرًا قبل بناء الرقعة، فلا يُهدر hashPassword
+       على طلبٍ مرفوض أصلًا. الضمان النهائي في lib/auth/users.js. */
+    if (protectedUsers.isProtected(target.id) && actor.id !== target.id) {
+      logEvent({
+        type: "protected_user_write_blocked", actorEmail: actor.email, actorId: actor.id,
+        /* أسماء الحقول يتحكّم بها المُرسِل، فتُحدَّد عددًا وطولًا قبل أن
+           تُكتب في audit_log — ولا تُذكر قيمةٌ منها إطلاقًا. */
+        targetId: id,
+        meta: {
+          method: "PUT",
+          fields: Object.keys(body || {})
+            .filter((k) => k !== "id" && k !== "password" && k !== "currentPassword")
+            .slice(0, 10)
+            .map((k) => String(k).slice(0, 40)),
+        },
+      });
+      return res.status(403).json({ ok: false, error: protectedUsers.MESSAGES.not_self });
+    }
     if (!canManageUser(actor.role, target.role)) return res.status(403).json({ ok: false, error: "لا يمكنك تعديل حساب Owner" });
     if (role && role !== target.role) {
       if (!isValidRole(role)) return res.status(400).json({ ok: false, error: "دور غير صالح" });
@@ -557,8 +676,39 @@ async function handleUsers(req, res, actor) {
       if (guard) return res.status(guard.status).json({ ok: false, error: guard.error });
       patch.permissions = body.permissions === null ? null : sanitizePermissions(body.permissions);
     }
+    /* بقي الحساب المحميّ في حالة واحدة: صاحبه يعدّل نفسه. القواعد تُقرأ من
+       lib/auth/protectedUsers.js نفسه الذي تفرضه طبقة البيانات، فلا تعريفان
+       للمسموح يمكن أن يتفرّقا. */
+    const updateOpts = {};
+    if (protectedUsers.isProtected(target.id)) {
+      updateOpts.selfEdit = true; // ما عدا ذلك رُفض أعلاه
+      if ("passwordHash" in patch) {
+        /* المسار العادي لا يطلب كلمة المرور القديمة، فمن يسرق كوكي الجلسة
+           يغيّر كلمة المرور ويُقصي صاحبها. هذا الشرط يقع على الحسابات
+           المحميّة وحدها — سلوك أي حساب آخر لا يتغيّر بحرف. */
+        const current = typeof body.currentPassword === "string" ? body.currentPassword : "";
+        if (!current || !verifyPassword(current, target.passwordHash)) {
+          logEvent({
+            type: "protected_user_password_change_denied", actorEmail: actor.email,
+            actorId: actor.id, targetId: id, meta: { reason: current ? "wrong_current_password" : "missing_current_password" },
+          });
+          /* رسالة واحدة للحالتين: لا تُميّز «لم تُرسل» من «خاطئة». */
+          return res.status(403).json({ ok: false, error: protectedUsers.MESSAGES.password_unverified });
+        }
+        updateOpts.currentPasswordVerified = true;
+      }
+      const refusal = protectedUsers.refusalFor(patch, updateOpts);
+      if (refusal) {
+        logEvent({
+          type: "protected_user_write_blocked", actorEmail: actor.email, actorId: actor.id,
+          targetId: id, meta: { method: "PUT", field: refusal.field, reason: refusal.reason },
+        });
+        return res.status(403).json({ ok: false, error: refusal.message });
+      }
+    }
+
     try {
-      const updated = await updateUser(id, patch);
+      const updated = await updateUser(id, patch, updateOpts);
       logEvent({ type: "user_updated", actorEmail: actor.email, actorId: actor.id, targetId: id, meta: { fields: Object.keys(patch) } });
       return res.status(200).json({ ok: true, user: updated });
     } catch (err) {
@@ -572,6 +722,13 @@ async function handleUsers(req, res, actor) {
     if (id === actor.id) return res.status(400).json({ ok: false, error: "لا يمكنك حذف حسابك الخاص" });
     const target = await findByIdRaw(id);
     if (!target) return res.status(404).json({ ok: false, error: "المستخدم غير موجود" });
+    if (protectedUsers.isProtected(target.id)) {
+      logEvent({
+        type: "protected_user_write_blocked", actorEmail: actor.email, actorId: actor.id,
+        targetId: id, meta: { method: "DELETE", reason: "delete" },
+      });
+      return res.status(403).json({ ok: false, error: protectedUsers.MESSAGES.delete });
+    }
     if (!canManageUser(actor.role, target.role)) return res.status(403).json({ ok: false, error: "لا يمكنك حذف حساب Owner" });
     await deleteUser(id);
     logEvent({ type: "user_deleted", actorEmail: actor.email, actorId: actor.id, targetId: id, meta: { deletedEmail: target.email } });

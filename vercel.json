@@ -18,6 +18,8 @@
     }
   ],
   "rewrites": [
+    { "source": "/secure-audit/api/:path*", "destination": "/api/app?kind=api&apiPath=secure-audit/:path*" },
+    { "source": "/secure-audit", "destination": "/api/app?kind=page&page=secure-audit" },
     { "source": "/", "destination": "/api/app?kind=page&page=home" },
     { "source": "/users.html", "destination": "/api/app?kind=page&page=users" },
     { "source": "/payroll.html", "destination": "/api/app?kind=page&page=payroll" },
