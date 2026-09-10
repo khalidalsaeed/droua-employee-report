@@ -1348,3 +1348,21 @@ test("الشاشة: عددُ الموظفين تحت الإجماليّ يواف
   assert.equal(countEmp(10), "10 موظّفين");
   assert.equal(countEmp(62), "62 موظّفًا");
 });
+
+/* الإعداداتُ لوحةٌ اختيارية. وقبل تشغيل الهجرة على Production لا جدولَ لها،
+   فيسقط نداؤها — ولو أسقط ما بعده لفُتح الشهرُ على صفحةٍ بيضاء: لا ملاحظاتٍ
+   ولا إجماليّات. وهذا أسوأُ ما يحدث لصفحةٍ سببُ وجودها ما بعدَ اللوحة. */
+test("الشاشة: سقوطُ الإعدادات لا يُسقط الملاحظات والإجماليّات", () => {
+  const page = pageSource();
+  const chain = page.match(/return loadSettings\(\)[\s\S]{0,400}?loadTotals\);/);
+  assert.ok(chain, "سلسلةُ التحميل غير موجودة");
+  assert.match(chain[0], /\.catch\(/, "بلا catch يسقط ما بعد الإعدادات");
+  /* والـcatch قبل loadFindings لا بعد loadTotals: موضعُه هو الفرق. */
+  assert.ok(chain[0].indexOf(".catch(") < chain[0].indexOf("loadFindings"),
+    "الالتقاطُ قبل الملاحظات");
+  assert.match(page, /id="cfg-fail"/, "وتُقال العلّة ولا تُبتلع");
+
+  /* والعنصرُ الذي يُكتب فيه موجود — وإلّا رمى show وقتل السلسلة نفسها. */
+  const ids = new Set([...page.matchAll(/id="([a-z0-9-]+)"/gi)].map((m) => m[1]));
+  assert.ok(ids.has("cfg-fail"), "cfg-fail غير معرَّف في الصفحة");
+});
