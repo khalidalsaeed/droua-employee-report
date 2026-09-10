@@ -608,8 +608,14 @@ test("المقارنة: كل قاعدة في السجلّ لها اختبار ي
   otDocs.full.rows[1].otAmount = 250;
   for (const f of compare({ docs: otDocs, previousDocs: null,
     settings: { divisors: new Map([["1001", 8]]) } }).findings) covered.add(f.rule);
-  /* ومرّةً بلا قاسمٍ إطلاقًا: تُشغَّل قاعدةُ «لا قاسم». */
+  /* ومرّةً بلا قاسمٍ إطلاقًا: تُشغَّل ملاحظةُ «الافتراضيّ». */
   for (const f of compare({ docs: otDocs, previousDocs: null,
+    settings: { divisors: new Map() } }).findings) covered.add(f.rule);
+  /* ومرّةً بمسيرٍ ينقصه الأساسيّ: تُشغَّل «عنصرٌ ناقص». */
+  const bare = { ...otDocs };
+  bare.full = parse("full", fx.csv(["رقم الموظف", "الاسم", "اجمالي الراتب", "وقت اضافي", "صافي الراتب"],
+    [["1001", "أ", 12000, 500, 12500]]));
+  for (const f of compare({ docs: bare, previousDocs: null,
     settings: { divisors: new Map() } }).findings) covered.add(f.rule);
 
   const uncovered = RULES.map((r) => r.id).filter((id) => !covered.has(id));
@@ -925,15 +931,102 @@ test("العمل الإضافي: القاسم يُغيّر القيمة — ول
   assert.match(d10.description, /قاسم 10/);
 });
 
-test("العمل الإضافي: بلا قاسمٍ لا يُحسب مال — ويُعلَن السبب", () => {
+test("القاسم: بلا صفٍّ محفوظ يُحسب بالافتراضيّ — ويُعلَن أنه افتراضيّ", () => {
+  /* سياسةُ الشركة: عشرٌ للجميع إلا فئةً تُستثنى بثمانٍ. فلا شهرَ يمرّ بلا
+     حساب لأن أحدًا لم يُسأل — والملاحظة تقول بأيّ قاسمٍ حُسب. */
   const docs = otMonth({ overtime: [{ empNo: "1001", m15: 120 }] });
   docs.full = otPayroll([{ empNo: "1001", basic: 9000, gross: 12000, ot: 999 }]);
   const out = compare({ docs, previousDocs: null, settings: { divisors: new Map() } }).findings;
-  assert.equal(rule(out, "ot_amount_mismatch").length, 0, "لا فرقَ ماليّ مخترَع");
-  const gap = rule(out, "ot_no_divisor");
-  assert.equal(gap.length, 1);
-  assert.equal(gap[0].employeeRef, "1001");
-  assert.match(gap[0].description, /لم تُحسب/);
+
+  const note = rule(out, "ot_no_divisor");
+  assert.equal(note.length, 1, "ملاحظةٌ واحدة لا واحدةٌ لكل موظّف");
+  assert.equal(note[0].severity, "info", "شفافيّةٌ لا إنذار");
+  assert.equal(note[0].employeeRef, undefined, "ولا تُنسب إلى موظّفٍ بعينه");
+  assert.match(note[0].title, /10 ساعات/);
+  assert.match(note[0].currentValue, /1 موظّفًا/);
+
+  /* والمال يُحسب فعلًا — بالافتراضيّ. */
+  const money = rule(out, "ot_amount_mismatch");
+  assert.equal(money.length, 1, "المبلغ يُقارَن ولا يُترك");
+  assert.match(money[0].description, /قاسم 10/);
+});
+
+test("القاسم: الصفُّ المحفوظ يتقدّم على الافتراضيّ — وهو الـoverride", () => {
+  const docs = otMonth({ overtime: [{ empNo: "1001", m15: 120 }] });
+  docs.full = otPayroll([{ empNo: "1001", basic: 9000, gross: 12000, ot: 999 }]);
+  const eight = compare({ docs, previousDocs: null,
+    settings: { divisors: new Map([["1001", 8]]) } }).findings;
+  assert.equal(rule(eight, "ot_no_divisor").length, 0, "لا ملاحظةَ افتراضيّ لمن له صفّ");
+  assert.match(rule(eight, "ot_amount_mismatch")[0].description, /قاسم 8/);
+
+  /* والقاسمان يُنتجان مبلغين مختلفين — وإلّا لما كان للسياسة معنى. */
+  const ten = compare({ docs, previousDocs: null, settings: { divisors: new Map() } }).findings;
+  assert.notEqual(rule(eight, "ot_amount_mismatch")[0].delta,
+    rule(ten, "ot_amount_mismatch")[0].delta);
+});
+
+test("القاسم: موظّفٌ جديد يأخذ الافتراضيّ بلا تدخّل", () => {
+  const docs = otMonth({ overtime: [{ empNo: "9001", m15: 60 }] });
+  docs.full = otPayroll([{ empNo: "9001", basic: 6000, gross: 6000, ot: 100 }]);
+  /* إعداداتٌ فيها غيرُه — فهو «جديد» بالنسبة للجدول. */
+  const settings = { divisors: new Map([["1001", 8]]) };
+  const out = compare({ docs, previousDocs: null, settings }).findings;
+  assert.match(rule(out, "ot_no_divisor")[0].title, /10 ساعات/);
+  assert.match(rule(out, "ot_amount_mismatch")[0].description, /قاسم 10/);
+});
+
+test("القاسم: OT صفرٌ لا يستدعي قاسمًا ولا حسابًا", () => {
+  const docs = otMonth({ overtime: [{ empNo: "1001", m15: 0, m2: 0 }] });
+  docs.full = otPayroll([{ empNo: "1001", basic: 9000, gross: 12000, ot: 0 }]);
+  const out = compare({ docs, previousDocs: null, settings: { divisors: new Map() } }).findings;
+  assert.equal(rule(out, "ot_no_divisor").length, 0);
+  assert.equal(rule(out, "ot_amount_mismatch").length, 0);
+  assert.equal(rule(out, "ot_inputs_missing").length, 0);
+});
+
+test("العمل الإضافي: عنصرٌ ناقص في المعادلة ⇒ لا يُقيَّم، ويُسمّى الناقص", () => {
+  /* الغائبُ لا يُقرأ صفرًا: صفرٌ هنا يُنتج «فرقًا» مساويًا للمبلغ كلِّه. */
+  const cases = [
+    ["الراتب الأساسي", { basic: 0, gross: 12000, ot: 500 }],
+    ["إجمالي الراتب", { basic: 9000, gross: 0, ot: 500 }],
+  ];
+  for (const [label, row] of cases) {
+    const docs = otMonth({ overtime: [{ empNo: "1001", m15: 120 }] });
+    docs.full = otPayroll([{ empNo: "1001", ...row }]);
+    const out = compare({ docs, previousDocs: null, settings: { divisors: new Map() } }).findings;
+    const gap = rule(out, "ot_inputs_missing");
+    assert.equal(gap.length, 1, label);
+    assert.match(gap[0].currentValue, new RegExp(label));
+    assert.equal(rule(out, "ot_amount_mismatch").length, 0, `${label}: لا مبلغ مخترَع`);
+  }
+
+  /* وغيابُ عمود العمل الإضافي من الكشف علّةٌ على مستوى **الملفّ**: تُعلَن
+     مرّةً واحدة في «لم تُقيَّم»، لا مرّةً لكل موظّف. */
+  const docs = otMonth({ overtime: [{ empNo: "1001", m15: 120 }] });
+  docs.full = parse("full", fx.csv(["رقم الموظف", "الاسم", "الراتب الاساسي", "اجمالي الراتب", "صافي الراتب"],
+    [["1001", "أ", 9000, 12000, 12000]]));
+  const res = compare({ docs, previousDocs: null, settings: { divisors: new Map() } });
+  assert.equal(rule(res.findings, "ot_inputs_missing").length, 0, "لا تكرارَ لعلّةٍ واحدة");
+  assert.ok(res.notEvaluable.some((e) => e.rule === "ot_inputs_missing"
+    && e.missing.some((m) => m.field === "otAmount")));
+});
+
+test("الحساب: الدقائق تُحوَّل ساعاتٍ، ولا تقريبَ في الوسط", () => {
+  /* 540 دقيقة = 9 ساعات. والتقريب في النتيجة وحدها. */
+  const basic = 10000, gross = 13333, divisor = 10, minutes = 540;
+  const hourlyGross = gross / 30 / divisor;
+  const hourlyBasic = basic / 30 / divisor;
+  const expected = (minutes / 60) * (hourlyGross + hourlyBasic / 2);
+
+  const docs = otMonth({ overtime: [{ empNo: "1001", m15: minutes }] });
+  /* المبلغ في الكشف يخالف بريالٍ واحد بالضبط. */
+  docs.full = otPayroll([{ empNo: "1001", basic, gross, ot: Number((expected + 1).toFixed(2)) }]);
+  const f = rule(compare({ docs, previousDocs: null,
+    settings: { divisors: new Map() } }).findings, "ot_amount_mismatch")[0];
+  assert.ok(f, "الفرق يُلتقط");
+  /* لو قُرِّب في الوسط لانحرف الفرق عن الواحد. */
+  assert.equal(f.delta, 1, `الفرق ${f.delta} — تقريبٌ وسيط أفسد الحساب`);
+  assert.match(f.description, /9\.00 ساعة/, "الدقائق ساعاتٍ بلا خطأ");
 });
 
 test("العمل الإضافي: معاملٌ بلا صيغة يُعلَن ولا يُسعَّر", () => {
@@ -1068,4 +1161,22 @@ test("العتبة: التغيّر يُفسَّر ببنوده — لا رقمً
   const f = rule(compare({ docs: current, previousDocs: previous }).findings, "net_changed")[0];
   assert.match(f.description, /%/, "النسبة معروضة");
   assert.match(f.description, /الخصميات/, "والبند الذي يفسّره مذكور");
+});
+
+test("العمل الإضافي: من لا دقائق له لا يُبلَّغ عنه غائبًا عن الكشف", () => {
+  /* ملفّ العمل الإضافي يسرد كل من له سجلُّ دوام، وأكثرُهم بصفر دقيقة.
+     فإعلانُ كلِّ من ليس في الكشف يُغرق الشاشة بمن لا شأن لهم. */
+  const month = fx.consistentMonth();
+  const docs = monthDocs(month);
+  docs.overtime = parse("overtime", fx.overtimeCsv([
+    { empNo: "8001", m15: 0 },      // ليس في الكشف، وبلا دقائق ⇒ يُتجاهل
+    { empNo: "8002", m15: 0 },
+    { empNo: "8003", m15: 90 },     // ليس في الكشف، وله دقائق ⇒ يُبلَّغ
+  ]));
+  const out = compare({ docs, previousDocs: null, settings: { divisors: new Map() } }).findings;
+  assert.deepEqual(rule(out, "ot_not_in_payroll").map((f) => f.employeeRef), ["8003"],
+    "من له ساعاتٌ معتمدة ولا راتب وحده");
+  /* ولا يُطلب قاسمٌ لمن لا دقائق له. */
+  assert.equal(rule(out, "ot_no_divisor").length, 1, "ملاحظةٌ جامعة");
+  assert.match(rule(out, "ot_no_divisor")[0].currentValue, /1 موظّفًا/, "واحدٌ فقط له دقائق");
 });
