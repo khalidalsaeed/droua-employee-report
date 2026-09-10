@@ -195,10 +195,56 @@ function makeFilesDb() {
     throw new Error("استعلام ملاحظات غير معروف: " + t);
   }
 
+  /* إعداداتُ الموظّف وإجازاتُ الشهر: تخزينٌ حقيقيّ لا صمت. ومُزيَّفٌ
+     يُرجع فراغًا لكل استعلام يجعل اختبارَ الإجازات مسرحيّة. */
+  const settingRows = [];
+  const leaveRows = [];
+
+  function settingsExec(t, values) {
+    if (/^SELECT emp_no, overtime_divisor/.test(t)) {
+      return settingRows.slice().sort((a, b) => (a.emp_no < b.emp_no ? -1 : 1));
+    }
+    if (/^INSERT INTO droua_employee_settings/.test(t)) {
+      const [empNo, divisor] = values;
+      const found = settingRows.find((r) => r.emp_no === empNo);
+      if (found) found.overtime_divisor = divisor;
+      else settingRows.push({ emp_no: empNo, overtime_divisor: divisor, updated_at: new Date().toISOString() });
+      return [{ emp_no: empNo, overtime_divisor: divisor }];
+    }
+    if (/^DELETE FROM droua_employee_settings/.test(t)) {
+      const i = settingRows.findIndex((r) => r.emp_no === values[0]);
+      if (i < 0) return [];
+      return settingRows.splice(i, 1).map((r) => ({ emp_no: r.emp_no }));
+    }
+    throw new Error("استعلام إعدادات غير معروف: " + t);
+  }
+
+  function leavesExec(t, values) {
+    if (/^SELECT id, emp_no, start_date/.test(t)) {
+      return leaveRows.filter((r) => r.run_id === values[0])
+        .sort((a, b) => (a.emp_no + a.start_date < b.emp_no + b.start_date ? -1 : 1));
+    }
+    if (/^INSERT INTO droua_run_leaves/.test(t)) {
+      const [id, runId, empNo, start, end, note] = values;
+      /* القيد الحقيقيّ في القاعدة — والمُزيَّف يفرضه كي لا ينجح ما يفشل. */
+      if (end < start) throw new Error('new row violates check constraint "droua_run_leaves_check"');
+      leaveRows.push({ id, run_id: runId, emp_no: empNo, start_date: start, end_date: end, note: note || null });
+      return [{ id }];
+    }
+    if (/^DELETE FROM droua_run_leaves/.test(t)) {
+      const i = leaveRows.findIndex((r) => r.id === values[0]);
+      if (i < 0) return [];
+      return leaveRows.splice(i, 1).map((r) => ({ id: r.id }));
+    }
+    throw new Error("استعلام إجازات غير معروف: " + t);
+  }
+
   function exec(text, values) {
     const t = norm(text);
     calls.push({ text: t, values });
 
+    if (/droua_employee_settings/.test(t)) return settingsExec(t, values);
+    if (/droua_run_leaves/.test(t)) return leavesExec(t, values);
     if (/droua_payroll_runs/.test(t)) return runsExec(t, values);
     if (/droua_payroll_findings/.test(t)) return findingsExec(t, values);
     if (/^SELECT run_id, count\(\*\)::int AS present/.test(t)) {

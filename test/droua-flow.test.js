@@ -118,8 +118,13 @@ test("التحليل: شهرٌ متّسق لا يُنتج إلا ما يخصّ �
     assert.deepEqual(result.missing, ["overtime"], "الاختياريّ وحده ناقص");
     /* ملاحظةٌ واحدة: «ملفٌّ اختياريّ ناقص» — معلومةٌ لا خلل. وما عداها صفر. */
     const list = (await callApi(sql, ctx, "GET", `runs/${run.runId}/findings`)).body.findings;
-    assert.deepEqual(list.map((f) => `${f.rule}:${f.severity}`), ["file_missing:info"],
+    /* ملاحظتان اثنتان، كلتاهما **معلومة** وعن الخانة الاختيارية نفسها:
+       «ملفٌّ ناقص»، و«قواعدُه لم تُقيَّم». ولا واحدةَ منهما تحذير: نقصُ
+       ملفٍّ اختياريّ في الشهر الجاري ليس حدثًا يستدعي فعلًا. */
+    assert.deepEqual(list.map((f) => `${f.rule}:${f.severity}`).sort(),
+      ["file_missing:info", "not_evaluable:info"],
       JSON.stringify(list.map((f) => f.title)));
+    assert.ok(list.every((f) => /overtime/.test(f.field)), "كلّها عن ملفّ العمل الإضافي");
     assert.equal(result.previousPeriod, null, "لا شهر سابق");
     assert.ok(result.rulesSkipped.includes("iban_changed"));
     assert.equal((await runs.getRun(sql, run.runId)).status, "analyzed");
@@ -312,7 +317,15 @@ test("المداخل: دورة كاملة عبر الـAPI — إنشاء ورف
 
     const analysis = await callApi(sql, ctx, "POST", `runs/${runId}/analyze`);
     assert.equal(analysis.statusCode, 200);
-    assert.equal(analysis.body.analysis.created, 0);
+    /* رُفع ملفّ عملٍ إضافيّ ولم يُحدَّد قاسمُ ساعةٍ لأحد — فقيمتُه **لا
+       تُحسب** وتُعلَن العلّة. وهذا هو السلوك المطلوب: لا مالَ يُخمَّن. */
+    const produced = (await callApi(sql, ctx, "GET", `runs/${runId}/findings`)).body.findings;
+    /* واحدةٌ عن القاسم، وأخرى تقول إن قواعد المال توقّفت لأن المسير نفسه
+       لا يحمل عمود «وقت اضافي» — علّتان مختلفتان تُعلَنان معًا. */
+    assert.deepEqual(produced.map((f) => f.rule).sort(), ["not_evaluable", "ot_no_divisor"],
+      JSON.stringify(produced.map((f) => f.title)));
+    assert.equal(produced.find((f) => f.rule === "ot_no_divisor").employeeRef, "1001");
+    assert.match(produced.find((f) => f.rule === "not_evaluable").field, /full\.otAmount/);
 
     const list = await callApi(sql, ctx, "GET", "runs");
     assert.equal(list.body.runs[0].filesPresent, 4);
@@ -609,7 +622,8 @@ test("لم يُقيَّم: شهرٌ بلا كاش يُنتج ملاحظةً تص
 
     assert.ok(result.rulesNotEvaluable.length > 0, "التحليل يُعلن ما تعذّر");
     const out = await callApi(sql, ctx, "GET", `runs/${run.runId}/findings`);
-    const list = out.body.findings.filter((f) => f.rule === "not_evaluable");
+    const list = out.body.findings.filter((f) => f.rule === "not_evaluable"
+      && f.field === "current:cash");
     assert.equal(list.length, 1, "ملاحظةٌ واحدة لمصدرٍ واحد ناقص");
 
     /* الحقول التي تعيش عليها الشاشة — أيّها يسقط يُعطّل شريط التغطية. */
@@ -633,10 +647,11 @@ test("لم يُقيَّم: رفعُ الملفّ الناقص يُعالج ال�
     await analyze.analyzeRun(sql, run.runId, ctx);
 
     const open = await callApi(sql, ctx, "GET", `runs/${run.runId}/findings`);
-    assert.equal(open.body.findings.filter((f) => f.rule === "not_evaluable").length, 0,
-      "زال سببها فزالت من المفتوحة");
+    assert.equal(open.body.findings.filter((f) => f.rule === "not_evaluable"
+      && f.field === "current:cash").length, 0, "زال سببها فزالت من المفتوحة");
     const all = await callApi(sql, ctx, "GET", `runs/${run.runId}/findings/all`);
-    const was = all.body.findings.find((f) => f.rule === "not_evaluable");
+    const was = all.body.findings.find((f) => f.rule === "not_evaluable"
+      && f.field === "current:cash");
     assert.ok(was && was.resolvedAt, "ولا تُحذف: اختفاؤها حدثٌ يبقى في السجلّ");
   });
 });
@@ -647,7 +662,7 @@ test("لم يُقيَّم: إعادةُ التحليل لا تُكرّرها و�
     await analyze.analyzeRun(sql, run.runId, ctx);
 
     const first = (await callApi(sql, ctx, "GET", `runs/${run.runId}/findings`))
-      .body.findings.find((f) => f.rule === "not_evaluable");
+      .body.findings.find((f) => f.rule === "not_evaluable" && f.field === "current:cash");
     const saved = await callApi(sql, ctx, "PATCH", `findings/${first.findingId}`,
       { status: "verified", userNote: "راجعتُها يدويًّا — لا مسير كاش لهذا الشهر" });
     assert.equal(saved.statusCode, 200);
@@ -663,7 +678,7 @@ test("لم يُقيَّم: إعادةُ التحليل لا تُكرّرها و�
     await analyze.analyzeRun(sql, run.runId, ctx);
 
     const after = (await callApi(sql, ctx, "GET", `runs/${run.runId}/findings/all`))
-      .body.findings.filter((f) => f.rule === "not_evaluable");
+      .body.findings.filter((f) => f.rule === "not_evaluable" && f.field === "current:cash");
     assert.equal(after.length, 1, "ثلاثةُ تحليلات وملاحظةٌ واحدة — البصمة على المصدر");
     assert.equal(after[0].findingId, first.findingId, "الصفّ نفسه حُدِّث");
     assert.equal(after[0].status, "verified", "وقرارُ المستخدم نجا");
@@ -697,9 +712,10 @@ test("لم يُقيَّم: أوّل شهرٍ لا سابق له لا يُنتج 
     const result = await analyze.analyzeRun(sql, run.runId, ctx);
     assert.equal(result.previousPeriod, null);
     assert.ok(result.rulesSkipped.length > 0, "قواعد المقارنة تُتخطّى");
-    assert.deepEqual(result.rulesNotEvaluable, [], "والتخطّي المتوقَّع لا يُبلَّغ نقصًا");
+    assert.deepEqual(result.rulesNotEvaluable.filter((e) => e.scope === "vs_previous"), [],
+      "والتخطّي المتوقَّع لا يُبلَّغ نقصًا");
     const list = (await callApi(sql, ctx, "GET", `runs/${run.runId}/findings`)).body.findings;
-    assert.equal(list.filter((f) => f.rule === "not_evaluable").length, 0);
+    assert.equal(list.filter((f) => f.rule === "not_evaluable" && f.scope === "vs_previous").length, 0);
   });
 });
 
@@ -716,7 +732,8 @@ test("لم يُقيَّم: شهرٌ سابقٌ ناقصُ الكاش لا يُف
     const list = (await callApi(sql, ctx, "GET", `runs/${current.runId}/findings`)).body.findings;
     /* الشهران متطابقان: أي ملاحظة مقارنةٍ هنا اختُرعت. */
     assert.deepEqual(list.filter((f) => f.scope === "vs_previous").map((f) => f.rule), []);
-    assert.equal(list.filter((f) => f.rule === "not_evaluable").length, 0);
+    assert.equal(list.filter((f) => f.rule === "not_evaluable"
+      && f.field !== "current:overtime").length, 0);
   });
 });
 
