@@ -637,8 +637,11 @@ test("الثقة: كل نوعٍ يُقاس بما يحمله هو — لا بق�
   /* الانحدار الذي أوجد هذا الاختبار: ملفّ الكاش السليم — رقمٌ واسمٌ وصافٍ
      لا غير — كان يُقاس على قائمةٍ تتوقّع بدلاتٍ وحسابات بنكية، فتهبط ثقته
      إلى 0.5 ويُرفع علم «يحتاج مراجعة» على ملفٍّ لا عيب فيه. */
-  const month = fx.consistentMonth();
+  /* ومعها ملفّ العمل الإضافي: دقائقُ لا مبالغ، فقياسُه بقائمة المسيرات
+     كان سيهبط بثقته إلى الصفر — وهو الخطأ نفسه في ثوبٍ جديد. */
+  const month = fx.consistentMonth({ overtime: [{ empNo: "1001", m15: 120 }] });
   for (const [kind, text] of Object.entries(month)) {
+    if (typeof text !== "string") continue;
     const doc = parse(kind, text);
     assert.equal(doc.meta.needsManualReview, false,
       `${kind}: ثقة ${doc.meta.confidence} على ملفٍّ سليم`);

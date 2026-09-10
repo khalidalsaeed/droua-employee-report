@@ -203,8 +203,12 @@ function makeFilesDb() {
     if (/droua_payroll_findings/.test(t)) return findingsExec(t, values);
     if (/^SELECT run_id, count\(\*\)::int AS present/.test(t)) {
       const byRun = new Map();
+      /* المُزيَّف يحاكي `kind = ANY(...)`: العدّ على اللازم وحده. وبلا ذلك
+         يُخفي فرقًا بين ما يعدّه الخادم وما يعدّه الاختبار. */
+      const only = (values[0] && Array.isArray(values[0])) ? values[0] : null;
       for (const r of rows) {
         if (r.superseded_at) continue;
+        if (only && !only.includes(r.kind)) continue;
         byRun.set(r.run_id, (byRun.get(r.run_id) || 0) + 1);
       }
       return [...byRun].map(([run_id, present]) => ({ run_id, present }));

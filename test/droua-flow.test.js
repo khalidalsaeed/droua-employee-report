@@ -26,9 +26,14 @@ const upload = (sql, ctx, runId, kind, text, replace = false) =>
     runId, kind, fileName: `${kind}.csv`, format: "csv", bytes: Buffer.from(text, "utf8"),
   }, ctx);
 
+/* يرفع ما توفّر في العيّنة فقط: خانة العمل الإضافي اختيارية، وأكثرُ
+   العيّنات لا تحملها — ورفعُ `undefined` يُسقط الرفع لا الاختبار. */
 async function seedMonth(sql, ctx, period, month) {
   const run = await runs.createRun(sql, period);
-  for (const kind of files.KINDS) await upload(sql, ctx, run.runId, kind, month[kind]);
+  for (const kind of files.KINDS) {
+    if (typeof month[kind] !== "string") continue;
+    await upload(sql, ctx, run.runId, kind, month[kind]);
+  }
   return run;
 }
 
@@ -55,17 +60,19 @@ test("الشهر: يُنشأ مرّة واحدة، والصيغة مفروضة،
   });
 });
 
-test("الشهر: خاناته الأربع تُعرَض بحالتها ناقصةً وممتلئة", async () => {
+test("الشهر: خاناته الخمس تُعرَض بحالتها، والاكتمال على اللازم وحده", async () => {
   await withDroua(async ({ sql, ctx }) => {
     const run = await runs.createRun(sql, "2026-09");
     let slots = await runs.fileSlots(sql, run.runId);
-    assert.deepEqual(slots.map((s) => s.kind), ["full", "transfer", "cash", "employees"]);
+    assert.deepEqual(slots.map((s) => s.kind), ["full", "transfer", "cash", "employees", "overtime"]);
+    assert.deepEqual(slots.filter((s) => !s.required).map((s) => s.kind), ["overtime"],
+      "خانة العمل الإضافي وحدها اختيارية");
     assert.equal(slots.every((s) => !s.present), true);
     assert.equal(runs.isComplete(slots), false);
     assert.ok(slots[0].label.includes("كامل"));
 
     const month = fx.consistentMonth();
-    for (const kind of files.KINDS) await upload(sql, ctx, run.runId, kind, month[kind]);
+    for (const kind of files.REQUIRED_KINDS) await upload(sql, ctx, run.runId, kind, month[kind]);
     slots = await runs.fileSlots(sql, run.runId);
     assert.equal(runs.isComplete(slots), true);
     assert.equal(slots.find((s) => s.kind === "full").file.fileName, "full.csv");
@@ -108,7 +115,11 @@ test("التحليل: شهرٌ متّسق لا يُنتج إلا ما يخصّ �
   await withDroua(async ({ sql, ctx }) => {
     const run = await seedMonth(sql, ctx, "2026-09", fx.consistentMonth());
     const result = await analyze.analyzeRun(sql, run.runId, ctx);
-    assert.equal(result.created, 0, JSON.stringify(result));
+    assert.deepEqual(result.missing, ["overtime"], "الاختياريّ وحده ناقص");
+    /* ملاحظةٌ واحدة: «ملفٌّ اختياريّ ناقص» — معلومةٌ لا خلل. وما عداها صفر. */
+    const list = (await callApi(sql, ctx, "GET", `runs/${run.runId}/findings`)).body.findings;
+    assert.deepEqual(list.map((f) => `${f.rule}:${f.severity}`), ["file_missing:info"],
+      JSON.stringify(list.map((f) => f.title)));
     assert.equal(result.previousPeriod, null, "لا شهر سابق");
     assert.ok(result.rulesSkipped.includes("iban_changed"));
     assert.equal((await runs.getRun(sql, run.runId)).status, "analyzed");
@@ -122,17 +133,22 @@ test("التحليل: ملفٌّ ناقص يصير ملاحظة لا استثن�
     await upload(sql, ctx, run.runId, "full", month.full);
 
     const first = await analyze.analyzeRun(sql, run.runId, ctx);
-    assert.deepEqual(first.missing.sort(), ["cash", "employees", "transfer"]);
+    assert.deepEqual(first.missing.sort(), ["cash", "employees", "overtime", "transfer"]);
     let open = await findings.listFindings(sql, run.runId);
     const missing = open.filter((f) => f.rule === "file_missing");
-    assert.equal(missing.length, 3);
-    assert.equal(missing[0].severity, "critical");
+    /* أربعُ ملاحظات: ثلاثةٌ حرجة للازم، وواحدةٌ معلومة للاختياريّ. */
+    assert.equal(missing.length, 4);
+    assert.deepEqual(missing.filter((f) => f.severity === "critical").map((f) => f.field).sort(),
+      ["cash", "employees", "transfer"]);
+    assert.deepEqual(missing.filter((f) => f.severity === "info").map((f) => f.field), ["overtime"],
+      "الاختياريّ لا يُنذَر به إنذارًا حرجًا");
 
     for (const kind of ["transfer", "cash", "employees"]) await upload(sql, ctx, run.runId, kind, month[kind]);
     const second = await analyze.analyzeRun(sql, run.runId, ctx);
     assert.equal(second.resolved >= 3, true, "الناقص عولج برفعه");
     open = await findings.listFindings(sql, run.runId);
-    assert.equal(open.filter((f) => f.rule === "file_missing").length, 0);
+    assert.deepEqual(open.filter((f) => f.rule === "file_missing").map((f) => f.field), ["overtime"],
+      "الاختياريّ يبقى معلومةً حتى يُرفع");
     /* ولا يُحذف: اختفاء الملاحظة حدثٌ يبقى. */
     const all = await findings.listFindings(sql, run.runId, { includeResolved: true });
     assert.equal(all.filter((f) => f.rule === "file_missing" && f.resolvedAt).length, 3);
@@ -282,7 +298,7 @@ test("المداخل: دورة كاملة عبر الـAPI — إنشاء ورف
     assert.equal(created.statusCode, 200);
     const runId = created.body.run.runId;
 
-    const month = fx.consistentMonth();
+    const month = fx.consistentMonth({ overtime: [{ empNo: "1001", m15: 120 }] });
     for (const kind of files.KINDS) {
       const res = await callApi(sql, ctx, "POST", `runs/${runId}/files`,
         { kind, fileName: `${kind}.csv`, format: "csv", data: b64(month[kind]) });
@@ -313,7 +329,8 @@ test("المداخل: دورة كاملة عبر الـAPI — إنشاء ورف
 
     const removed = await callApi(sql, ctx, "DELETE", `files/${fileId}`);
     assert.equal(removed.statusCode, 200);
-    assert.equal(blob.objects.size, 3);
+    /* خمسةٌ رُفعت (بالعمل الإضافي) وواحدٌ حُذف. */
+    assert.equal(blob.objects.size, 4);
   });
 });
 
@@ -579,7 +596,7 @@ test("الملاحظات: الحرج أوّلًا — لا ترتيبًا أبج
 async function seedPartial(sql, ctx, period, month, skip = []) {
   const run = await runs.createRun(sql, period);
   for (const kind of files.KINDS) {
-    if (skip.includes(kind)) continue;
+    if (skip.includes(kind) || typeof month[kind] !== "string") continue;
     await upload(sql, ctx, run.runId, kind, month[kind]);
   }
   return run;
@@ -769,18 +786,20 @@ for (const [label, build, format] of [["xlsx", buildXlsx, "xlsx"], ["xls", build
   test(`الصيغة الحقيقية: دورةُ ${label} كاملة — رفعٌ وتشفيرٌ وقراءةٌ وتحليل`, async () => {
     await withDroua(async ({ sql, ctx }) => {
       const run = await runs.createRun(sql, "2026-05");
-      for (const kind of files.KINDS) {
+      for (const kind of files.REQUIRED_KINDS) {
         await uploadWorkbook(sql, ctx, run.runId, kind, build(SHEET[kind]), format);
       }
 
       const result = await analyze.analyzeRun(sql, run.runId, ctx);
-      assert.equal(result.missing.length, 0, "الأربعة وصلت");
+      assert.deepEqual(result.missing, ["overtime"], "الأربعة اللازمة وصلت، والاختياريّ لم يُرفع");
       assert.equal(result.unreadable.length, 0, "وقُرئت كلّها");
 
       const list = (await callApi(sql, ctx, "GET", `runs/${run.runId}/findings`)).body.findings;
       /* الشهر متّسق تمامًا: كامل = تحويل + كاش، والقائمة تطابق، والقنوات
          مطابقة. فأي ملاحظةٍ هنا تعني أن الطريق شوّه البيانات. */
-      const noise = list.filter((f) => f.rule !== "not_evaluable");
+      /* «ملفّ اختياريّ ناقص» متوقَّعة: العيّنة أربعةُ ملفّات. وما عداها صفر. */
+      const noise = list.filter((f) => f.rule !== "not_evaluable"
+        && !(f.rule === "file_missing" && f.field === "overtime"));
       assert.deepEqual(noise.map((f) => `${f.rule}:${f.employeeRef || ""}`), [],
         `${label}: ملاحظاتٌ اختُرعت في الطريق`);
 
@@ -819,10 +838,10 @@ test("الصيغة الحقيقية: مصنّفٌ تالفٌ يُرفع ويُب
 
 test("الصيغة الحقيقية: فسادُ أي ملفّ لا يُسقط الشهر ولا يُسرّب نصّ الخطأ", async () => {
   /* أخطرُها فسادُ «الكامل» نفسه: هو محورُ كل قاعدة تقريبًا. */
-  for (const broken of files.KINDS) {
+  for (const broken of files.REQUIRED_KINDS) {
     await withDroua(async ({ sql, ctx }) => {
       const run = await runs.createRun(sql, "2026-05");
-      for (const kind of files.KINDS) {
+      for (const kind of files.REQUIRED_KINDS) {
         const bytes = kind === broken ? Buffer.from("بايتاتٌ ليست مصنّفًا") : buildXlsx(SHEET[kind]);
         await uploadWorkbook(sql, ctx, run.runId, kind, bytes, "xlsx");
       }
@@ -847,7 +866,7 @@ test("الصيغة الحقيقية: «حلّل الشهر» على ملفٍّ �
      ولذلك يُختبر من المدخل: ما يراه المستخدم، لا ما تُرجعه الدالّة. */
   await withDroua(async ({ sql, ctx }) => {
     const run = await runs.createRun(sql, "2026-05");
-    for (const kind of files.KINDS) {
+    for (const kind of files.REQUIRED_KINDS) {
       const bytes = kind === "full" ? Buffer.from("ملفٌّ خطأ") : buildXlsx(SHEET[kind]);
       await uploadWorkbook(sql, ctx, run.runId, kind, bytes, "xlsx");
     }
