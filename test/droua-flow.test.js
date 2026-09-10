@@ -933,3 +933,145 @@ test("الشاشة: حالُ الشهر يُعرض بالعربية لا بمف�
   assert.ok(!/esc\(r\.status\)/.test(src) && !/\+j\.run\.status\+/.test(src),
     "ما زال حالُ الشهر يُعرض خامًا");
 });
+
+/* ══ إعدادات الشهر: القاسم والإجازات ═══════════════════════════════════
+   =========================================================================
+   بيانان يُدخلهما المستخدم بيده — وهما المدخل الوحيد الذي يُغيّر حكمًا
+   ماليًّا في هذا النظام. فيُختبران من المدخل لا من الدالّة.
+
+   ⛔ أرقامٌ وظيفية مصنوعة، بلا اسمٍ ولا مبلغٍ حقيقيّ. */
+
+const settingsLib = require("../lib/droua/settings");
+
+test("الإعدادات: القاسم يُحفظ ويُقرأ ويُحذف — و8 أو 10 لا ثالث لهما", async () => {
+  await withDroua(async ({ sql, ctx }) => {
+    const run = await seedMonth(sql, ctx, "2026-09", fx.consistentMonth());
+
+    const saved = await callApi(sql, ctx, "PUT", "settings/divisors",
+      { empNo: "1001", overtimeDivisor: 10 });
+    assert.equal(saved.statusCode, 200);
+    assert.equal(saved.body.divisor.overtimeDivisor, 10);
+
+    /* ما عدا الاثنين يُردّ — لا يُقرَّب ولا يُصحَّح. */
+    for (const bad of [9, 0, -8, "ثمانية", null]) {
+      const out = await callApi(sql, ctx, "PUT", "settings/divisors",
+        { empNo: "1002", overtimeDivisor: bad });
+      assert.equal(out.statusCode, 400, `القاسم ${JSON.stringify(bad)} قُبل`);
+    }
+
+    /* والكتابة الثانية تُحدِّث ولا تُضاعف. */
+    await callApi(sql, ctx, "PUT", "settings/divisors", { empNo: "1001", overtimeDivisor: 8 });
+    let view = await callApi(sql, ctx, "GET", `runs/${run.runId}/settings`);
+    assert.deepEqual(view.body.divisors.map((d) => `${d.empNo}:${d.overtimeDivisor}`), ["1001:8"]);
+    assert.deepEqual(view.body.allowedDivisors, [8, 10]);
+
+    const gone = await callApi(sql, ctx, "DELETE", "settings/divisors/1001");
+    assert.equal(gone.statusCode, 200);
+    view = await callApi(sql, ctx, "GET", `runs/${run.runId}/settings`);
+    assert.deepEqual(view.body.divisors, []);
+  });
+});
+
+test("الإعدادات: القاسم يعيش خارج الشهر — يبقى للشهر التالي", async () => {
+  /* سياسةٌ تثبت للموظّف حتى تُغيَّر، فلا تُعاد كتابتها كل شهر. */
+  await withDroua(async ({ sql, ctx }) => {
+    const first = await seedMonth(sql, ctx, "2026-08", fx.consistentMonth());
+    await callApi(sql, ctx, "PUT", "settings/divisors", { empNo: "1001", overtimeDivisor: 10 });
+    const next = await runs.createRun(sql, "2026-09");
+    const view = await callApi(sql, ctx, "GET", `runs/${next.runId}/settings`);
+    assert.deepEqual(view.body.divisors.map((d) => d.empNo), ["1001"], "لم ينتقل إلى الشهر الجديد");
+    assert.ok(first.runId !== next.runId);
+  });
+});
+
+test("الإعدادات: الإجازة تعيش داخل الشهر — ولا تتسرّب إلى غيره", async () => {
+  await withDroua(async ({ sql, ctx }) => {
+    const aug = await seedMonth(sql, ctx, "2026-08", fx.consistentMonth());
+    const sep = await runs.createRun(sql, "2026-09");
+    const added = await callApi(sql, ctx, "POST", `runs/${aug.runId}/leaves`,
+      { empNo: "1004", startDate: "2026-08-01", endDate: "2026-08-31" });
+    assert.equal(added.statusCode, 200);
+
+    const inAug = await callApi(sql, ctx, "GET", `runs/${aug.runId}/settings`);
+    assert.deepEqual(inAug.body.leaves.map((l) => l.empNo), ["1004"]);
+    const inSep = await callApi(sql, ctx, "GET", `runs/${sep.runId}/settings`);
+    assert.deepEqual(inSep.body.leaves, [], "إجازةُ شهرٍ لا تُسكت غيابًا في شهرٍ آخر");
+  });
+});
+
+test("الإعدادات: فترةٌ مقلوبة تُردّ — لا تُسكت غيابًا لا تفسّره", async () => {
+  await withDroua(async ({ sql, ctx }) => {
+    const run = await seedMonth(sql, ctx, "2026-09", fx.consistentMonth());
+    for (const [from, to] of [["2026-09-20", "2026-09-05"], ["2026-09-01", "ليس تاريخًا"], ["", "2026-09-05"]]) {
+      const out = await callApi(sql, ctx, "POST", `runs/${run.runId}/leaves`,
+        { empNo: "1004", startDate: from, endDate: to });
+      assert.equal(out.statusCode, 400, `${from} → ${to} قُبلت`);
+    }
+    const view = await callApi(sql, ctx, "GET", `runs/${run.runId}/settings`);
+    assert.deepEqual(view.body.leaves, [], "ولا صفَّ كُتب");
+  });
+});
+
+test("الإعدادات: الإجازة تُغيّر نتيجة التحليل فعلًا — من المدخل إلى الملاحظة", async () => {
+  /* الاختبار الذي يهمّ: أن يصل أثرُ ما أدخله المستخدم إلى الملاحظات. */
+  await withDroua(async ({ sql, ctx }) => {
+    const month = fx.consistentMonth({ salaries: { 1001: 9000, 1002: 7500, 1003: 6000 }, keepAll: true });
+    const run = await seedMonth(sql, ctx, "2026-09", month);
+
+    await analyze.analyzeRun(sql, run.runId, ctx);
+    let list = (await callApi(sql, ctx, "GET", `runs/${run.runId}/findings`)).body.findings;
+    assert.ok(list.some((f) => f.rule === "not_in_payroll" && f.employeeRef === "1004"),
+      "بلا إجازةٍ يُبلَّغ عنه");
+
+    await callApi(sql, ctx, "POST", `runs/${run.runId}/leaves`,
+      { empNo: "1004", startDate: "2026-09-01", endDate: "2026-09-30" });
+    await analyze.analyzeRun(sql, run.runId, ctx);
+
+    list = (await callApi(sql, ctx, "GET", `runs/${run.runId}/findings`)).body.findings;
+    assert.equal(list.filter((f) => f.rule === "not_in_payroll" && f.employeeRef === "1004").length, 0,
+      "الإجازة الكاملة فسّرت الغياب");
+    /* ولا تُحذف الملاحظة: تُعلَّم معالَجة، فيبقى أثرُ القرار. */
+    const all = (await callApi(sql, ctx, "GET", `runs/${run.runId}/findings/all`)).body.findings;
+    assert.ok(all.some((f) => f.rule === "not_in_payroll" && f.employeeRef === "1004" && f.resolvedAt));
+  });
+});
+
+test("الإعدادات: القاسم يصل المحرّك فيُحسب المال — ولا يُخمَّن بدونه", async () => {
+  await withDroua(async ({ sql, ctx }) => {
+    const month = fx.consistentMonth({ overtime: [{ empNo: "1001", m15: 120 }] });
+    /* مسيرٌ بعمود عملٍ إضافيّ ومعه الأساسيّ والإجمالي. */
+    month.full = fx.csv(["رقم الموظف", "الاسم", "الراتب الاساسي", "اجمالي الراتب", "وقت اضافي", "صافي الراتب"],
+      [["1001", "أ", 9000, 12000, 999, 12999]]);
+    month.transfer = fx.csv(["رقم الموظف", "الاسم", "الصافي"], [["1001", "أ", 12999]]);
+    month.cash = fx.cashCsv([]);
+    const run = await seedMonth(sql, ctx, "2026-09", month);
+
+    await analyze.analyzeRun(sql, run.runId, ctx);
+    let list = (await callApi(sql, ctx, "GET", `runs/${run.runId}/findings`)).body.findings;
+    assert.ok(list.some((f) => f.rule === "ot_no_divisor"), "بلا قاسمٍ تُعلَن العلّة");
+    assert.equal(list.filter((f) => f.rule === "ot_amount_mismatch").length, 0, "ولا يُخمَّن مبلغ");
+
+    await callApi(sql, ctx, "PUT", "settings/divisors", { empNo: "1001", overtimeDivisor: 8 });
+    await analyze.analyzeRun(sql, run.runId, ctx);
+    list = (await callApi(sql, ctx, "GET", `runs/${run.runId}/findings`)).body.findings;
+    assert.equal(list.filter((f) => f.rule === "ot_no_divisor").length, 0, "زالت العلّة");
+    const money = list.find((f) => f.rule === "ot_amount_mismatch");
+    assert.ok(money, "وصار المبلغ يُقارَن");
+    assert.match(money.description, /قاسم 8/);
+  });
+});
+
+test("الإعدادات: خارج سياق البوابة لا تعمل ولو نُودِيت مباشرة", async () => {
+  /* الحارس نفسه الذي يحمي الملفّات يحمي الإعدادات: مدخلٌ جديد بلا حارس
+     بابٌ خلفيّ إلى بيانات القسم. */
+  for (const call of [
+    () => settingsLib.listDivisors({}),
+    () => settingsLib.setDivisor({}, { empNo: "1", overtimeDivisor: 8 }),
+    () => settingsLib.listLeaves({}, "11111111-2222-4333-8444-555555555555"),
+    () => settingsLib.addLeave({}, { runId: "11111111-2222-4333-8444-555555555555", empNo: "1", startDate: "2026-09-01", endDate: "2026-09-02" }),
+    () => settingsLib.removeLeave({}, "11111111-2222-4333-8444-555555555555"),
+    () => settingsLib.clearDivisor({}, "1"),
+  ]) {
+    await assert.rejects(call, /بوابة|gate/i);
+  }
+});
