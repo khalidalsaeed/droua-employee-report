@@ -111,6 +111,26 @@ function buildXlsx(rows, { sheetName = "ورقة", sheets = null } = {}) {
   return zip(entries);
 }
 
+/* مصنّفٌ بـ`sheetData` **خامّ**: يُكتب XML الخلايا كما هو، فتُبنى حالاتٌ
+   لا يُنتجها البنّاء العاديّ — كالخليّة الفارغة المُنسَّقة ذات الإغلاق
+   الذاتيّ `<c r="B1" s="10"/>`، وهي التي كشفت عطل النمط النهم.
+   `strings` قائمةُ النصوص المشتركة بترتيب فهارسها. */
+function buildXlsxRaw(sheetDataXml, strings = []) {
+  const sst = `<?xml version="1.0"?><sst xmlns="http://x" count="${strings.length}" uniqueCount="${strings.length}">`
+    + strings.map((s) => `<si><t>${esc(s)}</t></si>`).join("") + "</sst>";
+  const sheet = `<?xml version="1.0"?><worksheet xmlns="http://x"><sheetData>${sheetDataXml}</sheetData></worksheet>`;
+  return zip([
+    ["[Content_Types].xml", '<?xml version="1.0"?><Types xmlns="http://x"/>'],
+    ["_rels/.rels", '<?xml version="1.0"?><Relationships xmlns="http://x"/>'],
+    ["xl/workbook.xml", '<?xml version="1.0"?><workbook xmlns="http://x" xmlns:r="http://r">'
+      + '<sheets><sheet name="ورقة" sheetId="1" r:id="rId1"/></sheets></workbook>'],
+    ["xl/_rels/workbook.xml.rels", '<?xml version="1.0"?><Relationships xmlns="http://x">'
+      + '<Relationship Id="rId1" Target="worksheets/sheet1.xml"/></Relationships>'],
+    ["xl/sharedStrings.xml", sst],
+    ["xl/worksheets/sheet1.xml", sheet],
+  ]);
+}
+
 /* ── XLS: حاوية OLE2 فيها سجلّات BIFF8 ────────────────────────────────── */
 
 const SECTOR = 512;
@@ -278,4 +298,4 @@ function buildXls(rows, options = {}) {
   return Buffer.concat([header, fat, data, dir], totalSectors * SECTOR + SECTOR);
 }
 
-module.exports = { buildXlsx, buildXls, buildBiff, zip };
+module.exports = { buildXlsx, buildXlsxRaw, buildXls, buildBiff, zip };
