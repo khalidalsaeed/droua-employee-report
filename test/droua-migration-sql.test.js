@@ -20,7 +20,7 @@ const path = require("node:path");
    بفحص **ما يخرج** — ولذلك تفحص هذه الاختبارات النصّ المُصدَّر لا المكتوب،
    وتُقيّم القيد بدلالة PostgreSQL لا بدلالة JavaScript. */
 
-const MIGRATIONS = ["setup-droua-files", "setup-droua-gate", "setup-payroll-monthly"]
+const MIGRATIONS = ["setup-droua-files", "setup-droua-gate", "setup-payroll-monthly", "setup-droua-overtime"]
   .map((name) => ({ name, file: path.resolve(__dirname, "..", "scripts", `${name}.js`) }))
   .filter((m) => fs.existsSync(m.file));
 
@@ -185,20 +185,42 @@ test("الهجرة: لا تعبير نمطيّ يعتمد على مختصرات 
   }
 });
 
+/* توسيعُ قيدٍ قائم — الاستثناء الوحيد المسموح، وهو مقيَّدٌ لا مفتوح.
+   PostgreSQL لا يعرف «تعديل CHECK»، فتوسيعُه إسقاطٌ وإعادةُ إضافة. وهي
+   عمليّةٌ **لا تُبطل صفًّا**: كل ما كان مقبولًا يبقى مقبولًا. ومع ذلك
+   تُحاصَر باسم القيد بعينه، وبفحصِ وجودِه أوّلًا، وبألّا تُسقط شيئًا سواه —
+   وإلّا صار الاستثناء بابًا لكل هدم. */
+const WIDENED_CONSTRAINT = "droua_payroll_files_kind_check";
+
 test("الهجرة: كل عبارة IF NOT EXISTS، ولا حذف ولا تعديل", () => {
   for (const migration of MIGRATIONS) {
     const statements = require(migration.file).STATEMENTS || [];
     assert.ok(statements.length > 0, migration.name);
     for (const s of statements) {
+      if (/ADD CONSTRAINT/i.test(s.sql)) {
+        /* الاستثناء: يجب أن يفحص وجود القيد قبل أن يمسّه، وألّا يُسقط
+           غيره، وألّا يمسّ عمودًا أو جدولًا. */
+        assert.match(s.sql, /IF NOT EXISTS\s*\(\s*SELECT 1 FROM pg_constraint/i,
+          `${migration.name}: توسيعُ قيدٍ بلا فحصٍ مسبق`);
+        const drops = s.sql.match(/DROP\s+CONSTRAINT\s+IF EXISTS\s+(\w+)/gi) || [];
+        assert.equal(drops.length, 1, `${migration.name}: أكثر من إسقاط`);
+        assert.match(drops[0], new RegExp(WIDENED_CONSTRAINT), `${migration.name}: قيدٌ آخر`);
+        assert.ok(!/DROP\s+(TABLE|COLUMN|INDEX)/i.test(s.sql), `${migration.name}: هدمٌ غير القيد`);
+        continue;
+      }
       assert.match(s.sql, /IF NOT EXISTS/, `${migration.name}: ${s.label}`);
     }
     /* الإضافة مسموحة، والهدم لا. و«ALTER TABLE … ADD COLUMN IF NOT EXISTS»
        عمليّةٌ إضافية لا تمسّ بيانًا قائمًا — بخلاف DROP وRENAME وALTER
        COLUMN التي تُغيّر ما هو موجود أو تمحوه. */
-    const code = codeOf(ddlOf(migration));
-    assert.ok(!/\bDROP\b|\bTRUNCATE\b|\bDELETE FROM\b|\bUPDATE\s+\w+\s+SET\b/i.test(code),
+    /* عبارةُ التوسيع تُستبعد كاملةً — وقد فُحصت أعلاه شرطًا شرطًا. وما
+       بقي يخضع للقاعدة العامّة بلا تخفيف. */
+    const withoutWidening = statements
+      .filter((x) => !/ADD CONSTRAINT/i.test(x.sql))
+      .map((x) => x.sql).join("\n");
+    assert.ok(!/\bDROP\b|\bTRUNCATE\b|\bDELETE FROM\b|\bUPDATE\s+\w+\s+SET\b/i.test(withoutWidening),
       `${migration.name}: عمليّة هدمٍ في سكربت تهيئة`);
-    for (const alter of code.match(/ALTER TABLE[\s\S]*?(?=\n|$)/gi) || []) {
+    for (const alter of withoutWidening.match(/ALTER TABLE[\s\S]*?(?=\n|$)/gi) || []) {
       assert.match(alter, /ADD COLUMN IF NOT EXISTS/i,
         `${migration.name}: ALTER غير إضافيّ — ${alter.trim()}`);
     }

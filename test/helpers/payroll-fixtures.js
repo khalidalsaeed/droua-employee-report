@@ -37,6 +37,17 @@ function cashCsv(rows) {
   return csv(["رقم الموظف", "الاسم", "الصافي"], rows.map((r) => [r.empNo, r.name, r.net]));
 }
 
+/* ملفّ العمل الإضافي: صفٌّ لكل موظّف/تاريخ/مصدر — والتكرار طبيعيّ فيه.
+   `ot` = { empNo, date, source, planned, worked, m15, m2 } */
+function overtimeCsv(rows) {
+  return csv(["الرقم الوظيفي", "اسم الموظف", "التاريخ", "إجمالي الساعات المقررة",
+    "إجمالي ساعات العمل", "الفرق", "طلبات x1.5", "طلبات x2"],
+    rows.map((r) => [r.empNo, r.name || `موظّف ${r.empNo}`, r.date || "2026-09-01",
+      r.planned === undefined ? 8 : r.planned, r.worked === undefined ? 8 : r.worked,
+      (r.worked === undefined ? 8 : r.worked) - (r.planned === undefined ? 8 : r.planned),
+      r.m15 || 0, r.m2 || 0]));
+}
+
 function employeesCsv(rows = EMPLOYEES) {
   return csv(["رقم الموظف", "الاسم", "المسمى الوظيفي", "الحالة", "رقم الحساب", "طريقة التحويل"],
     rows.map((r) => [r.empNo, r.name, r.jobTitle, r.status, r.iban, r.method || "بنك"]));
@@ -71,6 +82,9 @@ function consistentMonth(over = {}) {
     .map((no) => ({ empNo: no, name: emp(no).name, net: netOf(no) }));
 
   return {
+    /* بلا عمل إضافيّ افتراضًا — والخانة اختيارية. ومن أراده مرّره في
+       `overtime`، فتُبنى صفوفُه ويُقارَن بالمسير. */
+    overtime: over.overtime ? overtimeCsv(over.overtime) : undefined,
     full: fullCsv(full),
     transfer: transferCsv(transfer),
     cash: cashCsv(cash),
@@ -84,4 +98,4 @@ function consistentMonth(over = {}) {
   };
 }
 
-module.exports = { EMPLOYEES, csv, fullCsv, transferCsv, cashCsv, employeesCsv, consistentMonth };
+module.exports = { EMPLOYEES, csv, fullCsv, transferCsv, cashCsv, employeesCsv, overtimeCsv, consistentMonth };

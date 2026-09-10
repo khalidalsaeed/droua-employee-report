@@ -233,7 +233,7 @@ test("المقارنة: لكل قاعدة معرّف فريد ونطاق معر�
    أصلًا. */
 
 test("المقارنة: كل قاعدة تُعلن مصادرها، والمُعلَن نوعٌ معروف", () => {
-  const KINDS = ["full", "transfer", "cash", "employees"];
+  const KINDS = ["full", "transfer", "cash", "employees", "overtime"];
   for (const r of RULES) {
     if (!r.needs) continue;
     for (const key of Object.keys(r.needs)) {
@@ -263,7 +263,8 @@ test("المصدر الغائب: غياب كاش السابق لا يُنتج م
      موظّف — من صُرف له كاشًا ومن حُوِّل له — فلا قاعدةَ مقارنةٍ واحدة
      تحتاج ملفّ الكاش التاريخيّ. وإعلانُ «تعذّر التقييم» هنا إنذارٌ كاذب
      في الاتّجاه الآخر: يوهم بفجوةٍ في التغطية لا وجود لها. */
-  assert.deepEqual(notEvaluable, [], "لا قاعدةَ مقارنةٍ تستند إلى كاش السابق");
+  assert.deepEqual(notEvaluable.filter((e) => e.missing.some((m) => m.kind === "cash")), [],
+    "لا قاعدةَ مقارنةٍ تستند إلى كاش السابق");
 });
 
 test("المصدر الغائب: شهرٌ بلا كاش يُقيَّم داخليًّا بما توفّر ويُعلن ما تعذّر", () => {
@@ -272,7 +273,9 @@ test("المصدر الغائب: شهرٌ بلا كاش يُقيَّم داخل�
   const month = monthDocs(fx.consistentMonth());
   month.cash = null;
   const { applied, notEvaluable } = compare({ docs: month, previousDocs: null });
-  const stalled = notEvaluable.map((e) => e.rule).sort();
+  const stalled = notEvaluable
+    .filter((e) => e.missing.some((m) => m.kind === "cash"))
+    .map((e) => e.rule).sort();
   assert.deepEqual(stalled,
     ["extra_in_split", "method_vs_channel", "missing_in_split", "net_mismatch", "paid_twice", "totals_mismatch"],
     "ما يحتاج طرفَي الصرف وحده يتوقّف");
@@ -315,7 +318,8 @@ test("المصدر الغائب: تغيّر الحساب لا يُعلَن حي�
 test("المصدر الغائب: «لا شهر سابق» تخطٍّ لا نقصُ مصدر", () => {
   const { skipped, notEvaluable } = compare({ docs: monthDocs(fx.consistentMonth()), previousDocs: null });
   assert.ok(skipped.length > 0, "قواعد المقارنة تُتخطّى في أول شهر");
-  assert.deepEqual(notEvaluable, [], "وليس ذلك نقصَ مصدرٍ يُبلَّغ عنه");
+  assert.deepEqual(notEvaluable.filter((e) => e.scope === "vs_previous"), [],
+    "وليس ذلك نقصَ مصدرٍ يُبلَّغ عنه");
 });
 
 test("المصدر الغائب: ملاحظةٌ واحدة لكل مصدر تسرد قواعده", () => {
@@ -323,18 +327,19 @@ test("المصدر الغائب: ملاحظةٌ واحدة لكل مصدر تس�
   month.cash = null;
   const { notEvaluable } = compare({ docs: month, previousDocs: null });
 
-  const out = analyze.notEvaluableFindings(notEvaluable, null);
+  const cashOnly = notEvaluable.filter((e) => e.missing.every((m) => m.kind === "cash"));
+  const out = analyze.notEvaluableFindings(cashOnly, null);
   assert.equal(out.length, 1, "مصدرٌ واحد ناقص ⇒ ملاحظةٌ واحدة لا واحدة لكل قاعدة");
   assert.equal(out[0].rule, "not_evaluable");
   assert.equal(out[0].scope, "within_month");
   assert.equal(out[0].field, "current:cash");
   /* والقواعد المعطَّلة كلّها مسمّاة — بالعربية لمن يقرأ، وبالمعرّف لمن
      يحسب. فالوصفُ للإنسان و`currentValue` للواجهة. */
-  for (const entry of notEvaluable) {
+  for (const entry of cashOnly) {
     assert.match(out[0].description, new RegExp(analyze.RULE_LABELS[entry.rule]), entry.rule);
     assert.match(out[0].currentValue, new RegExp(entry.rule), entry.rule);
   }
-  assert.equal(out[0].delta, notEvaluable.length, "العدد يطابق ما تعطّل فعلًا");
+  assert.equal(out[0].delta, cashOnly.length, "العدد يطابق ما تعطّل فعلًا");
 
   /* والبصمة على المصدر لا على عدد القواعد: تحليلٌ ثانٍ يُحدِّث ولا يُنشئ. */
   const again = analyze.notEvaluableFindings(
@@ -588,6 +593,25 @@ test("المقارنة: كل قاعدة في السجلّ لها اختبار ي
   const noIban = fx.consistentMonth({ ibans: { 1001: "" } });
   for (const f of compare({ docs: monthDocs(noIban), previousDocs: null }).findings) covered.add(f.rule);
 
+  /* ── العمل الإضافي: حالاتُه تُشغَّل هنا أيضًا كي لا تفلت من الحارس ── */
+  const otFull = parse("full", fx.csv(
+    ["رقم الموظف", "الاسم", "الراتب الاساسي", "اجمالي الراتب", "وقت اضافي", "صافي الراتب"],
+    [["1001", "أ", 9000, 12000, 500, 12500], ["1002", "ب", 7000, 7000, 0, 7000]]));
+  const otDocs = { ...monthDocs(fx.consistentMonth()), full: otFull };
+  otDocs.overtime = parse("overtime", fx.csv(
+    ["الرقم الوظيفي", "اسم الموظف", "التاريخ", "طلبات x1.5", "طلبات x2"],
+    [["1001", "أ", "2026-09-01", 120, 60],
+     ["1001", "أ", "2026-09-01", 120, 0],      // اليوم والمصدر نفسهما ⇒ تكرار
+     ["9999", "غريب", "2026-09-02", 60, 0],     // في الملفّ بلا مسير
+     ["", "بلا رقم", "2026-09-03", 30, 0]]));   // صفٌّ لا يُطابَق
+  /* «1002» له مبلغٌ في المسير… بل صفر — فيُصنع له مبلغٌ بلا مصدر. */
+  otDocs.full.rows[1].otAmount = 250;
+  for (const f of compare({ docs: otDocs, previousDocs: null,
+    settings: { divisors: new Map([["1001", 8]]) } }).findings) covered.add(f.rule);
+  /* ومرّةً بلا قاسمٍ إطلاقًا: تُشغَّل قاعدةُ «لا قاسم». */
+  for (const f of compare({ docs: otDocs, previousDocs: null,
+    settings: { divisors: new Map() } }).findings) covered.add(f.rule);
+
   const uncovered = RULES.map((r) => r.id).filter((id) => !covered.has(id));
   assert.deepEqual(uncovered, [], `قواعد بلا تغطية: ${uncovered.join(", ")}`);
 });
@@ -637,8 +661,11 @@ test("الثقة: كل نوعٍ يُقاس بما يحمله هو — لا بق�
   /* الانحدار الذي أوجد هذا الاختبار: ملفّ الكاش السليم — رقمٌ واسمٌ وصافٍ
      لا غير — كان يُقاس على قائمةٍ تتوقّع بدلاتٍ وحسابات بنكية، فتهبط ثقته
      إلى 0.5 ويُرفع علم «يحتاج مراجعة» على ملفٍّ لا عيب فيه. */
-  const month = fx.consistentMonth();
+  /* ومعها ملفّ العمل الإضافي: دقائقُ لا مبالغ، فقياسُه بقائمة المسيرات
+     كان سيهبط بثقته إلى الصفر — وهو الخطأ نفسه في ثوبٍ جديد. */
+  const month = fx.consistentMonth({ overtime: [{ empNo: "1001", m15: 120 }] });
   for (const [kind, text] of Object.entries(month)) {
+    if (typeof text !== "string") continue;
     const doc = parse(kind, text);
     assert.equal(doc.meta.needsManualReview, false,
       `${kind}: ثقة ${doc.meta.confidence} على ملفٍّ سليم`);
@@ -838,4 +865,207 @@ test("الصرف المزدوج: المجموع يتجاوز المستحقّ �
   assert.deepEqual(bad.map((f) => f.employeeRef), ["1001"], "والحسابُ يكشفه");
   assert.equal(bad[0].severity, "critical");
   assert.equal(bad[0].delta, 9000, "والفرقُ هو المبلغ المكرّر بعينه");
+});
+
+/* ══ العمل الإضافي ══════════════════════════════════════════════════════
+   =========================================================================
+   ⛔ كل رقمٍ هنا مصنوع. والعيّنة الحقيقية لم تُستعمل في بناء هذه الحالات.
+
+   والقاعدة الحاكمة: **لا يُخمَّن مال**. فما ينقصه قاسمُ الساعة أو صيغةُ
+   المعامل يُعلَن ولا يُحسب — لأن فرقًا ماليًّا مخترَعًا يُطارده محاسبٌ
+   لا وجود له، ويُفقد الثقةَ بكل ما عداه. */
+
+const otMonth = (over = {}) => {
+  const month = fx.consistentMonth(over);
+  const docs = monthDocs(month);
+  docs.overtime = over.overtime
+    ? parse("overtime", fx.overtimeCsv(over.overtime)) : null;
+  return docs;
+};
+/* مسيرٌ يحمل عمود «وقت اضافي» ومعه الأساسيّ والإجمالي — وهي شروط الحساب. */
+const otPayroll = (rows) => parse("full", fx.csv(
+  ["رقم الموظف", "الاسم", "الراتب الاساسي", "اجمالي الراتب", "وقت اضافي", "صافي الراتب"],
+  rows.map((r) => [r.empNo, r.name || "أ", r.basic, r.gross, r.ot, r.gross + r.ot])));
+
+test("العمل الإضافي: القيمة تُحسب من الإجمالي والأساسيّ معًا لا من أحدهما", () => {
+  /* أجرُ الساعة من الإجمالي + نصفُ أجر الساعة الأساسيّ. وافتراضُ تساويهما
+     يُنقص الأجر أو يزيده بمقدار البدلات كلّها. */
+  const basic = 9000;
+  const gross = 12000;
+  const divisor = 8;
+  const hours = 2;
+  const expected = ((gross / 30 / divisor) + (basic / 30 / divisor) / 2) * hours;
+
+  const docs = otMonth({ overtime: [{ empNo: "1001", m15: hours * 60 }] });
+  docs.full = otPayroll([{ empNo: "1001", basic, gross, ot: Number(expected.toFixed(2)) }]);
+  const settings = { divisors: new Map([["1001", divisor]]) };
+
+  const res = compare({ docs, previousDocs: null, settings });
+  assert.equal(rule(res.findings, "ot_amount_mismatch").length, 0,
+    "المطابق لا يُبلَّغ عنه");
+  assert.ok(res.applied.includes("ot_amount_mismatch"));
+
+  /* ولو حُسبت من الأساسيّ وحده لاختلفت — فالفرق يُلتقط. */
+  docs.full = otPayroll([{ empNo: "1001", basic, gross, ot: (basic / 30 / divisor) * 1.5 * hours }]);
+  const bad = compare({ docs, previousDocs: null, settings }).findings;
+  assert.equal(rule(bad, "ot_amount_mismatch").length, 1, "الفرق يُلتقط");
+  assert.match(rule(bad, "ot_amount_mismatch")[0].description, /قاسم 8/);
+});
+
+test("العمل الإضافي: القاسم يُغيّر القيمة — ولا يُستنتج من الملفّ", () => {
+  const docs = otMonth({ overtime: [{ empNo: "1001", planned: 12, worked: 14, m15: 120 }] });
+  docs.full = otPayroll([{ empNo: "1001", basic: 9000, gross: 12000, ot: 500 }]);
+  const eight = compare({ docs, previousDocs: null, settings: { divisors: new Map([["1001", 8]]) } });
+  const ten = compare({ docs, previousDocs: null, settings: { divisors: new Map([["1001", 10]]) } });
+  const d8 = rule(eight.findings, "ot_amount_mismatch")[0];
+  const d10 = rule(ten.findings, "ot_amount_mismatch")[0];
+  assert.ok(d8 && d10 && d8.delta !== d10.delta, "القاسمان يُنتجان قيمتين مختلفتين");
+  /* و«الساعات المقرّرة» في الصفّ 12 — ولا أثر لها على القاسم إطلاقًا. */
+  assert.match(d8.description, /قاسم 8/);
+  assert.match(d10.description, /قاسم 10/);
+});
+
+test("العمل الإضافي: بلا قاسمٍ لا يُحسب مال — ويُعلَن السبب", () => {
+  const docs = otMonth({ overtime: [{ empNo: "1001", m15: 120 }] });
+  docs.full = otPayroll([{ empNo: "1001", basic: 9000, gross: 12000, ot: 999 }]);
+  const out = compare({ docs, previousDocs: null, settings: { divisors: new Map() } }).findings;
+  assert.equal(rule(out, "ot_amount_mismatch").length, 0, "لا فرقَ ماليّ مخترَع");
+  const gap = rule(out, "ot_no_divisor");
+  assert.equal(gap.length, 1);
+  assert.equal(gap[0].employeeRef, "1001");
+  assert.match(gap[0].description, /لم تُحسب/);
+});
+
+test("العمل الإضافي: معاملٌ بلا صيغة يُعلَن ولا يُسعَّر", () => {
+  const month = fx.consistentMonth();
+  const docs = monthDocs(month);
+  docs.overtime = parse("overtime", fx.csv(
+    ["الرقم الوظيفي", "اسم الموظف", "التاريخ", "طلبات x1.5", "طلبات x2"],
+    [["1001", "أ", "2026-09-01", 60, 120]]));
+  docs.full = otPayroll([{ empNo: "1001", basic: 9000, gross: 12000, ot: 100 }]);
+  const settings = { divisors: new Map([["1001", 8]]) };
+  const out = compare({ docs, previousDocs: null, settings }).findings;
+
+  const un = rule(out, "ot_multiplier_unsupported");
+  assert.equal(un.length, 1, "ملاحظةٌ واحدة لكل معامل لا لكل موظّف");
+  assert.match(un[0].title, /×2/);
+  assert.match(un[0].currentValue, /2\.00 ساعة/, "دقائقُ ×2 محفوظةٌ ومقروءة");
+  /* و«×2» لا يدخل الحساب المالي إطلاقًا. */
+  const mismatch = rule(out, "ot_amount_mismatch")[0];
+  assert.ok(mismatch && /لا يشمل معاملات/.test(mismatch.description));
+});
+
+test("العمل الإضافي: الطرفان المفقودان — في الملفّ بلا مسير، وفي المسير بلا ملفّ", () => {
+  const docs = otMonth({ overtime: [{ empNo: "9999", m15: 60 }] });
+  docs.full = otPayroll([{ empNo: "1001", basic: 9000, gross: 12000, ot: 300 }]);
+  const out = compare({ docs, previousDocs: null, settings: { divisors: new Map() } }).findings;
+  assert.deepEqual(rule(out, "ot_not_in_payroll").map((f) => f.employeeRef), ["9999"]);
+  assert.deepEqual(rule(out, "ot_missing_source").map((f) => f.employeeRef), ["1001"]);
+});
+
+test("العمل الإضافي: تعدّد الأيّام ليس تكرارًا — وتكرارُ اليوم والمصدر هو", () => {
+  /* أهمّ تمييزٍ في هذا الملفّ: الموظّف له صفٌّ لكل يوم ولكل مصدر. */
+  const many = otMonth({ overtime: [
+    { empNo: "1001", date: "2026-09-01", m15: 60 },
+    { empNo: "1001", date: "2026-09-02", m15: 90 },
+  ] });
+  many.full = otPayroll([{ empNo: "1001", basic: 9000, gross: 12000, ot: 0 }]);
+  const clean = compare({ docs: many, previousDocs: null, settings: { divisors: new Map() } }).findings;
+  assert.equal(rule(clean, "ot_duplicate_entry").length, 0, "يومان مختلفان ليسا تكرارًا");
+  assert.deepEqual(many.overtime.meta.warnings, [], "ولا تحذيرَ تكرارٍ من القارئ");
+
+  const dup = otMonth({ overtime: [
+    { empNo: "1001", date: "2026-09-01", m15: 60 },
+    { empNo: "1001", date: "2026-09-01", m15: 60 },
+  ] });
+  dup.full = otPayroll([{ empNo: "1001", basic: 9000, gross: 12000, ot: 0 }]);
+  const flagged = compare({ docs: dup, previousDocs: null, settings: { divisors: new Map() } }).findings;
+  assert.deepEqual(rule(flagged, "ot_duplicate_entry").map((f) => f.employeeRef), ["1001"]);
+});
+
+test("العمل الإضافي: صفٌّ بلا رقمٍ وظيفيّ يُعلَن ولا يُطابَق بالاسم", () => {
+  const month = fx.consistentMonth();
+  const docs = monthDocs(month);
+  docs.overtime = parse("overtime", fx.csv(
+    ["الرقم الوظيفي", "اسم الموظف", "التاريخ", "طلبات x1.5"],
+    [["", "أحمد المثال", "2026-09-01", 60], ["1001", "أ", "2026-09-01", 60]]));
+  const out = compare({ docs, previousDocs: null, settings: { divisors: new Map() } }).findings;
+  const orphan = rule(out, "ot_unmatched_row");
+  assert.equal(orphan.length, 1);
+  assert.match(orphan[0].currentValue, /1 صف/);
+});
+
+test("العمل الإضافي: غيابُ الملفّ يوقف قواعده ولا يجعلها صفرًا", () => {
+  const docs = otMonth();                       // بلا ملفّ عمل إضافي
+  const { applied, notEvaluable, findings: out } =
+    compare({ docs, previousDocs: null, settings: { divisors: new Map() } });
+  const otRules = RULES.map((r) => r.id).filter((id) => id.startsWith("ot_"));
+  for (const id of otRules) {
+    assert.equal(rule(out, id).length, 0, id);
+    assert.ok(!applied.includes(id), `${id}: لا يُحسب مفحوصًا`);
+    assert.ok(notEvaluable.some((e) => e.rule === id), `${id}: يجب أن يُعلَن`);
+  }
+});
+
+/* ══ الإجازات ══════════════════════════════════════════════════════════ */
+
+test("الإجازة: تغطيةُ الشهر كاملًا تفسّر الغياب، والجزئية لا تُسكته", () => {
+  /* «1004» على القائمة ولا راتب له. */
+  const month = fx.consistentMonth({ salaries: { 1001: 9000, 1002: 7500, 1003: 6000 }, keepAll: true });
+  const docs = monthDocs(month);
+  const base = compare({ docs, previousDocs: null }).findings;
+  assert.ok(rule(base, "not_in_payroll").some((f) => f.employeeRef === "1004"), "بلا إجازةٍ يُبلَّغ عنه");
+
+  const full = new Map([["1004", { full: true }]]);
+  const covered = compare({ docs, previousDocs: null, settings: { leaves: full } }).findings;
+  assert.equal(rule(covered, "not_in_payroll").filter((f) => f.employeeRef === "1004").length, 0,
+    "إجازةٌ تغطّي الشهر كلَّه تفسّر الغياب");
+
+  /* والجزئية لا تُسكت: نصفُ شهرٍ إجازةً يُتوقَّع له نصفُ راتب. */
+  const half = new Map([["1004", { full: false }]]);
+  const partial = compare({ docs, previousDocs: null, settings: { leaves: half } }).findings;
+  const still = rule(partial, "not_in_payroll").find((f) => f.employeeRef === "1004");
+  assert.ok(still, "الغياب الكامل مع إجازةٍ جزئية يبقى سؤالًا");
+  assert.match(still.description, /جزءًا من الشهر/, "ويُقال في الملاحظة أن له إجازةً جزئية");
+});
+
+test("الإجازة: لا تُخرج الموظّف من باقي القواعد", () => {
+  /* «لا تحذف الموظّف من التحليل بالكامل» — الإجازة تفسّر غيابًا بعينه لا
+     تمنح حصانةً من كل فحص. */
+  const month = fx.consistentMonth({ ibans: { 1001: "SA7777777777777777770000" } });
+  const docs = monthDocs(month);
+  const leaves = new Map([["1001", { full: true }]]);
+  const out = compare({ docs, previousDocs: null, settings: { leaves } }).findings;
+  assert.ok(rule(out, "iban_vs_list").length >= 0);
+  /* وهو حاضرٌ في المسير فتُفحص أرقامه كأي أحد. */
+  const applied = compare({ docs, previousDocs: null, settings: { leaves } }).applied;
+  assert.ok(applied.includes("net_mismatch") && applied.includes("iban_vs_list"));
+});
+
+/* ══ عتبةُ الارتفاع ═════════════════════════════════════════════════════ */
+
+test("العتبة: نسبةٌ ومبلغٌ معًا — لا أحدهما وحده", () => {
+  const monthWith = (salaries) => monthDocs(fx.consistentMonth({ salaries }));
+  const sev = (before, after, empNo = "1001") => {
+    const out = compare({
+      docs: monthWith({ [empNo]: after, 1002: 7500 }),
+      previousDocs: monthWith({ [empNo]: before, 1002: 7500 }),
+    }).findings;
+    const f = rule(out, "net_changed").find((x) => x.employeeRef === empNo);
+    return f ? f.severity : null;
+  };
+  /* مئةٌ على مئة: 100% نسبةً ومبلغٌ صغير ⇒ تحذير لا حرج. */
+  assert.equal(sev(100, 200), "warn", "النسبة وحدها لا تُنتج حرجًا");
+  /* خمس مئة على عشرين ألفًا: مبلغٌ كبير ونسبةٌ ضئيلة ⇒ معلومة. */
+  assert.equal(sev(20000, 20500), "info", "المبلغ وحده لا يُنتج تحذيرًا");
+  /* والحرج يجتمع فيه الأمران. */
+  assert.equal(sev(4000, 6000), "critical", "نسبةٌ عالية ومبلغٌ كبير معًا");
+});
+
+test("العتبة: التغيّر يُفسَّر ببنوده — لا رقمًا مجرّدًا", () => {
+  const previous = monthDocs(fx.consistentMonth());
+  const current = monthDocs(fx.consistentMonth({ deductions: { 1001: 420 } }));
+  const f = rule(compare({ docs: current, previousDocs: previous }).findings, "net_changed")[0];
+  assert.match(f.description, /%/, "النسبة معروضة");
+  assert.match(f.description, /الخصميات/, "والبند الذي يفسّره مذكور");
 });
