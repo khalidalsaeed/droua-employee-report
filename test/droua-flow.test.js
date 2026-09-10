@@ -1221,3 +1221,130 @@ test("الشاشة: الإدخال اليدويّ للرقم بديلٌ لا أ�
   assert.match(manual[0], /id="dv-no"/, "حقلُ الرقم يجب أن يكون داخله");
   assert.match(manual[0], /summary/, "ومطويًّا خلف عنوان");
 });
+
+/* ══ إجماليّا الصرف ═════════════════════════════════════════════════════
+   =========================================================================
+   يُجمعان من **صفوف الموظفين بعد القراءة** لا من صفّ المجاميع في الملفّ:
+   صفُّ المجاميع قد يكون قديمًا أو محسوبًا بصيغةٍ لم تُحدَّث، ومجموعُ ما
+   قرأناه فعلًا هو ما تقوم عليه بقيّةُ الملاحظات — فيتّفق المعروض مع
+   المفحوص. */
+
+test("الإجماليّات: تُجمع من الصفوف، ولا يُحتسب صفّ المجاميع", async () => {
+  await withDroua(async ({ sql, ctx }) => {
+    const month = fx.consistentMonth();
+    /* ملفٌّ فيه صفُّ مجاميع صريح — لو حُسب لتضاعف المجموع. */
+    month.transfer = fx.csv(["رقم الموظف", "الاسم", "الصافي"],
+      [["1001", "أ", 9000], ["1002", "ب", 7500], ["", "", 16500]]);
+    month.cash = fx.csv(["رقم الموظف", "الاسم", "الصافي"],
+      [["1003", "ج", 6000], ["", "", 6000]]);
+    const run = await seedMonth(sql, ctx, "2026-09", month);
+
+    const out = await callApi(sql, ctx, "GET", `runs/${run.runId}/totals`);
+    assert.equal(out.statusCode, 200);
+    assert.equal(out.body.transfer.available, true);
+    assert.equal(out.body.transfer.total, 16500, "9000+7500 — لا 33000");
+    assert.equal(out.body.transfer.count, 2, "ولا يُعدّ صفّ المجاميع موظّفًا");
+    assert.equal(out.body.cash.total, 6000);
+    assert.equal(out.body.cash.count, 1);
+  });
+});
+
+test("الإجماليّات: الملفّ الغائب «غير متاح» لا صفرٌ مضلّل", async () => {
+  /* صفرٌ هنا يُقرأ «لم يُصرف نقدًا شيء» — وهو استنتاجٌ لم يُثبته شيء. */
+  await withDroua(async ({ sql, ctx }) => {
+    const run = await seedPartial(sql, ctx, "2026-09", fx.consistentMonth(), ["cash"]);
+    const out = await callApi(sql, ctx, "GET", `runs/${run.runId}/totals`);
+    assert.equal(out.body.transfer.available, true);
+    assert.equal(out.body.cash.available, false, "الغائب غيرُ متاح");
+    assert.equal(out.body.cash.count, 0);
+  });
+});
+
+test("الإجماليّات: الملفّ غير المقروء «غير متاح» أيضًا", async () => {
+  await withDroua(async ({ sql, ctx }) => {
+    const run = await runs.createRun(sql, "2026-09");
+    const month = fx.consistentMonth();
+    for (const kind of ["full", "transfer", "employees"]) {
+      await upload(sql, ctx, run.runId, kind, month[kind]);
+    }
+    /* بايتاتٌ ليست مصنّفًا في خانة الكاش. */
+    await callApi(sql, ctx, "POST", `runs/${run.runId}/files`,
+      { kind: "cash", fileName: "cash.xlsx", format: "xlsx", data: b64(Buffer.from("تالف")) });
+
+    const out = await callApi(sql, ctx, "GET", `runs/${run.runId}/totals`);
+    assert.equal(out.body.transfer.available, true);
+    assert.equal(out.body.cash.available, false);
+    assert.equal(out.body.cash.total, 0, "ولا يُخترع مبلغ");
+  });
+});
+
+test("الإجماليّات: كسورُ الهللات تُجمع ثمّ تُقرَّب مرّةً واحدة", async () => {
+  await withDroua(async ({ sql, ctx }) => {
+    const month = fx.consistentMonth();
+    month.transfer = fx.csv(["رقم الموظف", "الاسم", "الصافي"],
+      [["1001", "أ", 0.105], ["1002", "ب", 0.105], ["1004", "د", 0.105]]);
+    const run = await seedMonth(sql, ctx, "2026-09", month);
+    const out = await callApi(sql, ctx, "GET", `runs/${run.runId}/totals`);
+    /* 0.315 ← 0.32. ولو قُرِّب كل صفّ لصار 0.33. */
+    assert.equal(out.body.transfer.total, 0.32, "التقريب في النتيجة لا في كل صفّ");
+  });
+});
+
+/* ملفّاتُ الشركة تُذيَّل بصفّ «الإجمالي» بلا رقمٍ وظيفيّ. واحتسابُه يضاعف
+   المبلغ المعروض — رقمٌ خاطئ يبدو معقولًا، وهو أسوأ ما يُعرض. */
+test("الإجماليّات: صفُّ المجاميع في الملفّ لا يُحتسب مرّةً ثانية", async () => {
+  await withDroua(async ({ sql, ctx }) => {
+    const month = fx.consistentMonth();
+    month.transfer = fx.csv(["رقم الموظف", "الاسم", "الصافي"],
+      [["1001", "أ", 100], ["1002", "ب", 200], ["", "الإجمالي", 300]]);
+    const run = await seedMonth(sql, ctx, "2026-09", month);
+    const out = await callApi(sql, ctx, "GET", `runs/${run.runId}/totals`);
+    assert.equal(out.body.transfer.total, 300, "المجموعُ من الموظفين لا من صفّ الملفّ");
+    assert.equal(out.body.transfer.count, 2, "وعددُهم اثنان لا ثلاثة");
+  });
+});
+
+test("الشاشة: الإجماليّات في كتلةٍ مستقلّة لا في جدول الملاحظات", () => {
+  const page = pageSource();
+  assert.match(page, /id="totals"/, "كتلةُ الإجماليّات");
+  assert.match(page, /id="t-bank"/);
+  assert.match(page, /id="t-cash"/);
+  /* رقمٌ إخباريّ لا يُخلط بملاحظةٍ تستدعي فعلًا. */
+  assert.ok(page.indexOf('id="fnd"') < page.indexOf('id="totals"'),
+    "الإجماليّات أسفل جدول الملاحظات لا داخله");
+  assert.match(page, /غير متاح/, "وما لم يُقرأ يُقال غير متاح");
+  /* والتنسيق: فاصلٌ ألفيّ ومنزلتان و«ر.س». */
+  const fn = page.match(/function money\(n\)\{[\s\S]*?\n\}/);
+  assert.ok(fn, "دالّةُ التنسيق غير موجودة");
+  const money = new Function(`${fn[0]}; return money;`)();
+  assert.equal(money(123456.78), "123,456.78 ر.س");
+  assert.equal(money(0), "0.00 ر.س");
+  assert.equal(money(1000), "1,000.00 ر.س");
+  assert.equal(money(196340.935), "196,340.94 ر.س");
+});
+
+/* الخطأُ الذي وقع فعلًا: النصُّ المرسَل للمتصفّح يُبنى داخل template literal،
+   وفيه تُبتلع `\d` فتصير `d` — فينجح التحليل ويعمل النظام ويخرج الرقمُ بلا
+   فاصلٍ ألفيّ ولا خطأ يدلّ عليه. فكلُّ شرطةٍ مائلة في نصّ الصفحة تُضاعَف. */
+test("الشاشة: لا شرطةَ مائلة مفردة داخل النصّ المرسَل للمتصفّح", () => {
+  const src = require("node:fs").readFileSync(
+    require("node:path").join(__dirname, "..", "lib", "droua", "views", "open.js"), "utf8");
+  const script = src.slice(src.indexOf("const SCRIPT = `"));
+  const lone = script.split("\n")
+    .map((line, i) => [i, line])
+    .filter(([, line]) => /(^|[^\\])\\[a-zA-Z]/.test(line));
+  assert.deepEqual(lone, [], "شرطةٌ مفردة تُبتلع قبل أن تصل المتصفّح");
+});
+
+/* «6 موظّفًا» من جنس «20 قواعد»: خطأٌ صغير يجعل القارئ يشكّ فيما يقرأ كلَّه. */
+test("الشاشة: عددُ الموظفين تحت الإجماليّ يوافق العربية", () => {
+  const src = pageSource().match(/function countEmp\(n\)\{[\s\S]*?\n\}/);
+  assert.ok(src, "دالّةُ العدّ غير موجودة");
+  const countEmp = new Function(`${src[0]}; return countEmp;`)();
+  assert.equal(countEmp(0), "لا أحد");
+  assert.equal(countEmp(1), "موظّفٌ واحد");
+  assert.equal(countEmp(2), "موظّفان");
+  assert.equal(countEmp(6), "6 موظّفين");
+  assert.equal(countEmp(10), "10 موظّفين");
+  assert.equal(countEmp(62), "62 موظّفًا");
+});
