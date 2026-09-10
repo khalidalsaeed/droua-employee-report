@@ -132,11 +132,23 @@ function sessionRow({ sidHash, userId = PROTECTED_ID, idleMs = 900000, absMs = 3
   };
 }
 
+/* الرأس صار يحمل كوكيين: جلسة المنصّة وكوكي البوابة. فيُنتقى المقصود
+   بالاسم لا بالموضع — واختبارٌ يقرأ «الكوكي» مفردًا يصير كاذبًا أو هشًّا
+   بأوّل كوكي يُضاف. */
+function cookieNamed(headers, name) {
+  const raw = headers["set-cookie"];
+  const list = raw === undefined ? [] : Array.isArray(raw) ? raw : [raw];
+  return list.find((c) => String(c).startsWith(name + "=")) || null;
+}
+
 function makeRes() {
   const out = { statusCode: 0, body: null, headers: {}, ended: false };
   const setH = (k, v) => { out.headers[String(k).toLowerCase()] = v; };
   const res = {
     setHeader: setH,
+    /* موجودة في استجابة Node الحقيقية — وغيابها هنا كان يُحوّل كل إلحاق
+       كوكي إلى استثناء يبتلعه المُغلّف فيردّ 404. */
+    getHeader: (k) => out.headers[String(k).toLowerCase()],
     status(code) { out.statusCode = code; return res; },
     json(payload) { out.body = payload; out.ended = true; return res; },
     writeHead(code, headers) {
@@ -306,7 +318,8 @@ test("البوابة: كلمة المرور الصحيحة تفتح وتضع ا�
     assert.equal(out.statusCode, 200, JSON.stringify(out.body));
     assert.equal(out.body.ok, true);
     assert.equal(out.body.unlocked, true);
-    const cookie = out.headers["set-cookie"];
+    const cookie = cookieNamed(out.headers, "droua_gate");
+    assert.ok(cookie, "كوكي البوابة غائب");
     assert.match(cookie, /^droua_gate=[^;]+;/);
     assert.match(cookie, /HttpOnly/);
     assert.match(cookie, /Secure/);
@@ -512,8 +525,9 @@ test("الجلسة: إعادة استعمال توكن بعد القفل مرف�
     const lock = await call({ sql, actor: OWNER_ROW(), kind: "api", apiPath: "secure-audit/gate/lock", method: "POST", gateCookie: s.token });
     assert.equal(lock.statusCode, 200);
     assert.equal(sql.matching(/UPDATE droua_gate_sessions SET revoked_at/).length, 1);
-    assert.match(lock.headers["set-cookie"], /droua_gate=;/);
-    assert.match(lock.headers["set-cookie"], /Path=\/secure-audit(;|$)/, "المسح يجب أن يكون بنفس الـPath وإلّا بقي الكوكي");
+    const cleared = cookieNamed(lock.headers, "droua_gate");
+    assert.match(cleared, /droua_gate=;/);
+    assert.match(cleared, /Path=\/secure-audit(;|$)/, "المسح يجب أن يكون بنفس الـPath وإلّا بقي الكوكي");
 
     /* الآن نُحاكي أن القاعدة صارت تُرجعه مُبطَلًا — نفس التوكن يُعاد استعماله. */
     sql.state.session = { ...s.row, revoked_at: "2026-09-08T00:00:00Z" };
@@ -871,4 +885,135 @@ test("التكامل: بوابةٌ مفتوحة تُنشئ شهرًا وترفع
     if (previousBlob) require.cache[BLOB_ID] = previousBlob;
     else delete require.cache[BLOB_ID];
   }
+});
+
+/* ══ تمديد نافذة خمول جلسة المنصّة ══════════════════════════════════════
+   =========================================================================
+   جلسة المنصّة نافذةُ خمولٍ منزلقة، ولا يُنزلقها في المشروع كلّه إلا
+   `/api/auth/me`. وشاشاتُ هذا القسم لا تناديه — فمن يدخل القسم تتوقّف
+   ساعتُه عن الانزلاق وتمضي إلى نهايتها.
+
+   والعطل الذي وقع فعلًا في الإنتاج: صفحةُ البوابة تُفتح والجلسة حيّة، ثمّ
+   تنتهي والمستخدم يقرأ أو يكتب كلمة المرور، فيردّ الفتحُ 401 — وتعرض
+   الصفحة «تعذّر فتح القسم» فيُقرأ «كلمتك خاطئة». */
+
+const sessionCookieOf = (out) => cookieNamed(out.headers, "session");
+
+test("التمديد: نشاطٌ مصرَّح له داخل القسم يُنزلق نافذة جلسة المنصّة", async () => {
+  await withEnv(fullEnv(), async () => {
+    const sql = fakeDb({ users: [OWNER_ROW()] });
+    /* صفحةُ البوابة نفسها — أوّل ما يلمسه المستخدم داخل القسم. */
+    const out = await call({ sql, actor: OWNER_ROW(), kind: "page" });
+    assert.equal(out.statusCode, 200);
+    const fresh = sessionCookieOf(out);
+    assert.ok(fresh, "لا كوكي جلسةٍ مجدَّد — النافذة لا تنزلق والمستخدم يُطرد وهو يعمل");
+    /* بسماته كما تضعها المنصّة تمامًا، وبمهلتها هي: لا يُمدَّد TTL ولا يُقصَّر. */
+    assert.match(fresh, /^session=[^;]+;/);
+    assert.match(fresh, /HttpOnly/);
+    assert.match(fresh, /Secure/);
+    assert.match(fresh, /SameSite=Lax/);
+    assert.match(fresh, /Path=\/(;|$)/);
+    assert.match(fresh, /Max-Age=1800(;|$)/, "ثلاثون دقيقة كما هي — لا تُغيَّر");
+  });
+});
+
+test("التمديد: يشمل مسار الفتح نفسه — نجاحًا وفشلًا", async () => {
+  await withEnv(fullEnv(), async () => {
+    /* وهو موضع العطل بعينه: من يجلس على صفحة البوابة يجب أن يبقى مسجّلًا. */
+    for (const [label, password] of [["الصحيحة", GATE_PASSWORD], ["الخاطئة", "wrong-password-x"]]) {
+      const sql = fakeDb({ users: [OWNER_ROW()] });
+      const out = await call({
+        sql, actor: OWNER_ROW(), kind: "api", apiPath: "secure-audit/gate/unlock",
+        method: "POST", body: { password },
+      });
+      assert.ok(sessionCookieOf(out), `${label}: الجلسة لم تُمدَّد`);
+    }
+  });
+});
+
+test("التمديد: كوكي البوابة وكوكي الجلسة يخرجان معًا — لا يمحو أحدهما الآخر", async () => {
+  /* `setHeader` يستبدل. فكتابةُ الثاني بها كانت تمحو الأوّل بلا خطأ: يُفتح
+     القسم ثمّ يُقفل فورًا لأن كوكي البوابة لم يصل المتصفّح أبدًا. */
+  await withEnv(fullEnv(), async () => {
+    const sql = fakeDb({ users: [OWNER_ROW()] });
+    const out = await call({
+      sql, actor: OWNER_ROW(), kind: "api", apiPath: "secure-audit/gate/unlock",
+      method: "POST", body: { password: GATE_PASSWORD },
+    });
+    assert.equal(out.statusCode, 200, JSON.stringify(out.body));
+    assert.ok(cookieNamed(out.headers, "droua_gate"), "كوكي البوابة ضاع");
+    assert.ok(cookieNamed(out.headers, "session"), "كوكي الجلسة ضاع");
+    const raw = out.headers["set-cookie"];
+    assert.ok(Array.isArray(raw) && raw.length === 2, "يجب أن يخرج الاثنان معًا");
+  });
+});
+
+test("التمديد: لا يُمدَّد لغير المصرَّح له — والإخفاء كما هو", async () => {
+  /* أخطر ما في هذا التغيير: كوكيٌ يخرج لمن لا يملك القسم يُثبت له وجوده. */
+  await withEnv(fullEnv(), async () => {
+    for (const [label, actor] of [
+      ["مستخدم غير مصرَّح له", userRow({ id: OTHER_ID, email: "other@example.test", role: "hr" })],
+      ["admin", userRow({ id: ADMIN_ID, email: "admin@example.test", role: "admin" })],
+    ]) {
+      const sql = fakeDb({ users: [OWNER_ROW(), actor] });
+      for (const kind of ["page", "api"]) {
+        const out = await call({
+          sql, actor, kind,
+          apiPath: kind === "api" ? "secure-audit/gate/unlock" : null,
+          method: kind === "api" ? "POST" : "GET", body: { password: GATE_PASSWORD },
+        });
+        assert.equal(out.statusCode, 404, `${label}/${kind}`);
+        assert.equal(sessionCookieOf(out), null, `${label}/${kind}: كوكيٌ خرج لمن رُدّ بـ404`);
+        assert.equal(out.headers["set-cookie"], undefined, `${label}/${kind}: أي كوكي يكسر الإخفاء`);
+      }
+    }
+  });
+});
+
+test("التمديد: جلسة «تذكّرني» لا تُمسّ — ثابتةٌ لا منزلقة", async () => {
+  await withEnv(fullEnv(), async () => {
+    const sql = fakeDb({ users: [OWNER_ROW()] });
+    const { issueSessionToken } = require("../lib/auth/tokens");
+    const remembered = issueSessionToken({ id: PROTECTED_ID, email: PROTECTED_EMAIL, role: "hr" }, true);
+    const out = await withFakeDb(sql, async () => {
+      const handler = require("../api/app");
+      const { res, out: o } = makeRes();
+      await handler({ method: "GET", query: { kind: "page", page: "secure-audit" },
+        headers: { cookie: `session=${encodeURIComponent(remembered)}` } }, res);
+      return o;
+    });
+    assert.equal(out.statusCode, 200);
+    assert.equal(sessionCookieOf(out), null, "الثابتة ثلاثين يومًا لا تُعاد كتابتها كل طلب");
+  });
+});
+
+test("التمديد: جلسة منتهية على الفتح تُردّ 401 — لا رسالةَ كلمة مرور", async () => {
+  /* 401 وحدها ما تعرفه الصفحة لتُعيد التوجيه. ولو رُدّت 403 لقال النظام
+     «تعذّر فتح القسم» فأعاد المستخدم كلمته حتى يقفله حدُّ المحاولات على
+     خطأٍ لم يرتكبه. */
+  await withEnv(fullEnv(), async () => {
+    const sql = fakeDb({ users: [OWNER_ROW()] });
+    const out = await withFakeDb(sql, async () => {
+      const handler = require("../api/app");
+      const { res, out: o } = makeRes();
+      /* بلا كوكي جلسةٍ إطلاقًا = ما يراه الخادم بعد انتهائها. */
+      await handler({ method: "POST",
+        query: { kind: "api", apiPath: "secure-audit/gate/unlock" },
+        headers: { cookie: "" }, body: { password: GATE_PASSWORD } }, res);
+      return o;
+    });
+    assert.equal(out.statusCode, 401, "غير المسجَّل يُردّ 401 لا 403");
+    assert.equal(out.body.error, "غير مسجّل الدخول");
+    assert.notEqual(out.body.error, "تعذّر فتح القسم", "الرسالة المضلّلة");
+    assert.equal(out.headers["set-cookie"], undefined, "ولا كوكي لمن ليس مسجّلًا");
+  });
+});
+
+test("الشاشة: صفحة البوابة تعالج 401 بإعادة التوجيه لا برسالة كلمة المرور", () => {
+  const src = require("../lib/droua/views/gate")("nonce");
+  assert.match(src, /r\.status===401/, "الصفحة لا تميّز 401 أصلًا");
+  assert.match(src, /انتهت جلستك/, "لا تُخبر المستخدم بالسبب الحقيقيّ");
+  /* والترتيب يهمّ: لو فُحص `j.ok` قبل الحالة لعُرضت الرسالة المضلّلة. */
+  assert.ok(src.indexOf("r.status===401") < src.indexOf("تعذّر فتح القسم"),
+    "فحصُ 401 يجب أن يسبق رسالة الفشل العامّة");
 });
