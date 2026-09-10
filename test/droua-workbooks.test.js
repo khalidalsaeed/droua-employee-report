@@ -5,7 +5,7 @@ const xls = require("../lib/droua/parsers/xls");
 const xlsx = require("../lib/droua/parsers/xlsx");
 const parsers = require("../lib/droua/parsers");
 const csv = require("../lib/droua/parsers/csv");
-const { buildXlsx, buildXls } = require("./helpers/workbook-builder");
+const { buildXlsx, buildXlsxRaw, buildXls } = require("./helpers/workbook-builder");
 
 /* ─── قارئا Excel ───────────────────────────────────────────────────────
    =========================================================================
@@ -159,4 +159,94 @@ test("الهوية: رقم الهوية يُتعرَّف عليه ولا يُح�
   assert.ok(!blob.includes("1234567890"), "رقم الهوية الكامل لا يغادر القارئ");
   assert.ok(!blob.includes("SA0380000000608010167519"), "ولا رقم الحساب الكامل");
   assert.deepEqual(doc.meta.unknownColumns, [], "وعمود الهوية معروف لا مجهول");
+});
+
+/* ══ خليّةٌ فارغةٌ مُنسَّقة تبتلع التي تليها ═══════════════════════════════
+   =========================================================================
+   العطل الذي كشفته عيّنةٌ حقيقية: نمطُ الخلايا كان يأخذ السمات **نهمةً**،
+   فتبتلع الشرطة المائلة في `<c r="H1" s="10"/>` — وهي خليّة فارغة تحمل
+   تنسيقًا، وتُنتجها Excel بكثرة. فيفشل فرعُ الإغلاق الذاتيّ ويُطابَق فرعُ
+   الجسم، فيمتدّ إلى `</c>` **الخليّة التالية**.
+
+   والنتيجة أخبثُ من فقد عمود: الخليّة التالية تختفي، وتُنسب قيمتُها الخام
+   إلى عمود الفارغة — وإن كانت نصًّا مشتركًا ظهر **فهرسُه رقمًا**. فتُقرأ
+   أرقامٌ صحيحة في أعمدةٍ خاطئة وتبدو سليمة تمامًا.
+
+   ⛔ والمصنّف هنا مبنيٌّ في الاختبار، بلا بيانٍ حقيقيّ. */
+
+
+test("xlsx: خليّةٌ فارغةٌ مُنسَّقة لا تبتلع الخليّة التي تليها", () => {
+  /* A1 نصّ، B1 فارغةٌ **مُنسَّقة** (إغلاقٌ ذاتيّ)، C1 نصّ. */
+  const sheet = '<row r="1">'
+    + '<c r="A1" t="s"><v>0</v></c>'
+    + '<c r="B1" s="10"/>'
+    + '<c r="C1" s="1" t="s"><v>1</v></c>'
+    + '</row>'
+    + '<row r="2">'
+    + '<c r="A2" s="10"/>'
+    + '<c r="B2"><v>42</v></c>'
+    + '</row>';
+  const bytes = buildXlsxRaw(sheet, ["الرقم الوظيفي", "الصافي"]);
+  const rows = xlsx.readWorkbook(bytes).sheets[0].rows;
+
+  assert.equal(rows[0][0], "الرقم الوظيفي", "الأولى سليمة");
+  assert.equal(rows[0][1], "", "الفارغة تبقى فارغة — لا تحمل قيمة جارتها");
+  assert.equal(rows[0][2], "الصافي", "والتالية لم تُبتلع");
+  /* والأخطر: ألّا يظهر فهرسُ النصّ المشترك رقمًا في عمود الفارغة. */
+  assert.notEqual(rows[0][1], "1");
+  assert.equal(rows[1][0], "", "وفي صفٍّ آخر كذلك");
+  assert.equal(rows[1][1], "42", "والرقم في عموده لا في عمود سابقه");
+});
+
+/* ══ ترويسةٌ على صفّين ═══════════════════════════════════════════════════
+   أسماءُ الحقول في صفّ، ومعاملُ كل عمود تحته. وخلايا المجموعة مدموجة،
+   فالعمود الثاني من كل مجموعة يبدو بلا اسم في الصفّ الأعلى. */
+
+test("الترويسة: صفٌّ ثانٍ للمعاملات يُدمج ولا يُقرأ بيانًا", () => {
+  const rows = [
+    ["الرقم الوظيفي", "اسم الموظف", "التاريخ", "طلبات(دقائق)", "", "يدويًا(دقائق)", ""],
+    ["", "", "", "x1.5", "x2", "x1.5", "x2"],
+    ["1001", "أ", "2026-09-01", 60, 0, 30, 0],
+    ["1002", "ب", "2026-09-02", 0, 120, 0, 45],
+  ];
+  const doc = csv.normalizeRows("overtime", ...(() => {
+    const found = csv.findHeader(rows, "overtime");
+    return [found.header, found.dataRows];
+  })());
+
+  assert.equal(doc.meta.unknownColumns.length, 0, JSON.stringify(doc.meta.unknownColumns));
+  assert.equal(doc.rows.length, 2, "صفُّ المعاملات ليس بيانًا");
+  assert.deepEqual(doc.rows[0].minutes, { 1.5: 90 }, "60 + 30 عبر مصدرين");
+  assert.deepEqual(doc.rows[1].minutes, { 2: 165 }, "120 + 45 عبر مصدرين");
+  assert.match(doc.meta.mapping.otMultipliers, /1\.5/);
+});
+
+test("الترويسة: صفُّ بياناتٍ لا يُبتلع ترويسةً بحال", () => {
+  /* الشرط ضيّقٌ عمدًا: كل خليّة غير فارغة في الصفّ الثاني معاملٌ. فصفٌّ
+     فيه رقمُ موظّفٍ أو مبلغ يبقى بيانًا. */
+  assert.equal(csv.isSubHeaderRow(["", "", "x1.5", "x2"]), true);
+  assert.equal(csv.isSubHeaderRow(["1001", "", "x1.5"]), false, "رقمُ موظّف ⇒ بيان");
+  assert.equal(csv.isSubHeaderRow(["", "", ""]), false, "فارغٌ تمامًا ليس ترويسة");
+  assert.equal(csv.isSubHeaderRow(["", "الاسم", "x2"]), false, "نصٌّ آخر ⇒ ليس ترويسة");
+  assert.equal(csv.isSubHeaderRow([]), false);
+  /* وملفٌّ بترويسةٍ واحدة يبقى على صفٍّ واحد. */
+  const single = csv.findHeader([
+    ["رقم الموظف", "الاسم", "الصافي"], ["1001", "أ", 9000],
+  ], "full");
+  assert.equal(single.headerRows, 1);
+  assert.equal(single.dataRows.length, 1);
+});
+
+test("الترويسة: أعمدةٌ عدّة لمعاملٍ واحد تُجمع ولا تُحسب مرّتين", () => {
+  /* ثلاثةُ مصادر بمعامل 1.5، واحدٌ منها فيه قيمة. والمجموع قيمتُه هو —
+     لا ثلاثة أضعافها ولا صفر. */
+  const rows = [
+    ["الرقم الوظيفي", "طلبات", "", "تلقائي", "يدويًا", ""],
+    ["", "x1.5", "x2", "x1.5", "x1.5", "x2"],
+    ["1001", 0, 0, 0, 900, 0],
+  ];
+  const found = csv.findHeader(rows, "overtime");
+  const doc = csv.normalizeRows("overtime", found.header, found.dataRows);
+  assert.deepEqual(doc.rows[0].minutes, { 1.5: 900 }, "قيمةٌ واحدة عبر ثلاثة أعمدة");
+  assert.equal(doc.meta.mapping.otMultipliers, "1.5 · 2");
 });
