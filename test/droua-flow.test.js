@@ -1075,3 +1075,139 @@ test("الإعدادات: خارج سياق البوابة لا تعمل ولو 
     await assert.rejects(call, /بوابة|gate/i);
   }
 });
+
+/* ══ اختيارُ الموظّف بالاسم — لا كتابةَ رقمٍ يدويًّا ═══════════════════════
+   =========================================================================
+   الرقم الوظيفيّ يبقى **المفتاح** في القاعدة وفي المحرّك؛ والاسمُ للعرض
+   والبحث وحده. فالشاشة تعرض الأسماء وتُرسل الأرقام. */
+
+test("الإعدادات: المدخل يعرض قائمة موظفي الشهر بأسمائهم وأرقامهم", async () => {
+  await withDroua(async ({ sql, ctx }) => {
+    const run = await seedMonth(sql, ctx, "2026-09", fx.consistentMonth());
+    const out = await callApi(sql, ctx, "GET", `runs/${run.runId}/settings`);
+    assert.equal(out.statusCode, 200);
+    assert.equal(out.body.rosterLoaded, true, "القائمة حُمِّلت");
+    assert.ok(out.body.employees.length >= 4);
+    const one = out.body.employees.find((e) => e.empNo === "1001");
+    assert.ok(one && one.name, "لكل موظّفٍ اسمٌ يُعرض");
+    /* ولا تسريبَ لما لا يلزم الاختيار: رقمٌ واسمٌ لا غير. */
+    assert.deepEqual(Object.keys(one).sort(), ["empNo", "name"]);
+  });
+});
+
+test("الإعدادات: موظفو العمل الإضافي وحدهم — ومعهم دقائقُهم وقاسمُهم", async () => {
+  await withDroua(async ({ sql, ctx }) => {
+    const month = fx.consistentMonth({ overtime: [
+      { empNo: "1001", m15: 120 },
+      { empNo: "1002", m15: 0 },            // بلا دقائق ⇒ لا يظهر
+      { empNo: "1003", m15: 30, m2: 60 },
+    ] });
+    const run = await seedMonth(sql, ctx, "2026-09", month);
+    await callApi(sql, ctx, "PUT", "settings/divisors", { empNo: "1001", overtimeDivisor: 10 });
+
+    const out = await callApi(sql, ctx, "GET", `runs/${run.runId}/settings`);
+    const rows = out.body.overtimeEmployees;
+    assert.equal(out.body.overtimeLoaded, true);
+    assert.deepEqual(rows.map((r) => r.empNo).sort(), ["1001", "1003"],
+      "من له دقائق فعلًا وحده");
+    const first = rows.find((r) => r.empNo === "1001");
+    assert.equal(first.minutes, 120);
+    assert.ok(first.name, "الاسم يُعرض");
+    assert.equal(first.overtimeDivisor, 10, "المحفوظ يُعرض ولا يُسأل عنه ثانيةً");
+    const second = rows.find((r) => r.empNo === "1003");
+    assert.equal(second.minutes, 90, "دقائق المعاملات تُجمع للعرض");
+    assert.equal(second.overtimeDivisor, null, "وغيرُ المحدَّد يُعلَن null لا 8");
+  });
+});
+
+test("الإعدادات: حفظُ الكل يكتب دفعةً — ويرفضها كاملةً إن اختلّ واحد", async () => {
+  await withDroua(async ({ sql, ctx }) => {
+    const run = await seedMonth(sql, ctx, "2026-09", fx.consistentMonth());
+
+    const saved = await callApi(sql, ctx, "PUT", "settings/divisors/bulk", {
+      divisors: [{ empNo: "1001", overtimeDivisor: 8 }, { empNo: "1002", overtimeDivisor: 10 }],
+    });
+    assert.equal(saved.statusCode, 200);
+    assert.equal(saved.body.saved, 2);
+
+    /* دفعةٌ فيها قيمةٌ مرفوضة لا تُكتب **جزئيًّا**: من يرى نجاحًا جزئيًّا
+       لا يدري ما حُفظ. */
+    const bad = await callApi(sql, ctx, "PUT", "settings/divisors/bulk", {
+      divisors: [{ empNo: "1003", overtimeDivisor: 8 }, { empNo: "1004", overtimeDivisor: 9 }],
+    });
+    assert.equal(bad.statusCode, 400);
+    const after = await callApi(sql, ctx, "GET", `runs/${run.runId}/settings`);
+    assert.deepEqual(after.body.divisors.map((d) => d.empNo).sort(), ["1001", "1002"],
+      "ولا صفَّ من الدفعة المرفوضة كُتب");
+
+    for (const body of [{}, { divisors: [] }, { divisors: [{ empNo: "", overtimeDivisor: 8 }] }]) {
+      const out = await callApi(sql, ctx, "PUT", "settings/divisors/bulk", body);
+      assert.equal(out.statusCode, 400, JSON.stringify(body));
+    }
+  });
+});
+
+test("الإعدادات: تعديلُ فترة الإجازة يُبقي معرّفها ولا يُنشئ صفًّا", async () => {
+  await withDroua(async ({ sql, ctx }) => {
+    const run = await seedMonth(sql, ctx, "2026-09", fx.consistentMonth());
+    const added = await callApi(sql, ctx, "POST", `runs/${run.runId}/leaves`,
+      { empNo: "1004", startDate: "2026-09-01", endDate: "2026-09-10" });
+    const id = added.body.leave.leaveId;
+
+    const edited = await callApi(sql, ctx, "PATCH", `leaves/${id}`,
+      { startDate: "2026-09-01", endDate: "2026-09-30" });
+    assert.equal(edited.statusCode, 200);
+
+    const view = await callApi(sql, ctx, "GET", `runs/${run.runId}/settings`);
+    assert.equal(view.body.leaves.length, 1, "صفٌّ واحد لا اثنان");
+    assert.equal(view.body.leaves[0].leaveId, id, "المعرّف نفسه — فيبقى أثرُ من أضافها");
+    assert.equal(view.body.leaves[0].endDate, "2026-09-30");
+
+    /* والمقلوبة تُردّ ولا تُكتب. */
+    const bad = await callApi(sql, ctx, "PATCH", `leaves/${id}`,
+      { startDate: "2026-09-20", endDate: "2026-09-05" });
+    assert.equal(bad.statusCode, 400);
+    const still = await callApi(sql, ctx, "GET", `runs/${run.runId}/settings`);
+    assert.equal(still.body.leaves[0].endDate, "2026-09-30", "بقيت كما كانت");
+  });
+});
+
+test("الإعدادات: تعذُّرُ قراءة الملفّات لا يُسقط الشاشة", async () => {
+  /* شاشةٌ لا تفتح أسوأ من شاشةٍ بلا رفاهية بحث. */
+  await withDroua(async ({ sql, ctx }) => {
+    const run = await runs.createRun(sql, "2026-09");   // بلا أي ملفّ
+    const out = await callApi(sql, ctx, "GET", `runs/${run.runId}/settings`);
+    assert.equal(out.statusCode, 200);
+    assert.deepEqual(out.body.employees, []);
+    assert.deepEqual(out.body.overtimeEmployees, []);
+    assert.equal(out.body.rosterLoaded, false, "العلم يقول إنها لم تُحمَّل");
+    assert.equal(out.body.overtimeLoaded, false);
+  });
+});
+
+test("الشاشة: كل معرّفٍ تناديه الشيفرة له عنصرٌ في الصفحة", () => {
+  /* `show(el)` تقرأ `el.hidden` — فمعرّفٌ بلا عنصر يرمي ويُسقط اللوحة
+     كلَّها. وقد وقع فعلًا أثناء بناء هذه الشاشة. */
+  const page = pageSource();
+  const used = [...page.matchAll(/\$\('([^']+)'\)/g)].map((m) => m[1]);
+  const defined = new Set([...page.matchAll(/\bid="([^"]+)"/g)].map((m) => m[1]));
+  const missing = [...new Set(used)].filter((id) => !defined.has(id));
+  assert.deepEqual(missing, [], `معرّفات بلا عنصر: ${missing.join(", ")}`);
+});
+
+test("الشاشة: الإدخال اليدويّ للرقم بديلٌ لا أصل", () => {
+  const page = pageSource();
+  /* الاختيار بالاسم هو الأصل، واليدويّ مخفيٌّ حتى تتعذّر القائمة. */
+  assert.match(page, /id="lv-emp"/, "قائمةُ اختيار الموظّف");
+  assert.match(page, /id="lv-find"[^>]*type="search"/, "حقلُ بحث");
+  assert.match(page, /id="lv-no"[^>]*hidden/, "واليدويّ مخفيٌّ ابتداءً");
+  assert.match(page, /id="lv-fallback"[^>]*hidden/, "ورسالةُ التعذّر مخفيّة");
+  assert.match(page, /id="dv-save"/, "زرُّ حفظ الكل");
+  assert.match(page, /divisors\/bulk/, "ويُرسل دفعةً واحدة");
+  /* ولا يُطلب الرقم يدويًّا في جدول العمل الإضافي: حقلُه داخل قسمٍ مطويّ
+     صراحةً، لا في مسار الاستعمال العاديّ. */
+  const manual = page.match(/<details id="dv-manual">[\s\S]*?<\/details>/);
+  assert.ok(manual, "قسم الإدخال اليدويّ غير موجود");
+  assert.match(manual[0], /id="dv-no"/, "حقلُ الرقم يجب أن يكون داخله");
+  assert.match(manual[0], /summary/, "ومطويًّا خلف عنوان");
+});
