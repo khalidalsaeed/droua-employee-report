@@ -58,6 +58,10 @@ function makeRes() {
   const out = { statusCode: 0, headers: {}, body: null, ended: false };
   const res = {
     setHeader(name, value) { out.headers[String(name).toLowerCase()] = value; },
+    /* الاستجابة الحقيقية في Node تملكها، والشيفرة تُلحِق بها كوكيًا ثانيًا.
+       ومُزيَّفٌ ينقصه ما في الأصل لا يُسقط الاختبار بل يُخفي العطل: كل
+       طلبٍ يُلحِق كوكيًا كان سيُردّ 404 صامتًا. */
+    getHeader(name) { return out.headers[String(name).toLowerCase()]; },
     status(code) { out.statusCode = code; return res; },
     json(body) { out.body = body; out.ended = true; return res; },
     end(body) { if (body !== undefined) out.body = body; out.ended = true; return res; },
