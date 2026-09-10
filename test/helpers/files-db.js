@@ -231,6 +231,16 @@ function makeFilesDb() {
       leaveRows.push({ id, run_id: runId, emp_no: empNo, start_date: start, end_date: end, note: note || null });
       return [{ id }];
     }
+    if (/^UPDATE droua_run_leaves/.test(t)) {
+      const [start, end, id] = values;
+      const row = leaveRows.find((r) => r.id === id);
+      if (!row) return [];
+      /* القيد الحقيقيّ يُفرَض هنا أيضًا: مُزيَّفٌ يقبل ما ترفضه القاعدة
+         يجعل اختبار «المقلوبة تُردّ» مسرحية. */
+      if (end < start) throw new Error('new row violates check constraint "droua_run_leaves_check"');
+      row.start_date = start; row.end_date = end;
+      return [{ id }];
+    }
     if (/^DELETE FROM droua_run_leaves/.test(t)) {
       const i = leaveRows.findIndex((r) => r.id === values[0]);
       if (i < 0) return [];
