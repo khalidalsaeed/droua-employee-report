@@ -317,14 +317,15 @@ test("المداخل: دورة كاملة عبر الـAPI — إنشاء ورف
 
     const analysis = await callApi(sql, ctx, "POST", `runs/${runId}/analyze`);
     assert.equal(analysis.statusCode, 200);
-    /* رُفع ملفّ عملٍ إضافيّ ولم يُحدَّد قاسمُ ساعةٍ لأحد — فقيمتُه **لا
-       تُحسب** وتُعلَن العلّة. وهذا هو السلوك المطلوب: لا مالَ يُخمَّن. */
+    /* رُفع ملفّ عملٍ إضافيّ ولا صفَّ قاسمٍ محفوظ — فيُطبَّق الافتراضيّ
+       وتُعلَن شفافيّتُه. وقواعدُ المال تتوقّف لسببٍ آخر: الكشف نفسه لا
+       يحمل عمود «وقت اضافي». علّتان مختلفتان تُعلَنان معًا. */
     const produced = (await callApi(sql, ctx, "GET", `runs/${runId}/findings`)).body.findings;
-    /* واحدةٌ عن القاسم، وأخرى تقول إن قواعد المال توقّفت لأن المسير نفسه
-       لا يحمل عمود «وقت اضافي» — علّتان مختلفتان تُعلَنان معًا. */
     assert.deepEqual(produced.map((f) => f.rule).sort(), ["not_evaluable", "ot_no_divisor"],
       JSON.stringify(produced.map((f) => f.title)));
-    assert.equal(produced.find((f) => f.rule === "ot_no_divisor").employeeRef, "1001");
+    const note = produced.find((f) => f.rule === "ot_no_divisor");
+    assert.equal(note.severity, "info", "الافتراضيّ شفافيّةٌ لا إنذار");
+    assert.match(note.currentValue, /1 موظّفًا/, "ملاحظةٌ جامعة لا واحدةٌ لكلٍّ");
     assert.match(produced.find((f) => f.rule === "not_evaluable").field, /full\.otAmount/);
 
     const list = await callApi(sql, ctx, "GET", "runs");
@@ -1036,7 +1037,7 @@ test("الإعدادات: الإجازة تُغيّر نتيجة التحليل 
   });
 });
 
-test("الإعدادات: القاسم يصل المحرّك فيُحسب المال — ولا يُخمَّن بدونه", async () => {
+test("الإعدادات: الافتراضيّ يُحسب تلقائيًّا، والمحفوظ يتقدّم عليه", async () => {
   await withDroua(async ({ sql, ctx }) => {
     const month = fx.consistentMonth({ overtime: [{ empNo: "1001", m15: 120 }] });
     /* مسيرٌ بعمود عملٍ إضافيّ ومعه الأساسيّ والإجمالي. */
@@ -1048,16 +1049,21 @@ test("الإعدادات: القاسم يصل المحرّك فيُحسب الم
 
     await analyze.analyzeRun(sql, run.runId, ctx);
     let list = (await callApi(sql, ctx, "GET", `runs/${run.runId}/findings`)).body.findings;
-    assert.ok(list.some((f) => f.rule === "ot_no_divisor"), "بلا قاسمٍ تُعلَن العلّة");
-    assert.equal(list.filter((f) => f.rule === "ot_amount_mismatch").length, 0, "ولا يُخمَّن مبلغ");
+    /* بلا صفٍّ محفوظ: يُحسب بالافتراضيّ ويُعلَن أنه افتراضيّ. */
+    assert.ok(list.some((f) => f.rule === "ot_no_divisor"), "تُعلَن شفافيّةُ الافتراضيّ");
+    const byDefault = list.find((f) => f.rule === "ot_amount_mismatch");
+    assert.ok(byDefault, "والمبلغ يُقارَن — لا ينتظر أحدًا");
+    assert.match(byDefault.description, /قاسم 10/);
 
+    /* والـoverride اليدويّ يتقدّم عليه. */
     await callApi(sql, ctx, "PUT", "settings/divisors", { empNo: "1001", overtimeDivisor: 8 });
     await analyze.analyzeRun(sql, run.runId, ctx);
     list = (await callApi(sql, ctx, "GET", `runs/${run.runId}/findings`)).body.findings;
-    assert.equal(list.filter((f) => f.rule === "ot_no_divisor").length, 0, "زالت العلّة");
+    assert.equal(list.filter((f) => f.rule === "ot_no_divisor").length, 0, "زالت ملاحظة الافتراضيّ");
     const money = list.find((f) => f.rule === "ot_amount_mismatch");
-    assert.ok(money, "وصار المبلغ يُقارَن");
+    assert.ok(money, "وصار المبلغ يُقارَن بالثمانية");
     assert.match(money.description, /قاسم 8/);
+    assert.notEqual(money.delta, byDefault.delta, "والمبلغ المتوقَّع تغيّر فعلًا");
   });
 });
 
@@ -1114,9 +1120,13 @@ test("الإعدادات: موظفو العمل الإضافي وحدهم — و
     assert.equal(first.minutes, 120);
     assert.ok(first.name, "الاسم يُعرض");
     assert.equal(first.overtimeDivisor, 10, "المحفوظ يُعرض ولا يُسأل عنه ثانيةً");
+    assert.equal(first.isDefault, false, "ويُميَّز أنه قرارٌ محفوظ");
     const second = rows.find((r) => r.empNo === "1003");
     assert.equal(second.minutes, 90, "دقائق المعاملات تُجمع للعرض");
-    assert.equal(second.overtimeDivisor, null, "وغيرُ المحدَّد يُعلَن null لا 8");
+    /* ولا صفَّ محفوظ له ⇒ الافتراضيّ جاهزٌ مختار، لا فراغٌ يُسأل عنه. */
+    assert.equal(second.overtimeDivisor, 10, "الافتراضيّ يُعرض قيمةً لا null");
+    assert.equal(second.isDefault, true, "ويُميَّز أنه سياسةٌ لا قرار");
+    assert.equal(out.body.defaultDivisor, 10);
   });
 });
 
