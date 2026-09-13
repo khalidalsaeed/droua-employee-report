@@ -118,7 +118,7 @@ const BANK = "SANITIZED NATIONAL BANK";
 
 /* إيصال سليم واحد: IBAN مقطوع، ومبلغ ينتهي بـ.08 */
 const single = () => buildPdf([receipt({
-  date: "13-08-2026", sender: SENDER, senderAccount: "010800000000000099",
+  date: "13-08-2026", sender: SENDER, senderAccount: "9900000000000001",
   beneficiary: "BENEFICIARY ONE", bank: BANK,
   ibans: [iban(1)], amountText: "3,412.08 SAR",
   reference: "TBC2608130000001", valueDate: "13-08-2026",
@@ -177,12 +177,75 @@ const realLayoutAmbiguous = () => buildPdf([
   "\n" + textOp(400, 407, "99999999"),
 ]);
 
+/* ⚠️ التنسيق الثاني — تحويل داخل البنك نفسه.
+   =========================================================================
+   البنك يُخرج تنسيقين مختلفين حسب نوع التحويل، وقيسا على إيصالات حقيقية:
+
+     التحويل إلى بنك آخر  : معرّف المستفيد IBAN، مقطوعًا على عنصرين
+                            والمبلغ «#,###.## SAR»
+     التحويل داخل البنك   : معرّف المستفيد **رقم حساب** بلا IBAN إطلاقًا
+                            والمبلغ «SAR #,###.##» — العملة قبله
+
+   ووسوم الأقسام عربية بصور العرض، والقيم تحت سطر عناوين أعمدة لا بجانب
+   وسمها. ثمانية من عشرة إيصالات حقيقية كانت من هذا التنسيق، وكلّها
+   تفشل قبل الإصلاح.
+
+   البيانات هنا مُختلقة بالكامل: لا حساب ولا مرجع ولا مبلغ حقيقي. */
+
+/* ⚠️ وسوم الأقسام لاتينية في العيّنة، عربية في المستند الحقيقي.
+   السبب أن كاتب العيّنات يستعمل Helvetica بترميز WinAnsi، فالحروف
+   العربية لا تُشفَّر فيه أصلًا. وتضمين خطّ عربي لأجل وسمين لا يستحقّ
+   وزنه على المستودع.
+
+   فالسلوكان مُختبران كلٌّ في موضعه:
+     · منطق النطاقات (من · إلى · التفاصيل) — هنا، بوسوم لاتينية
+     · تحويل صور العرض العربية إلى حروفها — باختبار وحدة مباشر على
+       normalizePageText، بصور عرضٍ مولّدة برمجيًا لا مكتوبة يدويًا
+
+   ولا فجوة بينهما: المحلّل يُطبّع بـNFKC قبل مطابقة أي وسم، فالوسم
+   العربي والوسم اللاتيني يسلكان المسار نفسه بعد التطبيع. */
+/* أرقام الحسابات المُختلقة تبدأ بـ99 (المُرسِل) و88 (المستفيد): بادئتان
+   بعيدتان عن أي حساب قائم. وكانت أول محاولة تبدأ بـ0108 فبدت قريبة من
+   بادئة حساب حقيقي — والقرب وحده سبب كافٍ للتغيير. */
+const AR_FROM = "FROM";
+const AR_TO = "TO";
+const AR_DETAILS = "DETAILS";
+
+function innerTransferReceipt(o) {
+  return [
+    textOp(60, 780, "TRANSACTION DETAILS", 11),
+    textOp(60, 760, `${o.date || "2026-08-13"}`),
+    /* قسم المُرسِل: وسمٌ وحده ثم عناوين ثم القيم */
+    textOp(60, 730, AR_FROM),
+    textOp(60, 712, "FULL NAME  ACCOUNT NO  SHORT NAME"),
+    textOp(60, 694, o.senderAccount || "9900000000000001"),
+    /* قسم المستفيد */
+    textOp(60, 660, AR_TO),
+    textOp(60, 642, "FULL NAME  ACCOUNT NO  BANK NAME"),
+    textOp(60, 624, o.beneficiary || "BENEFICIARY NAME"),
+    textOp(60, 606, `${o.account} ${o.bank || "SANITIZED NATIONAL BANK"}`),
+    /* قسم التفاصيل: سطر عناوين ثم سطر القيم — والعملة قبل المبلغ */
+    textOp(60, 560, AR_DETAILS),
+    textOp(60, 542, "REFERENCE NO  VALUE DATE  DEBIT AMOUNT"),
+    textOp(60, 524, `${o.reference || "TBC2608130000077"} 13-08-2026 SAR ${o.amountText || "1,500.00"}`),
+    textOp(60, 60, "SANITIZED FIXTURE - FAKE DATA", 7),
+  ].join("\n");
+}
+
+/* التنسيق الثاني: رقم حساب بدل IBAN، والعملة قبل المبلغ */
+const innerTransfer = () => buildPdf([innerTransferReceipt({ account: "8800000000000077", amountText: "3,412.08" })]);
+
+/* ونفسه مع حساب مُرسِل أطول من حساب المستفيد — لا يجوز خلطهما */
+const innerTransferBothAccounts = () => buildPdf([innerTransferReceipt({
+  account: "8800000000000088", senderAccount: "9900000000000001", amountText: "900.00",
+})]);
+
 /* مجمّع: صفحة لكل إيصال */
 function bundle(count = 10) {
   const pages = [];
   for (let i = 1; i <= count; i++) {
     pages.push(receipt({
-      date: "13-08-2026", sender: SENDER, senderAccount: "010800000000000099",
+      date: "13-08-2026", sender: SENDER, senderAccount: "9900000000000001",
       beneficiary: `BENEFICIARY ${String(i).padStart(2, "0")}`, bank: BANK,
       ibans: [iban(i)], amountText: `${(1000 + i * 100).toLocaleString("en-US", { minimumFractionDigits: 2 })} SAR`,
       reference: `TBC260813000${String(i).padStart(4, "0")}`, valueDate: "13-08-2026",
@@ -220,10 +283,11 @@ const truncated = () => single().slice(0, 200);
 const FIXTURES = {
   single, wholeIban, noIban, badAmount, conflictingAmounts, repeatedAmount,
   twoIbans, realLayout, realLayoutDecoy, realLayoutAmbiguous,
+  innerTransfer, innerTransferBothAccounts,
   bundle, bundleWithSpan, bundleLeadingOrphan, malformed, truncated,
 };
 
-module.exports = { ...FIXTURES, iban, receipt, realLayoutReceipt, continuationPage, SENDER, BANK, IBAN_Y1, IBAN_Y2 };
+module.exports = { ...FIXTURES, iban, receipt, realLayoutReceipt, innerTransferReceipt, AR_FROM, AR_TO, AR_DETAILS, continuationPage, SENDER, BANK, IBAN_Y1, IBAN_Y2 };
 
 if (require.main === module) {
   const fs = require("node:fs");

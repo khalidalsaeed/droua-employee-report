@@ -247,7 +247,7 @@ test("IBAN مكرّر مرّتين هو IBAN واحد", () => {
 test("رقم حساب المُرسِل لا يُنسَب إلى المستفيد", async () => {
   const r = await parseReceiptDocument(F.single());
   const f = first(r).fields;
-  assert.match(first(r).text, /ACCOUNT NO: 010800000000000099/, "الرقم مطبوع فعلًا");
+  assert.match(first(r).text, /ACCOUNT NO: 9900000000000001/, "الرقم مطبوع فعلًا");
   assert.equal(f.account, null, "ومع ذلك لا يُنسَب إلى المستفيد");
 });
 
@@ -523,4 +523,146 @@ test("ibanScanItems على صفحة بلا شيء لا ينهار", () => {
     assert.deepEqual(s.ibans, []);
     assert.equal(s.suspicious, false, "لا بادئة ⇒ لا شبهة");
   }
+});
+
+/* ═══ انحدار: التنسيق الثاني — تحويل داخل البنك نفسه ═══
+   =========================================================================
+   البنك يُخرج تنسيقين حسب نوع التحويل، وقيسا على إيصالات حقيقية:
+
+     إلى بنك آخر   : معرّف المستفيد IBAN مقطوعًا · المبلغ «#,###.## SAR»
+     داخل البنك    : معرّف المستفيد **رقم حساب** بلا IBAN إطلاقًا
+                     · المبلغ «SAR #,###.##» — العملة قبله
+
+   ثمانية من عشرة إيصالات حقيقية كانت من التنسيق الثاني، وكلّها تفشل
+   قبل هذا الإصلاح: بلا مفتاح، وبلا مبلغ، وبلا اسم مستفيد ولا بنك ولا
+   مرسل. أي أن المحلّل كان يعمل على 20% من الواقع.
+
+   أربعة أعطال عامّة، كلٌّ منها يُسقط كل إيصالات التنسيق الثاني:
+     ① صور العرض العربية: المستند يُخرج «ﻣﻦ» لا «من»، فلا وسم يطابق
+     ② العملة قبل المبلغ لا بعده
+     ③ رقم حساب المستفيد بدل IBAN — ولا يُميَّز عن حساب المُرسِل بلا نطاق
+     ④ الوسم في سطر عناوين أعمدة، فتُقرأ العناوين قيمةً
+
+   وكل البيانات هنا مُختلقة: لا حساب ولا مرجع ولا مبلغ حقيقي. */
+
+const { splitSections, accountIn, latinChunks, isHeaderRow } = require("../lib/payroll/receiptFields");
+
+test("انحدار ②: العملة قبل المبلغ تُقرأ كما تُقرأ بعده", () => {
+  assert.equal(extractFields("AMOUNT: 1,234.56 SAR").amount, 1234.56);
+  assert.equal(extractFields("AMOUNT: SAR 1,234.56").amount, 1234.56, "التنسيق الثاني يضع العملة أولًا");
+  assert.equal(extractFields("DEBIT AMOUNT SAR 3,412.08").amount, 3412.08);
+});
+
+test("انحدار ③: رقم حساب المستفيد معرّف مشروع حين يرد في نطاقه", async () => {
+  const r = await parseReceiptDocument(F.innerTransfer());
+  const f = first(r).fields;
+  assert.equal(f.iban, null, "التحويل الداخلي بلا IBAN إطلاقًا");
+  assert.equal(f.account, "8800000000000077", "ورقم الحساب هو المعرّف");
+  assert.equal(hasHardKey(f), true, "فله مفتاح قاطع رغم غياب IBAN");
+  assert.ok(f.issues.includes("no_iban"));
+});
+
+test("انحدار ③: حساب المُرسِل لا يُخلط بحساب المستفيد — بنيويًا", async () => {
+  const r = await parseReceiptDocument(F.innerTransferBothAccounts());
+  const f = first(r).fields;
+  assert.equal(f.account, "8800000000000088");
+  assert.equal(f.senderAccount, "9900000000000001");
+  assert.notEqual(f.account, f.senderAccount);
+  /* والفصل بالموضع لا بالطول: لا مسار يقرأ رقمًا من نطاق «من» ويضعه
+     في account، مهما تشابه الطولان. */
+  const sections = splitSections([
+    "FROM", "1111111111111111", "TO", "2222222222222222",
+  ]);
+  assert.equal(accountIn(sections.sender), "1111111111111111");
+  assert.equal(accountIn(sections.beneficiary), "2222222222222222");
+});
+
+test("انحدار ④: سطر عناوين الأعمدة لا يُقرأ اسمًا", () => {
+  assert.equal(isHeaderRow("FULL NAME  ACCOUNT NO  BANK NAME"), true);
+  assert.equal(isHeaderRow("الاسم الكامل رقم الحساب اسم البنك"), true);
+  assert.equal(isHeaderRow("BENEFICIARY NAME"), false, "وسمٌ واحد ليس عناوين");
+  assert.equal(isHeaderRow("SANITIZED NATIONAL BANK"), false);
+  /* والقاعدة على المعنى لا اللغة: المستند الحقيقي نجا صدفةً لأن عناوينه
+     عربية، وبنكٌ يُخرجها بالإنجليزية كان سيكسره. */
+  assert.deepEqual(
+    latinChunks(["FULL NAME  ACCOUNT NO  BANK NAME", "BENEFICIARY NAME", "880000 SOME BANK"]),
+    ["BENEFICIARY NAME", "SOME BANK"]
+  );
+});
+
+test("انحدار ④: المرجع بالنمط أولًا لا بالوسم", () => {
+  /* الوسم في سطر عناوين، والقيم في التالي. تقديمُ الوسم كان يُرجع عنوان
+     العمود التالي — نصًّا واحدًا لكل الإيصالات، فخرجت المراجع متطابقة. */
+  const f = extractFields("REFERENCE NO  VALUE DATE  DEBIT AMOUNT\nTBC2608130000077 13-08-2026 SAR 900.00");
+  assert.equal(f.reference, "TBC2608130000077");
+  assert.equal(f.date, "13-08-2026");
+  assert.equal(f.amount, 900);
+});
+
+test("انحدار ④: وسمٌ بقيمةٍ لا تشبه الحقل يُتخطّى", () => {
+  /* «الرقم المرجعي» متبوعًا بعنوانٍ آخر لا بمرجع. */
+  const f = extractFields("REFERENCE NO VALUE DATE\nلا شيء هنا");
+  assert.equal(f.reference, null, "لا يُقبل نصٌّ لا يطابق شكل المرجع");
+});
+
+test("انحدار ①: صور العرض العربية تُرجَع إلى حروفها", () => {
+  /* تُولَّد برمجيًا لا تُكتب يدويًا: كتابتها بالأكواد أخرجت «إيو» بدل
+     «إلى» في محاولة سابقة، وعيّنةٌ بوسمٍ خاطئ تختبر شيئًا آخر. */
+  const present = (word) => {
+    const map = new Map();
+    for (let cp = 0xfb50; cp <= 0xfeff; cp++) {
+      const ch = String.fromCodePoint(cp);
+      const n = ch.normalize("NFKC");
+      if (n !== ch && n.length === 1 && /[؀-ۿ]/.test(n) && !map.has(n)) map.set(n, ch);
+    }
+    return [...word].map((c) => map.get(c) || c).join("");
+  };
+  for (const word of ["من", "إلى", "التفاصيل", "الرقم المرجعي"]) {
+    const shaped = present(word);
+    assert.notEqual(shaped, word, `${word}: صورة العرض تختلف عن الحرف الأساسي`);
+    /* والتطبيع في normalizePageText هو ما يُرجعها — فوسمٌ عربي يُطابَق. */
+    const text = normalizePageText([{ x: 60, y: 700, str: shaped }]);
+    assert.equal(text, word, `${word}: NFKC يُرجعها`);
+  }
+});
+
+test("انحدار ①: وسمٌ عربي بصور العرض يُقسّم النطاقات", () => {
+  const present = (w) => {
+    const map = new Map();
+    for (let cp = 0xfb50; cp <= 0xfeff; cp++) {
+      const ch = String.fromCodePoint(cp);
+      const n = ch.normalize("NFKC");
+      if (n !== ch && n.length === 1 && /[؀-ۿ]/.test(n) && !map.has(n)) map.set(n, ch);
+    }
+    return [...w].map((c) => map.get(c) || c).join("");
+  };
+  const items = [
+    { x: 60, y: 700, str: present("من") },
+    { x: 60, y: 680, str: "1111111111111111" },
+    { x: 60, y: 660, str: present("إلى") },
+    { x: 60, y: 640, str: "2222222222222222" },
+  ];
+  const text = normalizePageText(items);
+  const sections = splitSections(text.split("\n"));
+  assert.equal(accountIn(sections.sender), "1111111111111111");
+  assert.equal(accountIn(sections.beneficiary), "2222222222222222");
+});
+
+test("مستندٌ بلا وسوم أقسام لا ينكسر", () => {
+  /* كل شيء يبقى في head، فيعمل المحلّل بالوسوم السطرية كما كان. */
+  const f = extractFields("TO: BENEFICIARY ONE\nBANK: SOME BANK\nAMOUNT: 100.00 SAR");
+  assert.equal(f.beneficiary, "BENEFICIARY ONE");
+  assert.equal(f.amount, 100);
+});
+
+test("رقمان في نطاق المستفيد ⇒ التباس، لا يُختار أحدهما", () => {
+  const sections = splitSections(["TO", "1111111111111111", "2222222222222222"]);
+  assert.equal(accountIn(sections.beneficiary), null, "أيّهما الحساب؟ لا يُخمَّن");
+});
+
+test("تاريخ القيمة يُفضَّل على تاريخ الطباعة", () => {
+  /* المستند يحمل تاريخين: تاريخ طباعة الإيصال وتاريخ القيمة — وهو
+     تاريخ التحويل الفعلي. والثاني هو المقصود. */
+  const f = extractFields("VALUE DATE - SEE BELOW\n13-08-2026\nDATE: 2026-08-13");
+  assert.equal(f.date, "13-08-2026", "تاريخ القيمة لا تاريخ الطباعة");
 });
