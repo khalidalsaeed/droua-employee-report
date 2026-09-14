@@ -133,3 +133,53 @@ test("الاستيراد لا ينفّذ السكربت", () => {
     assert.match(s.sql, /IF NOT EXISTS/, "كل عبارة idempotent");
   }
 });
+
+/* ── سكربت تهيئة جدول الإيصالات (2.4) ──
+   =========================================================================
+   لم يُنفَّذ على أي قاعدة بعد. وما يُقاس هنا أنه **لا يستطيع** أن يمسّ
+   بيانات قائمة حين يُنفَّذ: كل عبارة إنشاء، ولا ALTER على جدول موجود،
+   ولا حذف. فالمراجعة تكون على السلوك لا على النيّة. */
+
+const receiptsSetup = require("../scripts/setup-payroll-receipts.js");
+
+test("تهيئة الإيصالات: إنشاء فقط، بلا مساس ببيانات قائمة", () => {
+  assert.ok(receiptsSetup.STATEMENTS.length > 0);
+  for (const s of receiptsSetup.STATEMENTS) {
+    assert.match(s.sql, /IF NOT EXISTS/, `${s.label}: idempotent`);
+    assert.ok(!/ALTER\s+TABLE/i.test(s.sql), `${s.label}: لا ALTER على جدول قائم`);
+    assert.ok(!/\bDROP\s+(TABLE|COLUMN|INDEX)\b|\bDELETE\s+FROM\b|\bTRUNCATE\b/i.test(s.sql),
+      `${s.label}: لا عبارة حذف`);
+    assert.ok(!/\bUPDATE\b/i.test(s.sql), `${s.label}: لا تعديل بيانات`);
+  }
+});
+
+test("لا عمود يُضاف إلى payroll_transfer_proofs", () => {
+  /* نتيجةُ مخطّط 2.1: العلاقة والمبلغ والحالة تُقرأ أو تُشتقّ، فلا
+     ALTER على جدول يحمل بيانات Production. */
+  const joined = receiptsSetup.STATEMENTS.map((s) => s.sql).join(" ");
+  assert.ok(!/payroll_transfer_proofs/.test(joined));
+});
+
+test("قيود الحالة المتناقضة موجودة في المخطّط نفسه", () => {
+  const table = receiptsSetup.STATEMENTS[0].sql;
+  /* لا صفّ «مربوط» بلا موظف — حاجزٌ في القاعدة لا في الشيفرة وحدها. */
+  assert.match(table, /link_status = 'linked'\) = \(employee_eid IS NOT NULL\)/);
+  /* والحسم قرار إنسان: لا حالة محسومة بلا أثر. */
+  assert.match(table, /dup_state IN \('distinct','redundant'\)\) = \(dup_resolved_at IS NOT NULL\)/);
+  /* والمدى جزء من مفتاح عدم التكرار — بلاه تتصادم إيصالات الملفّ الواحد. */
+  assert.match(table, /UNIQUE \(run_id, source_hash, page_from, page_to\)/);
+});
+
+test("التراجع موجود ومحروس", () => {
+  assert.equal(receiptsSetup.ROLLBACK.length, 1);
+  assert.match(receiptsSetup.ROLLBACK[0].sql, /DROP TABLE IF EXISTS payroll_receipts/);
+  /* ولا يمسّ غيره — ولا يمكن أن يمسّ، لأن التهيئة لم تُضف عمودًا
+     إلى جدول قائم فلا شيء يُتراجع عنه هناك. */
+  assert.ok(!/payroll_transfer_proofs|payroll_runs|employees/.test(receiptsSetup.ROLLBACK[0].sql));
+});
+
+test("الفهرس على الموظف غير فريد: split payment مسموح", () => {
+  const idx = receiptsSetup.STATEMENTS.find((s) => /employee/.test(s.label));
+  assert.ok(idx, "الفهرس موجود");
+  assert.ok(!/UNIQUE/i.test(idx.sql), "قيدٌ فريد هنا كان يرفض الإيصال الثاني لنفس الموظف");
+});
