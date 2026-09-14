@@ -66,6 +66,9 @@ const STATEMENTS = [
         match_key      text,
         link_status    text        NOT NULL,
         link_reason    text,
+        -- رمز ثابت للآلة بجانب النصّ العربي للإنسان: عبارةٌ تُعاد
+        -- صياغتها لا تكسر واجهةً ولا تقريرًا.
+        link_reason_code text,
         candidates     jsonb,
         linked_at      timestamptz,
         linked_by      text,
@@ -85,7 +88,12 @@ const STATEMENTS = [
         CONSTRAINT payroll_receipts_key_with_employee
           CHECK ((employee_eid IS NULL) = (match_key IS NULL)),
         CONSTRAINT payroll_receipts_key_known
-          CHECK (match_key IS NULL OR match_key IN ('iban','account','manual')),
+          CHECK (match_key IS NULL OR match_key IN ('iban','account+bank','manual')),
+        -- رقم الحساب الداخلي ليس فريدًا عالميًا: بنكان قد يُصدران الرقم
+        -- نفسه. فالربط به مقيَّد بسياق بنكه، والقيد هنا يمنع صفًّا
+        -- مربوطًا بحساب بلا بنك حتى لو أخطأت طبقةُ الربط يومًا.
+        CONSTRAINT payroll_receipts_account_key_needs_bank
+          CHECK (match_key IS DISTINCT FROM 'account+bank' OR ext_bank IS NOT NULL),
 
         -- البُعد الثالث: التكرار — مستقلّ تمامًا عن الربط
         CONSTRAINT payroll_receipts_dup_known

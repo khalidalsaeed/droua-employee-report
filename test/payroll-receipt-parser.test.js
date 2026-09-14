@@ -5,6 +5,7 @@ const {
   normalizePageText, receiptHash, extractFields, hasHardKey, findIbans, toHalalas,
 } = require("../lib/payroll/receiptFields");
 const { readPages, splitByNewIban, parseReceiptDocument } = require("../lib/payroll/receiptDoc");
+const P = require("../lib/payroll/receiptFields");
 const F = require("./fixtures/receipts.js");
 
 /* محلّل إيصالات التحويل — المرحلة 2.2 من تاسك أجير.
@@ -782,4 +783,65 @@ test("القاعدة مُمرَّرة اعتماديةً ويُعلَن أيّه
   assert.equal(r.rule, "one_page_one_receipt");
   assert.equal(r.receipts.length, 3);
   assert.equal(r.receipts[0].startReason, "forced");
+});
+
+/* ═══ قطعة الـIBAN ليست رقم حساب ═══
+   =========================================================================
+   التنسيق الحقيقي يطبع الآيبان مقطوعًا على عنصرين، فيلتقط مستخرِجُ
+   الحساب القطعةَ الأولى (أربعة عشر رقمًا بعد `SA`) ويُخرجها «رقم حساب».
+   وهو رقمٌ لم يُطبع قطّ بهذه الصفة: بيانٌ مُخترَع يُخزَّن في
+   `ext_account` فيصير مرجعًا يُعتمد عليه لاحقًا.
+
+   ولا يكفي أن الربط لا يستعمله اليوم (IBAN أقوى ولا نزول منه): العمود
+   يُقرأ بأعين أخرى، والحاجز على القيمة المخزَّنة لا على من يقرؤها. */
+
+test("قطعة IBAN لا تُخزَّن رقم حساب — على التنسيق الحقيقي", async () => {
+  const r = await readPages(F.ibanFragmentAccount());
+  const page = r.pages[0];
+  const lines = String(page.text).split("\n").map((l) => l.trim()).filter(Boolean);
+
+  /* برهان العضّ ①: المستخرِج الخام ما زال يلتقط القطعة من نطاق «إلى».
+     فلو حُذف الحاجز لعادت القيمة إلى الحقل — وهذا ما يجعل التأكيد
+     التالي ذا معنى بدل أن يمرّ على شيفرة معطوبة. */
+  const chunk = P.accountIn(P.splitSections(lines).beneficiary);
+  assert.equal(typeof chunk, "string", "القطعة ما زالت تُلتقَط خامًا");
+  assert.equal(chunk.length, 14, "أربعة عشر رقمًا — ما بعد SA في العنصر الأول");
+
+  /* برهان العضّ ②: ومع ذلك لا تخرج حسابًا. */
+  const f = P.extractFields(page.text, { ibanScan: P.ibanScanItems(page.items) });
+  assert.equal(f.iban.length, 24, "الآيبان كامل");
+  assert.ok(f.iban.includes(chunk), "والقطعة جزءٌ منه فعلًا");
+  assert.equal(f.account, null, "ولا حساب — القطعة ليست رقم حساب");
+  assert.ok(f.issues.includes("account_is_iban_fragment"), "والسبب مُعلَن لا صامت");
+});
+
+test("قطعة IBAN لا تُخزَّن رقم حساب — عبر المسار الكامل من PDF", async () => {
+  const { readPages, parseReceiptDocument } = require("../lib/payroll/receiptDoc");
+  const pdf = F.single();
+  const doc = await parseReceiptDocument(pdf);
+  assert.equal(doc.ok, true);
+  for (const r of doc.receipts) {
+    if (!r.fields.iban) continue;
+    assert.equal(r.fields.account, null, "إيصالٌ بآيبان لا يخرج منه حساب");
+  }
+});
+
+test("حساب مطبوع مستقلًّا يبقى — الحاجز على القطعة لا على كل حساب", () => {
+  /* التحويل داخل البنك: رقم حساب حقيقي ولا آيبان إطلاقًا. */
+  const f = P.extractFields("من\nSENDER CO\nإلى\n990000000000001\nBENEFICIARY ONE\nSANITIZED BANK");
+  assert.equal(f.account, "990000000000001", "حسابٌ لا آيبان معه يبقى كما هو");
+  assert.ok(!f.issues.includes("account_is_iban_fragment"));
+});
+
+test("isIbanFragment: الاحتواء الحرفي وحده، بلا تقريب", () => {
+  const iban = "SA9012345678901234567890";
+  assert.equal(P.isIbanFragment("12345678901234", [iban]), true, "قطعة منه");
+  assert.equal(P.isIbanFragment("78901234567890", [iban]), true, "قطعة من ذيله");
+  assert.equal(P.isIbanFragment("990000000000001", [iban]), false, "رقم آخر لا يُمَسّ");
+  assert.equal(P.isIbanFragment("12345678901234", []), false, "بلا آيبان لا حذف");
+  assert.equal(P.isIbanFragment(null, [iban]), false);
+  /* الآيبان نفسه ليس «قطعة» من نفسه — وإلّا لصار أي تطابق تامّ حذفًا. */
+  assert.equal(P.isIbanFragment(iban, [iban]), false);
+  /* ويشمل كل آيبان اكتمل في المسح لا المختار وحده. */
+  assert.equal(P.isIbanFragment("11111111111111", ["SA9011111111111111111111", iban]), true);
 });

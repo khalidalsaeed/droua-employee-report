@@ -325,9 +325,34 @@ const malformed = () => Buffer.from("هذا ليس ملفّ PDF على الإط�
 /* PDF مقطوع: ترويسة سليمة وبقية مبتورة */
 const truncated = () => single().slice(0, 200);
 
+
+/* التنسيق الحقيقي الذي أخرج «حسابًا» لا وجود له.
+   =========================================================================
+   الآيبان مقطوع على عنصرين داخل نطاق «إلى»، فتلتقط قاعدةُ رقم الحساب
+   القطعةَ الأولى — أربعة عشر رقمًا بعد SA — وتُخرجها رقم حساب. وهذا ما
+   وقع فعلًا على إيصالات التحويل إلى بنك آخر.
+
+   والمرجع هنا بلا سلسلة رقمية طويلة عمدًا: العيّنة تعزل الظاهرة وحدها،
+   فوجود مرشّح ثانٍ يُرجع accountIn فارغًا ويُخفيها. */
+const ibanFragmentAccount = () => buildPdf([
+  [
+    textOp(60, 780, "TRANSACTION DETAILS", 11),
+    textOp(60, 730, AR_FROM),
+    textOp(60, 710, SENDER),
+    textOp(60, 660, AR_TO),
+    textOp(217, 422, iban(41).slice(0, 16)),
+    textOp(60, 418, "BENEFICIARY FORTY ONE"),
+    textOp(60, 412, BANK),
+    textOp(291, 407, iban(41).slice(16)),
+    textOp(60, 360, "AMOUNT: 1,234.56 SAR"),
+    textOp(60, 340, "REFERENCE NO: TBC-AB-CD"),
+    textOp(60, 60, "SANITIZED FIXTURE - REAL LAYOUT, FAKE DATA", 7),
+  ].join("\n"),
+]);
+
 const FIXTURES = {
   single, wholeIban, noIban, badAmount, conflictingAmounts, repeatedAmount,
-  twoIbans, realLayout, realLayoutDecoy, realLayoutAmbiguous,
+  twoIbans, realLayout, realLayoutDecoy, realLayoutAmbiguous, ibanFragmentAccount,
   innerTransfer, innerTransferBothAccounts,
   accountBundle, mixedBundle, splitPaymentBundle, accountBundleWithSpan,
   bundle, bundleWithSpan, bundleLeadingOrphan, malformed, truncated,
