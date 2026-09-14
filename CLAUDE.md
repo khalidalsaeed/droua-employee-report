@@ -21,7 +21,8 @@
 | 2.2 — المحلّل الفردي | ✅ مكتملة · validated على عشرة إيصالات حقيقية |
 | 2.2b — تقسيم المجمّع | ✅ `beneficiary_identifier_boundary` · validated على مجمّع حقيقي 10/10 |
 | 2.4 — مسار ingest (الطبقة النقيّة) | ✅ مكتملة · الربط بالزوج (حساب · بنك) |
-| Migration على Production | ⛔ **معلَّق على GO صريح** |
+| التحقّق المحلّي (read-only) | ✅ `scripts/validate-receipt-linking.js` · SELECT فقط · بلا PII |
+| Migration على Production | ⛔ **معلَّق على GO صريح** بعد نتيجة التحقّق |
 | 2.5 فما بعد (`pdf-lib` · extract · API · UI) | ⛔ **لم تبدأ** |
 
 ### قاعدة تقسيم المجمّع — `beneficiary_identifier_boundary`
