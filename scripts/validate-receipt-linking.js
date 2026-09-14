@@ -209,11 +209,114 @@ function linkReport(receipts, employees, index) {
   return out;
 }
 
+/* ─── ⑤ تشخيص حالة account_no_owner ─── */
+
+/* «رقم حساب الإيصال لا يقابل أي موظف» سببٌ واحد بأربعة أصول مختلفة
+   العلاج: سجلٌّ بلا حساب · سجلٌّ بلا بنك · فرقُ صيغةٍ في الرقم · أو
+   إيصالٌ لموظف آخر أصلًا. وبلا تمييزها يُفتَح عشرة سجلّات بحثًا عمّا
+   يخصّ واحدًا.
+
+   ── كيف يُعرَف الموظف المقابل بلا مطابقة اسم ──
+   بالإقصاء: إذا بقي في المسير موظفٌ واحد بلا إيصال مربوط، وبقي إيصالٌ
+   واحد بهذا السبب، فهما متقابلان بالضرورة — لا تخمين فيه ولا اسم
+   يُقارَن. وإن تعدّد أيّ الطرفين فالإقصاء لا يحسم، ويُقال unknown بدل
+   أن يُختار أحدهم.
+
+   ويُضاف تأكيدٌ ثانٍ بلا طباعة: هل يتّفق اسم المستفيد على الإيصال مع
+   الاسم البنكي في السجلّ؟ يُعرَض yes/no وحدهما — والاسمان لا يخرجان. */
+
+/* مطابقات أضعف من التطابق التامّ، للتشخيص وحده — لا يربط منها شيء.
+   أصلُ فرقِ الصيغة المعروف: أصفارٌ بادئة تُكتب في جهة وتُسقط في أخرى،
+   وBBAN داخل الآيبان يحمل الحساب مسبوقًا بأصفار. */
+const stripZeros = (v) => String(v || "").replace(/^0+/, "");
+function looseMatch(receiptAccount, record) {
+  const a = M.normId(receiptAccount);
+  if (!a) return "none";
+  const acc = M.normId(record[M.F_ACCOUNT]);
+  const iban = M.normId(record[M.F_IBAN]);
+  if (acc && acc === a) return "exact_account";
+  if (acc && stripZeros(acc) === stripZeros(a)) return "leading_zeros";
+  if (acc && (acc.includes(a) || a.includes(acc))) return "substring_account";
+  if (iban && iban.includes(a)) return "inside_iban";
+  return "none";
+}
+
+/* يُرجَع تقرير الحالة الواحدة — أو حالاتها إن تعدّدت. */
+function diagnoseAccountNoOwner(receipts, employees, index) {
+  const linked = receipts.map((r) => ({ r, link: M.linkReceipt(r, index) }));
+  const orphans = linked.filter((x) => x.link.linkReasonCode === "account_no_owner");
+
+  const claimed = new Set(linked.filter((x) => x.link.employeeEid).map((x) => x.link.employeeEid));
+  const unmatched = employees.filter((e) => !claimed.has(String(e[M.F_DAMANAH] || "").trim()));
+
+  const has = (e, f) => String(e && e[f] != null ? e[f] : "").trim() !== "";
+  const yn = (b) => (b ? "yes" : "no");
+
+  /* الإقصاء يحسم حين يبقى واحدٌ في كل جهة، ولا يحسم فيما عدا ذلك. */
+  const decided = orphans.length === 1 && unmatched.length === 1 ? unmatched[0] : null;
+
+  const out = {
+    account_no_owner_count: orphans.length,
+    payroll_employees_without_linked_receipt: unmatched.length,
+    corresponding_employee_identified_by_elimination: yn(!!decided),
+  };
+
+  if (!decided) {
+    out.corresponding_payroll_employee_has_identifier = "unknown";
+    out.employee_record_has_account = "unknown";
+    out.employee_record_has_iban = "unknown";
+    out.employee_record_has_bank = "unknown";
+    out.beneficiary_name_agrees_with_record = "unknown";
+    out.receipt_account_matches_any_record_raw = orphans.length
+      ? yn(orphans.some((x) => (index.byAccount.get(M.normId(x.r.extAccount)) || []).length > 0))
+      : "n/a";
+    out.receipt_account_loose_match = "unknown";
+    out.likely_reason = "unknown";
+    return out;
+  }
+
+  const { r } = orphans[0];
+  const hasAccount = has(decided, M.F_ACCOUNT);
+  const hasIban = has(decided, M.F_IBAN);
+  const hasBank = has(decided, M.F_BANK);
+
+  /* التطابق التامّ الخام: لا بدّ أن يكون no — لأن account_no_owner لا
+     تُرجَع إلا حين يخلو فهرس الرقم الخام. ويُطبع مع ذلك، فغيابه من
+     التقرير يجعل القارئ يتساءل، ووجوده yes يومًا يعني أن السبب
+     نفسه صار يُرجَع من فرع آخر — عطلٌ يجب أن يُرى. */
+  const rawAnywhere = (index.byAccount.get(M.normId(r.extAccount)) || []).length > 0;
+  const mine = looseMatch(r.extAccount, decided);
+  const other = employees.some((e) => e !== decided && looseMatch(r.extAccount, e) !== "none");
+
+  const warn = M.nameWarning(r, decided);
+  out.corresponding_payroll_employee_has_identifier = yn(hasAccount || hasIban);
+  out.employee_record_has_account = yn(hasAccount);
+  out.employee_record_has_iban = yn(hasIban);
+  out.employee_record_has_bank = yn(hasBank);
+  out.beneficiary_name_agrees_with_record =
+    !r.extBeneficiary || !decided[M.F_NAME_BANK] ? "unknown" : yn(!warn);
+  out.receipt_account_matches_any_record_raw = yn(rawAnywhere);
+  out.receipt_account_loose_match = mine;
+  out.receipt_account_loose_match_other_employee = yn(other);
+
+  /* الترتيب هو المنطق: كل صورة نقصٍ في السجلّ تُحسم قبل أي حكم على
+     الصيغة، فلا يُقال «فرق صيغة» عن سجلٍّ لا حساب فيه أصلًا. */
+  out.likely_reason =
+    !hasAccount && !hasIban ? "missing_employee_account"
+    : mine !== "none" && !hasBank ? "missing_employee_bank_data"
+    : mine !== "none" ? "receipt_account_format_difference"
+    : other ? "receipt_belongs_to_other_employee"
+    : !hasAccount ? "missing_employee_account"
+    : !hasBank ? "missing_employee_bank_data"
+    : "unknown";
+  return out;
+}
+
 /* ─── الطباعة ─── */
 
 const line = (k, v) => console.log(`${k}: ${v}`);
 
-function print(cov, uniq, link, meta, showBanks) {
+function print(cov, uniq, link, meta, showBanks, diag) {
   console.log("═══ تحقّق الربط — تاسك أجير · قراءة فقط ═══");
   line("scope", meta.scope);
   console.log("");
@@ -250,6 +353,12 @@ function print(cov, uniq, link, meta, showBanks) {
   console.log("");
   for (const [k, v] of Object.entries(link.reasons)) line(k, v);
   console.log("");
+
+  if (diag) {
+    console.log("── ⑤ تشخيص account_no_owner ──");
+    for (const [k, v] of Object.entries(diag)) line(k, v);
+    console.log("");
+  }
 
   console.log("── ④ اختلاف صيغ أسماء البنوك ──");
   const pairs = [...link.aliasPairs.values()].sort((a, b) => b.count - a.count);
@@ -297,15 +406,20 @@ async function main() {
   const uniq = uniqueness(index);
 
   let link = null;
+  let diag = null;
   const meta = { scope, files: 0, failed: [] };
   if (receiptsDir) {
     const read = await readReceipts(receiptsDir);
     meta.files = read.files;
     meta.failed = read.failed;
     link = linkReport(read.receipts, employees, index);
+    /* لا يُشخَّص إلا ما وقع فعلًا: بلا حالة لا قسم. */
+    if (link.reasons.account_no_owner > 0) {
+      diag = diagnoseAccountNoOwner(read.receipts, employees, index);
+    }
   }
 
-  print(cov, uniq, link, meta, showBanks);
+  print(cov, uniq, link, meta, showBanks, diag);
 }
 
 /* يُصدَّر ليُختبر منطقُه كما يُختبر أي منطق: تقريرٌ معطوب يمحو أثر
@@ -313,6 +427,7 @@ async function main() {
    وmain لا تعمل إلا عند التشغيل المباشر، فلا يفتح require اتصالًا. */
 module.exports = {
   selectOnly, labeller, coverage, uniqueness, linkReport, readEmployees, readReceipts, print,
+  diagnoseAccountNoOwner, looseMatch,
   Q_EMPLOYEES, Q_RUN_EIDS, main,
 };
 

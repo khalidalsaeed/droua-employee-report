@@ -324,12 +324,16 @@ test("normBank لا يقارب: بنكان مختلفان يبقيان مختل�
   ne("BANK ONE", "BANK TWO");
 });
 
-test("جدول المرادفات فارغ عمدًا، والآلية تعمل حين يُملأ", () => {
-  /* الاختصار لا يساوي الاسم الكامل بلا مرادف مُعلَن — فشلٌ آمن مقصود. */
-  assert.notEqual(M.normBank("SNB"), M.normBank("SANITIZED NATIONAL BANK"));
-  assert.deepEqual(Object.keys(M.BANK_ALIASES), [], "لا مرادف مُخمَّن في الشيفرة");
+test("جدول المرادفات مقصورٌ على المُثبَتين، والآلية تعمل بلا تخمين", () => {
+  /* الجدول مثبَّت بأعيانه: مرادفٌ ثالث يُضاف يومًا بلا تحقّق يُسقط هذا
+     الاختبار، فلا يمرّ صامتًا. وكلٌّ من الاثنين رُئي في مستند حقيقي
+     وسجلّ حقيقي معًا. */
+  assert.deepEqual(Object.keys(M.BANK_ALIASES).sort(), ["ALINMABANK", "ARABNATIONALBANK"]);
 
-  /* وحين يُملأ بمرادف صريح، يربط — والآلية مُختبرة بلا تخمين أسماء. */
+  /* وما لا مرادف له يبقى بلا مرادف — فشلٌ آمن مقصود. */
+  assert.notEqual(M.normBank("SNB"), M.normBank("SANITIZED NATIONAL BANK"));
+
+  /* والآلية تعمل بجدول ممرَّر أيضًا، فتُختبر بلا تخمين أسماء. */
   const aliases = { SNB: "SANITIZEDNATIONALBANK" };
   assert.equal(M.normBank("SNB", aliases), M.normBank("SANITIZED NATIONAL BANK", aliases));
 
@@ -339,8 +343,73 @@ test("جدول المرادفات فارغ عمدًا، والآلية تعمل 
   assert.equal(r.employeeEid, "900");
 
   /* والفهرس يحمل مرادفاته معه: قائمةٌ أخرى لا تسرّب ربطًا. */
-  const bare = M.indexEmployees([empAcc("900", "SANITIZED NATIONAL BANK")]);
+  const bare = M.indexEmployees([empAcc("900", "SANITIZED NATIONAL BANK")], { bankAliases: {} });
   assert.equal(M.linkReceipt({ extAccount: ACC, extBank: "SNB" }, bare).linkStatus, "unlinked");
+});
+
+/* ═══ ③d المرادفان المُثبَتان — على صيغهما الحقيقية ═══
+   =========================================================================
+   أسماء مؤسّسات لا أشخاص، فلا تمسّها سياسة البيانات. وهي الصيغتان
+   اللتان قاسهما التحقّق المحلّي: الإيصال لاتينيّ والسجلّ عربيّ. */
+
+const REAL_PAIRS = [
+  { latin: "ARAB NATIONAL BANK", arabic: "البنك العربي الوطني" },
+  { latin: "ALINMA BANK", arabic: "مصرف الإنماء" },
+];
+
+test("الصيغة اللاتينية في الإيصال تطابق العربية في السجلّ", () => {
+  for (const { latin, arabic } of REAL_PAIRS) {
+    assert.equal(M.normBank(latin), M.normBank(arabic), `${latin} = ${arabic}`);
+  }
+});
+
+test("والمرادف يعبر الفهرسة والربط لا التطبيع وحده", () => {
+  /* برهان العضّ: بلا المرادف كان البنك يتعارض فيخرج unlinked. */
+  for (const { latin, arabic } of REAL_PAIRS) {
+    const idx = M.indexEmployees([empAcc("900", arabic)]);
+    const r = M.linkReceipt({ extAccount: ACC, extBank: latin }, idx);
+    assert.equal(r.linkStatus, "linked", `${latin} يربط بسجلّ ${arabic}`);
+    assert.equal(r.employeeEid, "900");
+    assert.equal(r.matchKey, "account+bank");
+
+    const bare = M.indexEmployees([empAcc("900", arabic)], { bankAliases: {} });
+    assert.equal(M.linkReceipt({ extAccount: ACC, extBank: latin }, bare).linkReasonCode,
+      "bank_mismatch", "وبلا الجدول يتعارض — فالمرادف هو الفارق");
+  }
+});
+
+test("المرادفان لا يوحّدان بنكين مختلفين", () => {
+  /* التبادل ممنوع: اسم أحدهما لا يطابق سجلّ الآخر بأي صيغة. */
+  const [anb, alinma] = REAL_PAIRS;
+  assert.notEqual(M.normBank(anb.latin), M.normBank(alinma.arabic));
+  assert.notEqual(M.normBank(alinma.latin), M.normBank(anb.arabic));
+  assert.notEqual(M.normBank(anb.arabic), M.normBank(alinma.arabic));
+  assert.notEqual(M.normBank(anb.latin), M.normBank(alinma.latin));
+
+  const idx = M.indexEmployees([empAcc("900", alinma.arabic)]);
+  assert.equal(M.linkReceipt({ extAccount: ACC, extBank: anb.latin }, idx).linkReasonCode,
+    "bank_mismatch", "بنك آخر لا يربط ولو تطابق الرقم");
+});
+
+test("لا مطابقة تقريبية حول المرادفين", () => {
+  const anb = M.normBank("ARAB NATIONAL BANK");
+  /* أسماء تتقاطع في كلمة أو بادئة أو حرف — ولا واحدة منها تُدمَج. */
+  for (const other of [
+    "ARAB BANK", "NATIONAL BANK", "ARAB NATIONAL BANK GROUP",
+    "ARABNATIONALBANKX", "SAUDI NATIONAL BANK",
+    "البنك العربي", "البنك الوطني", "البنك العربي الوطني السعودي",
+  ]) {
+    assert.notEqual(M.normBank(other), anb, `${other} ليس البنك نفسه`);
+  }
+
+  const alinma = M.normBank("ALINMA BANK");
+  for (const other of ["ALINMA", "AL INMA GROUP", "INMA BANK", "مصرف الراجحي", "الإنماء للاستثمار"]) {
+    assert.notEqual(M.normBank(other), alinma, `${other} ليس البنك نفسه`);
+  }
+
+  /* وما يُدمَج فعلًا هو اختلاف الكتابة وحده — لا أكثر. */
+  assert.equal(M.normBank("  arab-national  BANK. "), anb, "فراغٌ وترقيمٌ وحالة حرف");
+  assert.equal(M.normBank("البنك العربي الوطنى"), M.normBank("البنك العربي الوطني"), "ى = ي");
 });
 
 test("تطبيع البنك يعبر الفهرسة والربط معًا", () => {
