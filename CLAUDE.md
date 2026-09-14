@@ -22,7 +22,7 @@
 | 2.2b — تقسيم المجمّع | ✅ `beneficiary_identifier_boundary` · validated على مجمّع حقيقي 10/10 |
 | 2.4 — مسار ingest (الطبقة النقيّة) | ✅ مكتملة · الربط بالزوج (حساب · بنك) |
 | التحقّق المحلّي (read-only) | ✅ `scripts/validate-receipt-linking.js` · SELECT فقط · بلا PII |
-| Migration على Production | ⛔ **معلَّق على GO صريح** بعد نتيجة التحقّق |
+| Migration على Production | 🟡 **GO معتمد** · التنفيذ محلّي (لا `DATABASE_URL` في بيئة Claude) |
 | 2.5 فما بعد (`pdf-lib` · extract · API · UI) | ⛔ **لم تبدأ** |
 
 ### قاعدة تقسيم المجمّع — `beneficiary_identifier_boundary`
@@ -92,6 +92,49 @@ IBAN المستفيد                       ⇐ مفتاح قاطع مستقلّ
 ثالث يُدسّ بلا تحقّق يُسقطه. **ولا يُضاف اسم إلا بعد رؤيته في مستند
 حقيقي وسجلّ حقيقي معًا**: مرادفٌ خاطئ يوحّد بنكين، فيصير رقمٌ يحمله
 شخصان مفتاحًا واحدًا — وذاك ما بُنيت القاعدة لمنعه.
+
+### حسم زوج التكرار — تصميم معتمد، لم يُنفَّذ بعد
+
+معتمد للتنفيذ المستقبلي. ولا API له اليوم.
+
+```sql
+BEGIN;
+SELECT id, dup_state FROM payroll_receipts
+ WHERE id IN ($a, $b) ORDER BY id FOR UPDATE;   -- الترتيب بالمعرّف يمنع deadlock
+
+UPDATE payroll_receipts AS r SET
+    dup_state = v.state, dup_resolved_at = now(),
+    dup_resolved_by = $actor, dup_note = $note
+  FROM (VALUES ($a::bigint, $stateA), ($b::bigint, $stateB)) AS v(id, state)
+ WHERE r.id = v.id AND r.run_id = $run AND r.dup_state = 'candidate'
+RETURNING r.id;
+-- rowCount === 2 ⇒ COMMIT.  غير ذلك ⇒ ROLLBACK، بلا استثناء.
+COMMIT;
+```
+
+**العبارة الواحدة ليست ضمانًا.** ذرّيتها تمنع كتابةً نصفيّة، ولا تمنع
+**مطابقةً نصفيّة**: `UPDATE` طابق صفًّا واحدًا يخرج ناجحًا وقد حسم طرفًا
+وترك الآخر `candidate`. فالضمان هو المعاملة الكاملة **و**`rowCount === 2`
+ثم `ROLLBACK` عند غير ذلك. وهو يلتقط: طرفًا لم يعد `candidate` · صفًّا من
+مسير آخر · صفًّا حُذف · و`$a === $b`.
+
+**والقراران البشريان كلاهما مشروع، ولا يُفترض أحدهما:**
+
+| الحالة | `$stateA` | `$stateB` |
+|---|---|---|
+| نسخة فعلية من إيصال واحد | `distinct` | `redundant` |
+| تحويلان حقيقيان لمستفيد واحد (split payment) | `distinct` | `distinct` |
+
+فـ«مرشّح للتكرار» يعني **تطابق النصّ** لا «أحدهما زائد». وافتراض
+`redundant` دائمًا **يُنقص مبلغًا بصمت** — وهو أسوأ من إبقاء الحالة
+معلّقة. ولهذا الحالتان معاملان (`$stateA`/`$stateB`) لا ثابتان في
+الشيفرة، وقيد `payroll_receipts_dup_resolution` يقبل الزوجين `distinct`
+لأنه يفحص كل صفّ على حدة.
+
+و`duplicate_of` لا يُكتب في الحسم إطلاقًا: هو مرجع الكشف الذي وُضع عند
+الـingest، والحسم يغيّر **الحالة** لا **النسب** — فلا صفّ يفقد مرجعه
+بحسمٍ فاشل. وطلبان متزامنان: الثاني ينتظر القفل ثم يجد الشرط غير
+محقَّق فيتراجع — «حُسم قبل قليل»، لا حسم مزدوج.
 
 ### ما أثبتته المستندات الحقيقية
 
