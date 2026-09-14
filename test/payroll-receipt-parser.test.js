@@ -666,3 +666,120 @@ test("تاريخ القيمة يُفضَّل على تاريخ الطباعة", 
   const f = extractFields("VALUE DATE - SEE BELOW\n13-08-2026\nDATE: 2026-08-13");
   assert.equal(f.date, "13-08-2026", "تاريخ القيمة لا تاريخ الطباعة");
 });
+
+/* ═══ تقسيم المجمّع: حدُّ معرّف المستفيد ═══
+   =========================================================================
+   القاعدة السابقة (new_iban_starts_receipt) فشلت على أول مجمّع حقيقي:
+   عشر صفحات فيها عشرة إيصالات أنتجت **إيصالين**، ابتلع أحدهما ستّ
+   صفحات، وخرجت صفحتان يتيمتين — لأن ثمانية من العشرة بلا IBAN.
+
+   والحدّ الآن **وجود معرّف مستفيد**: IBAN، أو رقم حساب في نطاق «إلى».
+
+   ولماذا «الوجود» لا «التغيّر»: موظف قد يتلقّى تحويلين في الشهر نفسه
+   (split payment — حالة مشروعة معتمدة في المخطّط)، وإيصالاهما
+   المتتاليان يحملان المعرّف نفسه. فقاعدة «التغيّر» تدمجهما وتُخفي
+   أحدهما — وذاك أسوأ من false split لأنه يُنقص مبلغًا بصمت. */
+
+const { splitByBeneficiaryIdentifier, beneficiaryIdOf, splitByNewIban: legacySplit } =
+  require("../lib/payroll/receiptDoc");
+
+test("مجمّع بحسابات بلا IBAN: إيصال لكل صفحة", async () => {
+  const r = await parseReceiptDocument(F.accountBundle(5));
+  assert.equal(r.ok, true, r.reason);
+  assert.equal(r.rule, "beneficiary_identifier_boundary");
+  assert.equal(r.receipts.length, 5, "خمس صفحات ⇒ خمسة إيصالات");
+  assert.deepEqual(r.orphanPages, []);
+  for (const rec of r.receipts) {
+    assert.equal(rec.identifierType, "account");
+    assert.equal(rec.startReason, "beneficiary_account");
+  }
+});
+
+test("انحدار: القاعدة السابقة تفشل على المجمّع نفسه", async () => {
+  /* توثيقٌ حيّ لسبب تغيير القاعدة — لا مجرّد تعليق. */
+  const r = await parseReceiptDocument(F.accountBundle(5), { splitRule: legacySplit });
+  assert.notEqual(r.receipts.length, 5, "IBAN وحده لا يجد حدًّا هنا");
+  assert.equal(r.rule, "no_iban_whole_document", "فيبتلع المجمّع كلّه في إيصال");
+});
+
+test("مجمّع مختلط: IBAN وحساب متناوبين", async () => {
+  const r = await parseReceiptDocument(F.mixedBundle());
+  assert.equal(r.receipts.length, 4);
+  assert.deepEqual(r.receipts.map((x) => x.identifierType), ["account", "iban", "account", "iban"]);
+  assert.deepEqual(r.orphanPages, []);
+  /* وكل إيصال يحمل معرّفه هو. */
+  assert.equal(new Set(r.receipts.map((x) => x.fields.iban || x.fields.account)).size, 4);
+});
+
+test("split payment: إيصالان لنفس المستفيد يبقيان اثنين", async () => {
+  const r = await parseReceiptDocument(F.splitPaymentBundle());
+  assert.equal(r.receipts.length, 2, "دمجهما يُخفي مبلغًا بصمت");
+  /* ويُوسَم الثاني كي يراه الإنسان ولا يُخمَّن له معنى. */
+  assert.equal(r.receipts[0].sameIdentifierAsPrevious, false);
+  assert.equal(r.receipts[1].sameIdentifierAsPrevious, true);
+  assert.equal(r.receipts[0].fields.account, r.receipts[1].fields.account);
+  /* والمبلغان مختلفان — وهو ما يجعل الدمج خسارةً لا تكرارًا. */
+  assert.notEqual(r.receipts[0].fields.amount, r.receipts[1].fields.amount);
+});
+
+test("صفحة بلا معرّف بعد إيصال بدأ = تكملته", async () => {
+  const r = await parseReceiptDocument(F.accountBundleWithSpan());
+  assert.equal(r.sourcePages, 3);
+  assert.equal(r.receipts.length, 2);
+  assert.deepEqual([r.receipts[0].pageFrom, r.receipts[0].pageTo], [1, 2]);
+  assert.deepEqual([r.receipts[1].pageFrom, r.receipts[1].pageTo], [3, 3]);
+  assert.deepEqual(r.orphanPages, []);
+});
+
+test("لا صفحة تُتخطّى: Σ المديات + اليتيمة = عدد الصفحات", async () => {
+  for (const [name, buf] of [
+    ["حسابات", F.accountBundle(5)], ["مختلط", F.mixedBundle()],
+    ["split", F.splitPaymentBundle()], ["امتداد", F.accountBundleWithSpan()],
+    ["IBANات", F.bundle(10)], ["يتيمة أولى", F.bundleLeadingOrphan()],
+  ]) {
+    const r = await parseReceiptDocument(buf);
+    const covered = r.receipts.reduce((a, x) => a + (x.pageTo - x.pageFrom + 1), 0);
+    assert.equal(covered + r.orphanPages.length, r.sourcePages, `${name}: صفحة ضائعة`);
+  }
+});
+
+test("beneficiaryIdOf: IBAN يُقدَّم على الحساب", () => {
+  const withBoth = {
+    pageNo: 1,
+    text: "TO\n1111111111111111 SOME BANK",
+    items: [
+      { x: 217, y: 422, str: "SA91000100010001" },
+      { x: 291, y: 407, str: "00010001" },
+    ],
+  };
+  const found = beneficiaryIdOf(withBoth);
+  assert.equal(found.type, "iban", "IBAN أقوى: رمز بلد ومنزلتا تحقّق");
+});
+
+test("beneficiaryIdOf: حساب المُرسِل ليس معرّفًا للمستفيد", () => {
+  const senderOnly = { pageNo: 1, text: "FROM\n9900000000000001\nDETAILS\nnothing", items: [] };
+  assert.equal(beneficiaryIdOf(senderOnly), null, "لا معرّف ⇒ لا حدّ");
+  const both = { pageNo: 1, text: "FROM\n9900000000000001\nTO\n8800000000000002", items: [] };
+  const f = beneficiaryIdOf(both);
+  assert.equal(f.id, "8800000000000002", "من نطاق «إلى» وحده");
+  assert.equal(f.type, "account");
+});
+
+test("مجمّع بلا أي معرّف يبقى إيصالًا واحدًا لا صفر", async () => {
+  const r = await parseReceiptDocument(F.noIban());
+  assert.equal(r.rule, "no_identifier_whole_document");
+  assert.equal(r.receipts.length, 1, "لا يضيع المستند");
+  assert.equal(r.receipts[0].startReason, "no_identifier_whole_document");
+  assert.equal(hasHardKey(r.receipts[0].fields), false);
+});
+
+test("القاعدة مُمرَّرة اعتماديةً ويُعلَن أيّها استُعملت", async () => {
+  const oneEach = (pages) => ({
+    ranges: pages.map((p) => ({ pageFrom: p.pageNo, pageTo: p.pageNo, startReason: "forced" })),
+    orphanPages: [], rule: "one_page_one_receipt",
+  });
+  const r = await parseReceiptDocument(F.accountBundleWithSpan(), { splitRule: oneEach });
+  assert.equal(r.rule, "one_page_one_receipt");
+  assert.equal(r.receipts.length, 3);
+  assert.equal(r.receipts[0].startReason, "forced");
+});

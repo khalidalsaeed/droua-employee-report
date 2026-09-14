@@ -240,6 +240,51 @@ const innerTransferBothAccounts = () => buildPdf([innerTransferReceipt({
   account: "8800000000000088", senderAccount: "9900000000000001", amountText: "900.00",
 })]);
 
+/* مجمّعات تحاكي تخطيطات الحدّ — بيانات مُختلقة بالكامل */
+
+/* مجمّع من النوع الثاني: كل إيصال برقم حساب لا IBAN. وهو الشكل الذي
+   أسقط قاعدة «IBAN يبدأ إيصالًا» على أول مجمّع حقيقي. */
+function accountBundle(count = 5) {
+  const pages = [];
+  for (let i = 1; i <= count; i++) {
+    pages.push(innerTransferReceipt({
+      account: `88000000000${String(i).padStart(4, "0")}`,
+      beneficiary: `BENEFICIARY ${String(i).padStart(2, "0")}`,
+      reference: `TBC26081300${String(i).padStart(5, "0")}`,
+      amountText: `${(1000 + i * 100).toLocaleString("en-US", { minimumFractionDigits: 2 })}`,
+    }));
+  }
+  return buildPdf(pages);
+}
+
+/* مجمّع مختلط: IBAN وحساب متناوبين — كما في المجمّع الحقيقي */
+function mixedBundle() {
+  return buildPdf([
+    innerTransferReceipt({ account: "8800000000001", beneficiary: "BENEF A", reference: "TBC2608130000101" }),
+    realLayoutReceipt({ iban: iban(41), beneficiary: "BENEF B", reference: "TBC2608130000102" }),
+    innerTransferReceipt({ account: "8800000000003", beneficiary: "BENEF C", reference: "TBC2608130000103" }),
+    realLayoutReceipt({ iban: iban(44), beneficiary: "BENEF D", reference: "TBC2608130000104" }),
+  ]);
+}
+
+/* إيصالان لنفس المستفيد — split payment مشروع. قاعدة «تغيّر المعرّف»
+   تدمجهما وتُخفي أحدهما؛ وقاعدة «وجود المعرّف» تُبقيهما اثنين. */
+function splitPaymentBundle() {
+  return buildPdf([
+    innerTransferReceipt({ account: "8800000000077", beneficiary: "SAME BENEF", reference: "TBC2608130000201", amountText: "2,000.00" }),
+    innerTransferReceipt({ account: "8800000000077", beneficiary: "SAME BENEF", reference: "TBC2608130000202", amountText: "1,000.00" }),
+  ]);
+}
+
+/* إيصال يمتدّ صفحتين داخل مجمّع بحسابات: الصفحة الثانية بلا معرّف. */
+function accountBundleWithSpan() {
+  return buildPdf([
+    innerTransferReceipt({ account: "8800000000091", beneficiary: "BENEF X", reference: "TBC2608130000301" }),
+    continuationPage(91),
+    innerTransferReceipt({ account: "8800000000092", beneficiary: "BENEF Y", reference: "TBC2608130000302" }),
+  ]);
+}
+
 /* مجمّع: صفحة لكل إيصال */
 function bundle(count = 10) {
   const pages = [];
@@ -284,6 +329,7 @@ const FIXTURES = {
   single, wholeIban, noIban, badAmount, conflictingAmounts, repeatedAmount,
   twoIbans, realLayout, realLayoutDecoy, realLayoutAmbiguous,
   innerTransfer, innerTransferBothAccounts,
+  accountBundle, mixedBundle, splitPaymentBundle, accountBundleWithSpan,
   bundle, bundleWithSpan, bundleLeadingOrphan, malformed, truncated,
 };
 
