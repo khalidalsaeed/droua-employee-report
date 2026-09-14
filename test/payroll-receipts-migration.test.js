@@ -130,12 +130,14 @@ function healthy(overrides = {}) {
     rows: 0,
     existingColumns: S.EXISTING_TABLES.payroll_transfer_proofs,
     newForeignKeys: 0,
+    referencingTables: ["payroll_receipts"],
     ...overrides,
   };
 
   return (q, params) => {
     if (/to_regclass/.test(q)) return state.regclass;
     if (/pg_get_constraintdef/.test(q)) return state.constraints;
+    if (/DISTINCT conrelid/.test(q)) return state.referencingTables.map((tbl) => ({ tbl }));
     if (/contype = 'f'/.test(q)) return [{ n: state.newForeignKeys }];
     if (/information_schema.columns/.test(q)) {
       const table = params[0];
@@ -173,6 +175,8 @@ test("ويسقط على كل نقص — لا يُطمئن على ما لم يح�
     ["عمود link_reason_code مفقود", { columns: ["id"] }, /link_reason_code/],
     ["جدول قائم تغيّر", { existingColumns: ["id"] }, /أعمدة payroll_transfer_proofs/],
     ["مفتاح أجنبي جديد", { newForeignKeys: 1 }, /لا مفتاح أجنبي جديد/],
+    ["جدول آخر اكتسب صلة", { referencingTables: ["payroll_receipts", "payroll_runs"] },
+      /لا جدول قائم يشير/],
   ];
   for (const [label, override, expected] of cases) {
     const { results } = await runVerify(override);

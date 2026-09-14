@@ -252,6 +252,17 @@ async function verify(sql) {
     check(fk[0].n === 0, `لا مفتاح أجنبي جديد على ${table}`);
   }
 
+  /* وفحصٌ عامّ لا يحتاج لقطةً: لا جدول آخر اكتسب صلةً بالجديد. الصلة
+     الوحيدة المشروعة ذاتية — duplicate_of يشير إلى الجدول نفسه. */
+  const refs = await query(sql, `
+    SELECT DISTINCT conrelid::regclass::text AS tbl
+      FROM pg_constraint
+     WHERE contype = 'f' AND confrelid = $1::regclass
+     ORDER BY tbl`, [NEW_TABLE]);
+  const names = refs.map((r) => r.tbl);
+  check(names.every((t) => t === NEW_TABLE),
+    `لا جدول قائم يشير إلى ${NEW_TABLE}`, names.join(" · ") || "لا شيء");
+
   return results;
 }
 
