@@ -85,10 +85,24 @@ function isSecureSectionRequest(query) {
   return false;
 }
 
+/* ─── وحدة مقارنة التأمين الطبي ───
+   النمط نفسه حرفيًا: تفويضٌ كامل قبل أي منطق مشترك، و require كسول، ومطابقة
+   بادئة كاملة لا احتواء. وهذه الأسطر كامل ما يعرفه هذا الملفّ عنها. */
+const BENEFITS_SECTION = "secure-benefits";
+function isBenefitsSectionRequest(query) {
+  if (query.kind === "page") return query.page === BENEFITS_SECTION;
+  if (query.kind === "api") {
+    const p = String(query.apiPath || "");
+    return p === BENEFITS_SECTION || p.startsWith(BENEFITS_SECTION + "/");
+  }
+  return false;
+}
+
 module.exports = async function handler(req, res) {
   const { kind } = req.query || {};
   try {
     if (isSecureSectionRequest(req.query || {})) return await require("../lib/droua/router")(req, res);
+    if (isBenefitsSectionRequest(req.query || {})) return await require("../lib/medins/router")(req, res);
     if (kind === "page") return await handlePage(req, res);
     if (kind === "api") return await handleApi(req, res);
     res.status(404).json({ ok: false, error: "Not found" });
