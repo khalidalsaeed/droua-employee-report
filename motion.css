@@ -1,0 +1,50 @@
+/* motion.css — نظام الحركة الموحّد.
+   =========================================================================
+   كل مدّة ومنحنى في الحركات الجديدة يأتي من هنا، فلا يُكتب رقم حركة
+   عشوائي داخل مكوّن. ثلاث درجات فقط:
+     fast    تفاعل دقيق (حوم، ضغط، أيقونة)        120–180ms
+     normal  بطاقة، توسيع/طيّ، لوحة جانبية          200–300ms
+     slow    دخول قسم، رسم حلقة، شريط زمني          300–450ms
+
+   الدخول لا يحجب المحتوى: العنصر مرئيّ افتراضيًا، ولا يُخفى للحركة إلا
+   حين يضع motion.js الصنف .m-armed على <html> — أي بعد أن يتأكّد أن
+   السكربت يعمل وأن المستخدم لا يفضّل تقليل الحركة. بلا JavaScript، أو مع
+   prefers-reduced-motion، يظهر كل شيء مباشرة في مكانه.
+
+   الحركة على transform و opacity وحدهما (و stroke-dashoffset للحلقات)،
+   فلا إعادة تخطيط ولا قفز في الصفحة. */
+:root{
+  --duration-fast:150ms;
+  --duration-normal:240ms;
+  --duration-slow:420ms;
+  --duration-draw:700ms;               /* رسم الحلقة والعدّاد — قصير بما يكفي ألّا يُنتظر */
+  --easing-standard:cubic-bezier(.2,.7,.2,1);
+  --easing-out:cubic-bezier(.16,.8,.3,1);
+  --stagger:55ms;
+  --lift:-2px;                         /* ارتفاع البطاقة عند الحوم */
+}
+
+/* ── الدخول ────────────────────────────────────────────────────────── */
+@keyframes m-fade-in{from{opacity:0}to{opacity:1}}
+@keyframes m-fade-up{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+@keyframes m-card-enter{from{opacity:0;transform:translateY(8px) scale(.985)}to{opacity:1;transform:none}}
+@keyframes m-pop{from{opacity:0;transform:scale(.6)}to{opacity:1;transform:none}}
+@keyframes m-float{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}
+@keyframes m-pulse-ring{0%,100%{box-shadow:0 0 0 0 rgba(194,74,59,.0)}50%{box-shadow:0 0 0 6px rgba(194,74,59,.14)}}
+
+/* العناصر تنتظر في حالتها الأولى فقط بعد التسليح، وتتحرّك حين تُعلَّم
+   .m-in (عند دخولها نافذة العرض). --i ترتيبها داخل مجموعتها للتتابع. */
+.m-armed .m-fade-in:not(.m-in),
+.m-armed .m-fade-up:not(.m-in),
+.m-armed .m-card-enter:not(.m-in){opacity:0}
+.m-armed .m-fade-in.m-in{animation:m-fade-in var(--duration-slow) var(--easing-standard) backwards;animation-delay:calc(var(--i,0) * var(--stagger))}
+.m-armed .m-fade-up.m-in{animation:m-fade-up var(--duration-slow) var(--easing-out) backwards;animation-delay:calc(var(--i,0) * var(--stagger))}
+.m-armed .m-card-enter.m-in{animation:m-card-enter var(--duration-normal) var(--easing-out) backwards;animation-delay:calc(var(--i,0) * var(--stagger))}
+
+/* ── تقليل الحركة ──────────────────────────────────────────────────────
+   app-shell.html يوقف كل animation و transition أصلًا بقاعدة شاملة؛ هذا
+   تأكيد محلّي لمن يحمّل الملف من صفحة أخرى. */
+@media (prefers-reduced-motion:reduce){
+  :root{--duration-fast:0ms;--duration-normal:0ms;--duration-slow:0ms;--duration-draw:0ms;--stagger:0ms;--lift:0px}
+  .m-fade-in,.m-fade-up,.m-card-enter{opacity:1 !important;animation:none !important;transform:none !important}
+}

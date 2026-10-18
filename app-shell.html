@@ -457,6 +457,11 @@ footer.site{border-top:1px solid var(--hair);margin-top:30px}
 
 </style>
 <link rel="stylesheet" href="/admin-ui.css?v=2">
+<!-- طبقة الحركة والتفاعل وقسم الهيكل التنظيمي — ملفات مستقلّة تُحذف معًا إن أُلغي التطوير. -->
+<link rel="stylesheet" href="/motion.css?v=1">
+<link rel="stylesheet" href="/dashboard-fx.css?v=2">
+<link rel="stylesheet" href="/doc-expiry.css?v=1">
+<link rel="stylesheet" href="/org-chart.css?v=1">
 <!-- منع الوميض: يجب أن ترتفع طبقة الترحيب قبل أوّل رسم للجسم، وإلّا لمح
      المستخدم النظام قبل الترحيب. سطر مضمّن عمدًا — أي ملف خارجي يصل بعد
      أن يكون الرسم قد بدأ. المفتاح نفسه في login.html و welcome.js. -->
@@ -500,6 +505,46 @@ try{ if(sessionStorage.getItem("droua:welcome")==="1") document.documentElement.
       <path d="M0,150 C230,116 380,138 520,86 C700,30 860,64 1000,22 C1120,-6 1175,12 1200,-4"/>
     </g>
   </svg>
+  <!-- رسم إداري خفيف: بطاقة موظف، وثيقة بعلامة تحقّق، جواز، ومخطّط.
+       زخرفة خالصة (aria-hidden) تظهر على الشاشات العريضة وحدها، ولا تحمل
+       أي معلومة. الطفو في dashboard-fx.css ويتوقّف مع تقليل الحركة. -->
+  <svg class="hero-art" viewBox="0 0 420 300" aria-hidden="true" focusable="false">
+    <g class="ha-float ha-f1">
+      <rect x="196" y="40" width="168" height="104" rx="14" fill="#FBF9F5" stroke="#16283B" stroke-opacity=".18"/>
+      <rect x="196" y="40" width="168" height="22" rx="14" fill="#16283B" fill-opacity=".9"/>
+      <rect x="196" y="52" width="168" height="10" fill="#16283B" fill-opacity=".9"/>
+      <circle cx="334" cy="98" r="20" fill="#F0E7D6" stroke="#A98544" stroke-opacity=".6"/>
+      <circle cx="334" cy="92" r="7" fill="#A98544" fill-opacity=".55"/>
+      <path d="M321 112c3-7 8-10 13-10s10 3 13 10" fill="none" stroke="#A98544" stroke-opacity=".55" stroke-width="2.4" stroke-linecap="round"/>
+      <rect x="214" y="80" width="78" height="7" rx="3.5" fill="#16283B" fill-opacity=".22"/>
+      <rect x="214" y="96" width="58" height="6" rx="3" fill="#16283B" fill-opacity=".12"/>
+      <rect x="214" y="110" width="66" height="6" rx="3" fill="#16283B" fill-opacity=".12"/>
+    </g>
+    <g class="ha-float ha-f2">
+      <path d="M58 92h96l26 26v130a10 10 0 0 1-10 10H58a10 10 0 0 1-10-10V102a10 10 0 0 1 10-10z" fill="#FBF9F5" stroke="#16283B" stroke-opacity=".18"/>
+      <path d="M154 92v18a8 8 0 0 0 8 8h18" fill="#F0E7D6" stroke="#16283B" stroke-opacity=".18"/>
+      <rect x="66" y="132" width="88" height="7" rx="3.5" fill="#16283B" fill-opacity=".2"/>
+      <rect x="66" y="150" width="96" height="6" rx="3" fill="#16283B" fill-opacity=".11"/>
+      <rect x="66" y="164" width="80" height="6" rx="3" fill="#16283B" fill-opacity=".11"/>
+      <rect x="66" y="178" width="90" height="6" rx="3" fill="#16283B" fill-opacity=".11"/>
+      <circle cx="152" cy="232" r="19" fill="#2E8C64" fill-opacity=".92"/>
+      <path d="M143 232l6.5 6.5L162 226" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+    </g>
+    <g class="ha-float ha-f3">
+      <rect x="226" y="170" width="92" height="118" rx="10" fill="#16283B" fill-opacity=".88"/>
+      <circle cx="272" cy="218" r="20" fill="none" stroke="#C9A05A" stroke-opacity=".8" stroke-width="1.6"/>
+      <path d="M252 218h40M272 198c-7 6-7 34 0 40M272 198c7 6 7 34 0 40" fill="none" stroke="#C9A05A" stroke-opacity=".6" stroke-width="1.2"/>
+      <rect x="248" y="254" width="48" height="5" rx="2.5" fill="#C9A05A" fill-opacity=".55"/>
+      <rect x="256" y="266" width="32" height="4" rx="2" fill="#C9A05A" fill-opacity=".35"/>
+    </g>
+    <g class="ha-float ha-f4">
+      <rect x="336" y="178" width="74" height="74" rx="12" fill="#FBF9F5" stroke="#16283B" stroke-opacity=".16"/>
+      <rect x="348" y="222" width="9" height="18" rx="2" fill="#16283B" fill-opacity=".25"/>
+      <rect x="362" y="210" width="9" height="30" rx="2" fill="#16283B" fill-opacity=".38"/>
+      <rect x="376" y="198" width="9" height="42" rx="2" fill="#A98544" fill-opacity=".75"/>
+      <rect x="390" y="216" width="9" height="24" rx="2" fill="#16283B" fill-opacity=".25"/>
+    </g>
+  </svg>
   <div class="wrap hero-in">
     <span class="eyebrow">تقرير الموارد البشرية · قوى عاملة</span>
     <h1>قائمة الموظفين ومتابعة صلاحية الوثائق</h1>
@@ -536,6 +581,9 @@ try{ if(sessionStorage.getItem("droua:welcome")==="1") document.documentElement.
       <div id="soonLic"></div>
     </div>
   </div>
+  <!-- الوثائق القادمة على انتهاء الصلاحية — حسب التصميم المعتمد. يملؤه
+       doc-expiry.js من DocStatus.empDocs نفسها التي تعطي البطاقات أرقامها. -->
+  <div class="dx" id="docExpiry"></div>
 </section>
 
 <section class="block wrap" id="finSec">
@@ -660,6 +708,17 @@ try{ if(sessionStorage.getItem("droua:welcome")==="1") document.documentElement.
   <div class="tk-mini" id="ticketsMini"></div>
 </section>
 
+<!-- الهيكل التنظيمي: مختصر هنا (مؤشّرات + أوّل مستويين)، والشجرة الكاملة
+     في عرض منبثق داخل الصفحة نفسها. يملؤه org-chart.js. -->
+<section class="block wrap" id="orgSec">
+  <div class="sec-head"><h2>الهيكل التنظيمي</h2>
+    <div style="display:flex;align-items:center;gap:14px">
+      <span class="idx" id="orgIdx">—</span>
+    </div>
+  </div>
+  <div id="orgPreview"><div class="u-skeleton u-skeleton-card"></div></div>
+</section>
+
 <section class="block wrap" id="contactSec">
   <div class="sec-head"><h2>التواصل مع قسم الموارد البشرية</h2><span class="idx">تواصل مباشر</span></div>
   <div class="contact-card">
@@ -710,9 +769,17 @@ try{ if(sessionStorage.getItem("droua:welcome")==="1") document.documentElement.
 <script src="/doc-status.js?v=1"></script>
 <!-- شاشة الترحيب. تُستدعى من initAuthGate() بعد /api/auth/me لا قبله. -->
 <script src="/welcome.js?v=1"></script>
+<!-- الحركة والتفاعل (dashboard-fx.js) والهيكل التنظيمي (org-core.js + org-chart.js). -->
+<script src="/motion.js?v=1"></script>
+<script src="/dashboard-fx.js?v=2"></script>
+<script src="/doc-expiry.js?v=1"></script>
+<script src="/org-core.js?v=1"></script>
+<script src="/org-chart.js?v=1"></script>
 <script>
 let DATA = [];
 let FIN = {};
+/* لحظة وصول البيانات من الخادم — «آخر تحديث» في قسم الوثائق. */
+let DATA_LOADED_AT = null;
 /* Ajeer staffing-contract permits — matched to employees by iqama number.
    A new permit for the same iqama supersedes the older one (see dedupeAjeer). */
 let AJEER = [];
@@ -726,7 +793,9 @@ let AJEER = [];
    (resolved server-side from role defaults or the user's custom set), so this
    page no longer keeps its own copy of the role→pages table. */
 const ROLE_LABELS_CLIENT={owner:"المالك",admin:"مدير النظام",hr:"الموارد البشرية",finance:"المالية",viewer:"قراءة فقط"};
-const SECTION_TO_PAGE={kpiSec:"kpi",finSec:"finance",peopleSec:"employees",ajeerSec:"ajeer",ticketsSec:"tickets",contactSec:"contact"};
+/* orgSec يُحرس بصلاحية سجلّ الموظفين: يعرض أسماءهم وبريدهم، و/api/data/org-structure
+   يفرض الصلاحية نفسها على الخادم. */
+const SECTION_TO_PAGE={kpiSec:"kpi",finSec:"finance",peopleSec:"employees",ajeerSec:"ajeer",ticketsSec:"tickets",orgSec:"employees",contactSec:"contact"};
 let CURRENT_USER=null;
 /* بطاقة هوية المستخدم وروابط التنقّل انتقلت إلى app-nav.js (درج مشترك لكل
    الصفحات)؛ ما يبقى هنا هو إظهار أقسام هذه الصفحة حسب الصلاحية. */
@@ -880,18 +949,22 @@ function renderSoonCallout(docs){
    يمنح دعم لوحة المفاتيح (Enter) والفتح في تبويب جديد وقائمة السياق
    وشريط الحالة بسلوك المتصفّح المعياري بلا سطر JavaScript واحد. */
 function kpiCard(o){
-  const inner=`<div class="rail"></div><div class="lbl">${o.lbl}</div><div class="big num">${o.big}</div><div class="cap">${o.cap}</div>${o.hint?`<div class="kpi-hint">${o.hint}</div>`:''}`;
+  /* data-count هدف العدّاد في DashFx.kpis؛ الرقم النهائي مكتوب في النصّ
+     أصلًا، فبلا سكربت الحركة تبقى البطاقة صحيحة كما كانت. */
+  const ico=o.icon?`<span class="kpi-ico" aria-hidden="true">${DashFx.icon(o.icon)}</span>`:"";
+  const inner=`<div class="rail"></div>${ico}<div class="lbl">${o.lbl}</div><div class="big num" data-count="${Number(o.big)||0}">${o.big}</div><div class="cap">${o.cap}</div>${o.hint?`<div class="kpi-hint">${o.hint}</div>`:''}`;
+  const cls=`kpi ${o.tone||''}${o.critical?' critical':''}`;
   return o.href
-    ? `<a class="kpi ${o.tone||''}" href="${o.href}" aria-label="${esc(o.aria||'')}">${inner}</a>`
-    : `<div class="kpi ${o.tone||''}">${inner}</div>`;
+    ? `<a class="${cls}" href="${o.href}" aria-label="${esc(o.aria||'')}">${inner}</a>`
+    : `<div class="${cls}">${inner}</div>`;
 }
 /* الانتقال إلى الصفحة يتطلّب employees:view — وهي صلاحية بياناتها.
    بدونها تبقى البطاقة رقمًا للاطّلاع لا رابطًا يقود إلى تحويلة. */
 const canOpenSoon=AdminUI.can("employees","view");
 kpiRow.innerHTML=[
-  kpiCard({tone:"feature",lbl:"إجمالي الموظفين",big:DATA.length,cap:"موظف مسجّل في القائمة"}),
-  kpiCard({tone:"ok",lbl:"إقامات سارية",big:validIq,cap:soonIq?`منها ${soonIq} قريبة من الانتهاء`:"جميعها غير منتهية"}),
-  kpiCard({tone:"warn",href:canOpenSoon?"/expiring.html":null,
+  kpiCard({tone:"feature",icon:"people",lbl:"إجمالي الموظفين",big:DATA.length,cap:"موظف مسجّل في القائمة"}),
+  kpiCard({tone:"ok",icon:"shield",lbl:"إقامات سارية",big:validIq,cap:soonIq?`منها ${soonIq} قريبة من الانتهاء`:"جميعها غير منتهية"}),
+  kpiCard({tone:"warn",icon:"hourglass",href:canOpenSoon?"/expiring.html":null,
            aria:`عرض الوثائق بحاجة إلى متابعة — ${followUpDocs.length} وثيقة`,
            lbl:"وثائق بحاجة إلى متابعة",big:followUpDocs.length,
            cap:followUpDocs.length
@@ -900,14 +973,18 @@ kpiRow.innerHTML=[
            hint:canOpenSoon?"عرض القائمة كاملة ←":""}),
   /* المنتهية مجموعة جزئية من البطاقة السابقة لا قائمة موازية لها:
      تفصيلٌ لِما بلغ الحدّ الأقصى من الإلحاح داخل قائمة المتابعة. */
-  kpiCard({tone:"bad",lbl:"منها وثائق منتهية",big:expiredDocs.length,
+  kpiCard({tone:"bad",icon:"alert",critical:expiredDocs.length>0,lbl:"منها وثائق منتهية",big:expiredDocs.length,
            cap:expiredDocs.length?DocStatus.summarizeDocs(expiredDocs):"لا توجد وثائق منتهية"}),
 ].join("");
+DashFx.kpis(kpiRow);
 /* المصفوفة نفسها التي أعطت البطاقة رقمها */
 renderSoonCallout(followUpDocs);
 
 /* SVG donut — offline, no dependency */
-function donut(boxId,rows,legendId){
+/* الحلقة نفسها والحساب نفسه؛ الجديد أن كل قوس يحمل تسميته وعدده
+   (data-*) فيتولّى DashFx.ring رسمه من الصفر وتلميحه والنقر عليه.
+   r[3] — إن وُجد — مرشّح سجلّ الموظفين المطابق لهذا الجزء تمامًا. */
+function donut(boxId,rows,legendId,ringOpts){
   rows=rows.filter(r=>r);
   const total=rows.reduce((s,r)=>s+r[1],0);
   const nz=rows.filter(r=>r[1]>0).length;
@@ -916,7 +993,7 @@ function donut(boxId,rows,legendId){
   rows.forEach(r=>{
     if(r[1]<=0)return;
     const frac=r[1]/total, len=Math.max(frac*circ-gap,0.5);
-    arcs+=`<circle cx="${CX}" cy="${CY}" r="${R}" fill="none" stroke="${r[2]}" stroke-width="15"
+    arcs+=`<circle class="ring-arc" data-label="${esc(r[0])}" data-n="${r[1]}" data-len="${len}" data-pick="${r[3]||""}" cx="${CX}" cy="${CY}" r="${R}" fill="none" stroke="${r[2]}" stroke-width="15"
       stroke-linecap="${nz>1?'round':'butt'}" stroke-dasharray="${len} ${circ-len}" stroke-dashoffset="${-off}"></circle>`;
     off+=frac*circ;
   });
@@ -924,12 +1001,21 @@ function donut(boxId,rows,legendId){
     `<svg viewBox="0 0 120 120" role="img" aria-label="مخطط دائري">
        <circle cx="${CX}" cy="${CY}" r="${R}" fill="none" stroke="var(--hair)" stroke-width="15"></circle>${arcs}
      </svg>
-     <div class="chart-center"><span class="n num">${total}</span><span class="t">موظف</span></div>`;
+     <div class="chart-center"><span class="n num" data-count="${total}">${total}</span><span class="t">موظف</span></div>`;
   document.getElementById(legendId).innerHTML=rows.map(r=>
     `<div class="li"><span class="sw" style="background:${r[2]}"></span>${r[0]}<span class="lg-val num">${r[1]}</span></div>`).join("");
+  DashFx.ring(document.getElementById(boxId),{total,circ,subject:ringOpts&&ringOpts.subject,
+    onPick:canFilterPeople?pick=>filterPeopleFromChart(ringOpts.field,pick):null});
 }
-donut("chartIqama",[["سارية",validIq,C.ok],["منتهية",expiredIq,C.bad]],"legendIqama");
-donut("chartLicense",[["سارية",validLic,C.ok], pendingLic?["جاري السداد",pendingLic,C.pending]:null, ["منتهية",expiredLic,C.bad]],"legendLicense");
+/* «سارية» تجمع ok و warn و today، ولا مرشّح في السجلّ يطابقها تمامًا —
+   فلا نقر عليها، التلميح وحده. «منتهية» = bad و«جاري السداد» = pending
+   يطابقان مرشّحَي السجلّ حرفيًا. */
+const canFilterPeople=AdminUI.can("employees","view");
+donut("chartIqama",[["سارية",validIq,C.ok],["منتهية",expiredIq,C.bad,"bad"]],"legendIqama",{field:"iq",subject:"إقامة"});
+donut("chartLicense",[["سارية",validLic,C.ok], pendingLic?["جاري السداد",pendingLic,C.pending,"pending"]:null, ["منتهية",expiredLic,C.bad,"bad"]],"legendLicense",{field:"lic",subject:"رخصة عمل"});
+/* قسم الوثائق القادمة على الانتهاء، من مصدر البطاقات نفسه (DocStatus.empDocs) */
+DocExpiry.render(document.getElementById("docExpiry"),DATA,AJEER,{
+  loadedAt:DATA_LOADED_AT,onPick:canFilterPeople?(i=>openDrawer(i)):null});
 /* amber "expiring soon" flags below each donut (still valid, need renewal) */
 function soonFlag(id,n){const el=document.getElementById(id);if(!el)return;
   el.innerHTML = n? (canOpenSoon
@@ -1814,6 +1900,18 @@ function employeeTicketsBlock(eid){
    المفاتيح. القائمة نفسها تُبنى الآن في expiring-shell.html من
    DocStatus.collectFollowUpDocs — المصدر نفسه الذي يعطي البطاقة رقمها. */
 
+/* نقرة على جزء من حلقة الإقامة/الرخصة: تطبّق مرشّح الحالة المطابق في سجلّ
+   الموظفين وتنتقل إليه. المرشّح نفسه الذي في القائمة المنسدلة، فإعادة
+   الضبط تلغيه كأي مرشّح آخر. */
+function filterPeopleFromChart(field,value){
+  if(field!=="iq"&&field!=="lic") return;
+  state[field]=value;
+  (field==="iq"?fIq:fLic).value=value;
+  updateCtrlCount();render();
+  const sec=document.getElementById("peopleSec");
+  if(sec&&sec.style.display!=="none") sec.scrollIntoView({behavior:Motion.prefersReduced()?"auto":"smooth",block:"start"});
+}
+
 /* ---------- wiring ---------- */
 function reset(){state={q:"",dept:"",nat:"",iq:"",lic:"",sort:"eid"};
   q.value="";fDept.value="";fNat.value="";fIq.value="";fLic.value="";sort.value="eid";updateCtrlCount();render();}
@@ -1888,6 +1986,7 @@ async function loadAppData(){
   const permJson=await permRes.json();
   const settJson=await settRes.json();
   DATA = empJson.ok ? empJson.items : [];
+  DATA_LOADED_AT = new Date();
   AJEER = permJson.ok ? permJson.items : [];
   const settings = settJson.ok ? settJson.settings : {};
   FIN = settings.financial_summary || {};
@@ -1927,6 +2026,11 @@ function showSkeletons(){
   render();
   renderAjeer();
   renderTicketsWidget();
+  /* الهيكل التنظيمي بعد بيانات الموظفين: يربط سجلّات المصدر بسجلّات المنصّة
+     بالبريد ليفتح درج الموظف المطابق. يجلب بياناته بنفسه ولا يعطّل غيره. */
+  if(AdminUI.can("employees","view")) OrgChart.mount({
+    preview:document.getElementById("orgPreview"), idx:document.getElementById("orgIdx"),
+    platform:DATA, emailKey:F.email, openEmployee:i=>openDrawer(i)});
   /* فتح مباشر من الرابط: /#expiring يعرض القائمة فور اكتمال التحميل،
      فيصلح للحفظ في المفضّلة وللمشاركة. يأتي بعد renderDashboardTop()
      لأن followUpDocs لا تُحسب قبله. */
