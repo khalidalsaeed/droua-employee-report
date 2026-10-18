@@ -1,0 +1,117 @@
+/* dashboard-fx.css — الطبقة البصرية الجديدة فوق لوحة المؤشّرات.
+   =========================================================================
+   يُحمَّل بعد <style> الصفحة، فقواعده تتقدّم عند تساوي التخصيص. كل مدّة
+   ومنحنى من motion.css. لا لون جديد: رموز ui.css وحدها. */
+
+/* ── الرسم الإداري في الترويسة ── */
+.hero-art{display:none}
+@media(min-width:1080px){
+  .hero-art{display:block;position:absolute;z-index:1;pointer-events:none;
+    inset-inline-end:max(28px,calc((100vw - 1200px)/2 + 28px));top:50%;
+    width:380px;height:auto;transform:translateY(-46%);opacity:.92}
+  .hero h1,.hero .lede{max-width:min(16ch,calc(100% - 420px))}
+  .hero .lede{max-width:min(52ch,calc(100% - 420px))}
+}
+.m-armed .hero-art{animation:m-fade-in var(--duration-slow) var(--easing-standard) backwards;animation-delay:120ms}
+.ha-float{transform-box:fill-box;transform-origin:center}
+.m-armed .ha-f1{animation:m-float 7s ease-in-out infinite}
+.m-armed .ha-f2{animation:m-float 8.5s ease-in-out -2s infinite}
+.m-armed .ha-f3{animation:m-float 9s ease-in-out -4s infinite}
+.m-armed .ha-f4{animation:m-float 7.5s ease-in-out -1s infinite}
+.m-armed .hero-in>*{animation:m-fade-up var(--duration-slow) var(--easing-out) backwards}
+.m-armed .hero-in>:nth-child(2){animation-delay:60ms}
+.m-armed .hero-in>:nth-child(3){animation-delay:120ms}
+.m-armed .hero-in>:nth-child(n+4){animation-delay:180ms}
+
+/* ── بطاقات المؤشّرات ── */
+.kpi{transition:transform var(--duration-normal) var(--easing-out),box-shadow var(--duration-normal) var(--easing-standard),border-color var(--duration-fast) var(--easing-standard)}
+.kpi .big{font-variant-numeric:tabular-nums}
+.kpi-ico{position:absolute;inset-inline-end:14px;top:14px;width:34px;height:34px;border-radius:10px;
+  display:flex;align-items:center;justify-content:center;
+  background:var(--paper);color:var(--slate);border:1px solid var(--hair);
+  transition:transform var(--duration-fast) var(--easing-out)}
+.kpi.ok .kpi-ico{color:var(--ok)} .kpi.warn .kpi-ico{color:var(--warn)} .kpi.bad .kpi-ico{color:var(--bad)}
+.kpi.feature .kpi-ico{background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.16);color:var(--brass-soft)}
+.kpi .lbl{padding-inline-end:40px}
+@media(min-width:768px){.kpi-ico{inset-inline-end:18px;top:18px}}
+@media(hover:hover) and (pointer:fine){
+  .kpi:hover{transform:translateY(var(--lift));box-shadow:var(--shadow-lg);border-color:var(--hair-2)}
+  .kpi.ok:hover{border-color:#BFD9C9} .kpi.warn:hover{border-color:var(--warn-line)} .kpi.bad:hover{border-color:#E2B8B0}
+  .kpi.feature:hover{border-color:var(--brass)}
+  .kpi:hover .kpi-ico{transform:translateY(-2px) rotate(-6deg)}
+}
+/* الحرجة: نبضٌ هادئ حول الأيقونة وحدها — لا وميض ولا لون يتبدّل */
+.m-armed .kpi.critical .kpi-ico{animation:m-pulse-ring 2.8s ease-in-out infinite}
+
+/* ── الحلقات ── */
+.chart-box svg circle.ring-arc{transition:stroke-dasharray var(--duration-draw) var(--easing-out),stroke-width var(--duration-fast) var(--easing-standard),opacity var(--duration-fast)}
+.chart-box .ring-arc{cursor:default;outline:none}
+.chart-box .ring-arc.pickable{cursor:pointer}
+.chart-box .ring-arc.hot,.chart-box .ring-arc:focus-visible{stroke-width:19}
+.chart-box.has-hot .ring-arc:not(.hot){opacity:.45}
+.chart-center{pointer-events:none}
+.chart-center .n{font-variant-numeric:tabular-nums}
+
+/* ── التلميح المشترك ── */
+.fx-tip{position:fixed;left:0;top:0;z-index:120;pointer-events:none;
+  max-width:260px;padding:10px 13px;border-radius:12px;
+  background:var(--slate);color:#fff;box-shadow:var(--shadow-lg);
+  display:flex;flex-direction:column;gap:2px;font-size:12.5px;line-height:1.55;
+  opacity:0;transition:opacity var(--duration-fast) var(--easing-standard)}
+.fx-tip.show{opacity:1}
+.fx-tip b{font-family:var(--serif);font-weight:400;font-size:15px}
+.fx-tip .fx-tip-sub{color:#C9D3DE}
+.fx-tip .fx-tip-sub.bad{color:#F2B4AA} .fx-tip .fx-tip-sub.today{color:#F5C29A}
+.fx-tip .fx-tip-sub.warn{color:#EED6A0} .fx-tip .fx-tip-sub.ok{color:#A9D8C0}
+.fx-tip .fx-tip-act{margin-top:4px;padding-top:6px;border-top:1px solid rgba(255,255,255,.14);color:var(--brass-soft);font-size:11.5px}
+
+/* ── الشريط الزمني ── */
+.tl-panel{margin-top:20px}
+.tl-head{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:10px 20px}
+.tl-legend{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:12px;color:var(--ink-soft)}
+.tl-legend span{display:inline-flex;align-items:center;gap:6px}
+.tl-sw{width:9px;height:9px;border-radius:50%;display:inline-block}
+.tl-sw.bad{background:var(--bad-line)} .tl-sw.today{background:var(--today-line)}
+.tl-sw.warn{background:var(--warn-line)} .tl-sw.ok{background:var(--ok-line)}
+.dtl{--dot:14px;--gap:5px;margin-top:8px;padding:0 4px}
+@media(min-width:768px){.dtl{--dot:16px}}
+.dtl-track{position:relative;margin-top:26px;block-size:calc(var(--levels,1) * (var(--dot) + var(--gap)) + 54px)}
+.dtl-zone{position:absolute;inset-inline-start:0;inset-block:0 26px;border-radius:10px;
+  background:repeating-linear-gradient(135deg,var(--bad-bg) 0 6px,transparent 6px 12px);border:1px dashed #E6C4BC}
+.dtl-zone b{position:absolute;inset-inline:0;top:-22px;text-align:center;font-size:11.5px;font-weight:500;color:var(--bad)}
+.dtl-axis{position:absolute;inset-inline:0;bottom:26px;height:2px;border-radius:2px;
+  background:linear-gradient(to left,var(--hair) 0%,var(--hair-2) 100%)}
+html[dir=rtl] .dtl-axis{background:linear-gradient(to right,var(--hair) 0%,var(--hair-2) 100%)}
+.dtl-tick{position:absolute;bottom:0;transform:translateX(50%);display:flex;flex-direction:column;align-items:center;gap:4px}
+html[dir=ltr] .dtl-tick{transform:translateX(-50%)}
+.dtl-tick i{display:block;width:1px;height:9px;background:var(--hair-2);margin-bottom:2px}
+.dtl-tick b{font-size:11px;font-weight:400;color:var(--ink-soft);white-space:nowrap}
+.dtl-tick.today i{width:2px;height:12px;background:var(--slate)}
+.dtl-tick.today b{color:var(--slate);font-weight:700}
+.dtl-dot{position:absolute;bottom:calc(30px + var(--lvl) * (var(--dot) + var(--gap)));
+  inline-size:var(--dot);block-size:var(--dot);margin-inline-start:calc(var(--dot) / -2);
+  min-width:0;min-height:0;border-radius:50%;border:2px solid var(--paper-2);padding:0;cursor:pointer;
+  box-shadow:0 1px 3px rgba(22,40,59,.25);
+  transition:transform var(--duration-fast) var(--easing-out),box-shadow var(--duration-fast)}
+/* هدف لمس أوسع من النقطة المرئية — الشكل يبقى صغيرًا والإصبع يصيبه.
+   ui.css يفرض على الجوال min-width/min-height:44px !important لكل زرّ؛
+   النقطة تستثني نفسها منه لأن ::after يوفّر هدف اللمس بدلها، وإلا تضخّمت
+   النقاط إلى 44px وغطّى بعضها بعضًا. */
+.dtl .dtl-dot{min-width:0 !important;min-height:0 !important}
+.dtl-dot::after{content:"";position:absolute;inset:-9px;border-radius:50%}
+.dtl-dot.bad{background:var(--bad-line)} .dtl-dot.today{background:var(--today-line)}
+.dtl-dot.warn{background:var(--warn-line)} .dtl-dot.ok{background:var(--ok-line)} .dtl-dot.pending{background:var(--pend-line)}
+.dtl-dot[aria-disabled=true]{cursor:default}
+.dtl-dot:focus-visible{outline:2px solid var(--slate);outline-offset:2px}
+@media(hover:hover) and (pointer:fine){.dtl-dot:hover{transform:scale(1.3);box-shadow:0 3px 10px rgba(22,40,59,.3)}}
+.dtl-armed:not(.dtl-in) .dtl-dot{opacity:0}
+.dtl-armed.dtl-in .dtl-dot{animation:m-pop var(--duration-normal) var(--easing-out) backwards;animation-delay:calc(120ms + var(--i,0) * var(--stagger))}
+.dtl-armed .dtl-axis{transform-origin:right;transform:scaleX(0);transition:transform var(--duration-slow) var(--easing-out)}
+.dtl-armed.dtl-in .dtl-axis{transform:none}
+.dtl-empty{padding:22px;text-align:center;color:var(--ok);background:var(--ok-bg);border-radius:12px;font-size:13.5px}
+@media(max-width:639px){.dtl-tick b{font-size:10px}}
+
+@media(prefers-reduced-motion:reduce){
+  .hero-art,.ha-float,.kpi-ico,.dtl-dot,.dtl-axis{animation:none !important;transition:none !important;transform:none}
+  .dtl-armed .dtl-dot{opacity:1}
+}
