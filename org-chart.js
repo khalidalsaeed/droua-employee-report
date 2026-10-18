@@ -22,8 +22,10 @@
     tree: null, rows: [], link: null, stats: null, opts: null,
     mode: "tree", q: "", dept: "", loc: "",
     expanded: new Set(), selected: null, hits: [], hitIdx: 0, visible: null,
-    overlay: null, lastFocus: null, played: false,
+    overlay: null, lastFocus: null, played: false, zoom: 1,
   };
+  const ZOOM_MIN = 0.5, ZOOM_MAX = 1.6, ZOOM_STEP = 0.1;
+  const canHover = () => window.matchMedia && window.matchMedia("(hover: hover) and (pointer: fine)").matches;
 
   /* ── صياغات ── */
   function reportsPhrase(n) {
@@ -166,6 +168,7 @@
     if (reduced()) done(); else setTimeout(done, 260);
     document.body.style.overflow = "";
     DashFx.hideTip();
+    hidePop();
     if (location.hash === "#org-chart" && history.replaceState) history.replaceState(null, "", location.pathname + location.search);
     if (S.lastFocus && S.lastFocus.focus) S.lastFocus.focus({ preventScroll: true });
   }
@@ -201,7 +204,16 @@
         </div>
         <div class="oc-issues-wrap" id="ocIssues"></div>
         <div class="oc-main">
-          <div class="oc-canvas" id="ocCanvas" tabindex="-1"></div>
+          <div class="oc-canvas" id="ocCanvas" tabindex="0" aria-label="لوحة الهيكل — اسحب للتحريك، و Ctrl مع العجلة أو + و − للتكبير"></div>
+          <div class="oc-zoom" role="toolbar" aria-label="التكبير والتصغير">
+            <button type="button" data-z="in" aria-label="تكبير">${icon("plus", 16)}</button>
+            <output class="oc-zoom-v" id="ocZoomV" aria-live="polite">100%</output>
+            <button type="button" data-z="out" aria-label="تصغير">${icon("minus", 16)}</button>
+            <span class="oc-zoom-sep" aria-hidden="true"></span>
+            <button type="button" data-z="fit" aria-label="ملاءمة الهيكل للشاشة">${icon("fit", 16)}</button>
+            <button type="button" data-z="reset" aria-label="الحجم الأصلي 100%">${icon("reset", 16)}</button>
+          </div>
+          <div class="oc-pop" id="ocPop" role="tooltip" hidden></div>
           <aside class="oc-panel" id="ocPanel" aria-label="تفاصيل" hidden></aside>
         </div>
       </div>`;
@@ -241,20 +253,159 @@
     else if (!ev.shiftKey && document.activeElement === last) { ev.preventDefault(); first.focus(); }
   }
 
-  /* السحب للتحريك على سطح المكتب — بالفأرة وحدها؛ اللمس يمرّر طبيعيًا. */
+  /* ── التحريك والتكبير ────────────────────────────────────────────────
+     التحريك: سحب الفأرة في أيّ موضع من اللوحة (حتى فوق البطاقات — نقرةٌ لا
+     يتجاوز فيها المؤشّر 5px تبقى نقرة)، واللمس يمرّر طبيعيًا لأن اللوحة
+     overflow:auto. التكبير: أزرار، Ctrl/⌘ مع العجلة، + و − و 0 من لوحة
+     المفاتيح، وقرصة إصبعين على اللمس. يُثبَّت تحت المؤشّر/منتصف القرصة
+     النقطةُ نفسها من الهيكل فلا «يقفز» العرض.
+     CSS zoom لا transform: يعيد التخطيط بالمقاس الجديد فيبقى التمرير
+     وأشرطته وscrollIntoView صحيحة بلا حساب إضافي. */
   function enablePan(c) {
-    let down = null;
+    let down = null, dragged = false;
     c.addEventListener("pointerdown", (ev) => {
-      if (ev.pointerType !== "mouse" || ev.button !== 0 || ev.target.closest("button")) return;
+      if (ev.pointerType !== "mouse" || ev.button !== 0 || ev.target.closest(".oc-tog") || isNarrow()) return;
       down = { x: ev.clientX, y: ev.clientY, l: c.scrollLeft, t: c.scrollTop };
-      c.classList.add("panning");
+      dragged = false;
     });
     window.addEventListener("pointermove", (ev) => {
       if (!down) return;
-      c.scrollLeft = down.l - (ev.clientX - down.x);
-      c.scrollTop = down.t - (ev.clientY - down.y);
+      const dx = ev.clientX - down.x, dy = ev.clientY - down.y;
+      if (!dragged && Math.hypot(dx, dy) < 5) return;
+      if (!dragged) { dragged = true; c.classList.add("panning"); hidePop(); }
+      c.scrollLeft = down.l - dx;
+      c.scrollTop = down.t - dy;
     });
     window.addEventListener("pointerup", () => { down = null; c.classList.remove("panning"); });
+    c.addEventListener("scroll", hidePop, { passive: true });
+    /* سحبٌ انتهى فوق بطاقة لا يفتحها */
+    c.addEventListener("click", (ev) => { if (dragged) { ev.stopPropagation(); ev.preventDefault(); dragged = false; } }, true);
+
+    c.addEventListener("wheel", (ev) => {
+      if (isNarrow() || !(ev.ctrlKey || ev.metaKey)) return;
+      ev.preventDefault();
+      setZoom(S.zoom * (ev.deltaY < 0 ? 1.1 : 1 / 1.1), { x: ev.clientX, y: ev.clientY });
+    }, { passive: false });
+    c.addEventListener("keydown", (ev) => {
+      if (isNarrow() || ev.target.closest("input,select")) return;
+      if (ev.key === "+" || ev.key === "=") { ev.preventDefault(); setZoom(S.zoom + ZOOM_STEP); }
+      else if (ev.key === "-") { ev.preventDefault(); setZoom(S.zoom - ZOOM_STEP); }
+      else if (ev.key === "0") { ev.preventDefault(); setZoom(1); }
+    });
+
+    /* قرصة الإصبعين. touch-action: pan-x pan-y في الأنماط يُبقي التمرير
+       بإصبع واحد للمتصفّح ويمنعه من تكبير الصفحة كلها بالقرصة. */
+    const touches = new Map();
+    let pinch = null;
+    c.addEventListener("pointerdown", (ev) => {
+      if (ev.pointerType !== "touch" || isNarrow()) return;
+      touches.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+      if (touches.size === 2) {
+        const [a, b] = [...touches.values()];
+        pinch = { d: Math.hypot(a.x - b.x, a.y - b.y), z: S.zoom };
+      }
+    });
+    c.addEventListener("pointermove", (ev) => {
+      if (!touches.has(ev.pointerId)) return;
+      touches.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+      if (!pinch || touches.size !== 2) return;
+      const [a, b] = [...touches.values()];
+      const d = Math.hypot(a.x - b.x, a.y - b.y);
+      setZoom(pinch.z * (d / pinch.d), { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
+    });
+    const lift = (ev) => { touches.delete(ev.pointerId); if (touches.size < 2) pinch = null; };
+    c.addEventListener("pointerup", lift);
+    c.addEventListener("pointercancel", lift);
+
+    S.overlay.querySelectorAll("[data-z]").forEach((b) => b.addEventListener("click", () => {
+      const z = b.dataset.z;
+      if (z === "in") setZoom(S.zoom + ZOOM_STEP);
+      else if (z === "out") setZoom(S.zoom - ZOOM_STEP);
+      else if (z === "reset") setZoom(1);
+      else fitZoom();
+    }));
+  }
+
+  function chartEl() { return S.overlay && S.overlay.querySelector("#ocCanvas .oc-chart"); }
+
+  /* يغيّر المقاس مع تثبيت النقطة تحت anchor (إحداثيات الشاشة)، أو منتصف
+     اللوحة بلا anchor. scrollLeft في RTL يبدأ من 0 وينزل سالبًا، فيُحسب
+     الموضع نسبةً إلى أصغر قيمة ممكنة له. */
+  function setZoom(z, anchor) {
+    const c = S.overlay.querySelector("#ocCanvas"), ch = chartEl();
+    const next = Math.round(Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z)) * 100) / 100;
+    if (!ch) { S.zoom = next; return; }
+    if (next === S.zoom && ch.style.zoom) return;
+    const r = c.getBoundingClientRect();
+    const ax = anchor ? anchor.x - r.left : c.clientWidth / 2;
+    const ay = anchor ? anchor.y - r.top : c.clientHeight / 2;
+    const rtl = getComputedStyle(c).direction === "rtl";
+    const minL = () => (rtl ? -(c.scrollWidth - c.clientWidth) : 0);
+    const fx = (c.scrollLeft - minL() + ax) / c.scrollWidth;
+    const fy = (c.scrollTop + ay) / c.scrollHeight;
+    S.zoom = next;
+    ch.style.zoom = String(next);
+    c.scrollLeft = minL() + fx * c.scrollWidth - ax;
+    c.scrollTop = fy * c.scrollHeight - ay;
+    hidePop();
+    syncZoomUi();
+  }
+  function fitZoom() {
+    const c = S.overlay.querySelector("#ocCanvas"), ch = chartEl();
+    if (!ch) return;
+    const w = ch.scrollWidth / S.zoom, h = ch.scrollHeight / S.zoom;
+    const z = Math.min(1, (c.clientWidth - 48) / w, (c.clientHeight - 60) / h);
+    setZoom(z);
+    const rtl = getComputedStyle(c).direction === "rtl";
+    const mid = Math.max(0, (c.scrollWidth - c.clientWidth) / 2);
+    c.scrollLeft = rtl ? -mid : mid;
+    c.scrollTop = 0;
+  }
+  function syncZoomUi() {
+    if (!S.overlay) return;
+    S.overlay.querySelector("#ocZoomV").textContent = `${Math.round(S.zoom * 100)}%`;
+    S.overlay.querySelector('[data-z="in"]').disabled = S.zoom >= ZOOM_MAX;
+    S.overlay.querySelector('[data-z="out"]').disabled = S.zoom <= ZOOM_MIN;
+    S.overlay.querySelector(".oc-zoom").hidden = isNarrow();
+  }
+
+  /* ── تفاصيل الحوم (سطح المكتب وحده) ──────────────────────────────────
+     معاينة سريعة بعد توقّفٍ قصير فوق البطاقة؛ لا تحمل إلا ما في لوحة
+     التفاصيل التي يفتحها النقر — النقر يبقى الطريق الأساسي، والحوم اختصار. */
+  let popTimer = null;
+  function showPop(id, anchorEl) {
+    clearTimeout(popTimer);
+    popTimer = setTimeout(() => {
+      const n = node(id), pop = S.overlay.querySelector("#ocPop");
+      const isRef = n.kind === "reference";
+      const parent = n.parent && n.parent !== S.tree.rootId ? node(n.parent) : null;
+      const line = (k, v) => (v ? `<div class="oc-pop-r"><span>${esc(k)}</span><b>${esc(v)}</b></div>` : "");
+      pop.innerHTML = `
+        <div class="oc-pop-h"><b>${esc(n.nameAr)}</b><span class="oc-badge ${isRef ? "ref" : "emp"}">${isRef ? "عقدة مدير مرجعية" : esc(n.status || "موظف")}</span></div>
+        ${isRef
+          ? `${line("مواقع فريقه", teamFacet(n, "location").join("، "))}${line("التابعون", reportsPhrase(n.children.length))}
+             <div class="oc-pop-note">سجل المدير غير مربوط بموظف حالي</div>`
+          : `${line("المسمّى الوظيفي", n.jobTitle)}${line("القسم", n.department)}${line("الموقع", n.location)}
+             ${line("المدير المباشر", parent ? parent.nameAr : n.managerName)}${n.children.length ? line("التابعون", reportsPhrase(n.children.length)) : ""}`}
+        <div class="oc-pop-hint">اضغط لعرض التفاصيل كاملة</div>`;
+      pop.hidden = false;
+      const main = S.overlay.querySelector(".oc-main").getBoundingClientRect();
+      const r = anchorEl.getBoundingClientRect();
+      const w = pop.offsetWidth, h = pop.offsetHeight;
+      let left = r.left + r.width / 2 - w / 2 - main.left;
+      left = Math.max(8, Math.min(left, main.width - w - 8));
+      let top = r.bottom - main.top + 8;
+      if (top + h > main.height - 8) top = r.top - main.top - h - 8;
+      pop.style.transform = `translate(${Math.round(left)}px,${Math.round(Math.max(8, top))}px)`;
+      requestAnimationFrame(() => pop.classList.add("show"));
+    }, 320);
+  }
+  function hidePop() {
+    clearTimeout(popTimer);
+    const pop = S.overlay && S.overlay.querySelector("#ocPop");
+    if (!pop) return;
+    pop.classList.remove("show");
+    pop.hidden = true;
   }
 
   function setMode(mode) {
@@ -305,6 +456,10 @@
     const vt = viewTree();
     if (!vt.length) { c.innerHTML = `<div class="oc-empty">لا يوجد موظفون مطابقون للمرشّحات</div>`; return; }
     c.innerHTML = isNarrow() ? renderList(vt) : renderChart(vt);
+    hidePop();
+    const ch = chartEl();
+    if (ch && S.zoom !== 1) ch.style.zoom = String(S.zoom);
+    syncZoomUi();
     wireCanvas(c);
     /* شجرة أعرض من السطح: يبدأ العرض من منتصفها لا من طرفها. scrollLeft في
        RTL سالب نحو اليسار، فالإشارة تتبع اتجاه الصفحة. */
@@ -403,10 +558,13 @@
   function wireCanvas(c) {
     c.querySelectorAll("[data-toggle]").forEach((b) => b.addEventListener("click", (ev) => { ev.stopPropagation(); toggle(b.dataset.toggle, b); }));
     c.querySelectorAll("[data-select]").forEach((b) => {
-      b.addEventListener("click", () => select(b.dataset.select));
+      b.addEventListener("click", () => { hidePop(); select(b.dataset.select); });
       if (!isNarrow()) {
-        b.addEventListener("pointerenter", () => hoverPath(b.dataset.select, true));
-        b.addEventListener("pointerleave", () => hoverPath(b.dataset.select, false));
+        b.addEventListener("pointerenter", (ev) => {
+          hoverPath(b.dataset.select, true);
+          if (ev.pointerType === "mouse" && canHover() && !c.classList.contains("panning")) showPop(b.dataset.select, b.closest(".oc-card"));
+        });
+        b.addEventListener("pointerleave", () => { hoverPath(b.dataset.select, false); hidePop(); });
         b.addEventListener("focus", () => hoverPath(b.dataset.select, true));
         b.addEventListener("blur", () => hoverPath(b.dataset.select, false));
       }
@@ -429,13 +587,23 @@
     if (opening) {
       kids.hidden = false;
       const h = kids.scrollHeight;
-      kids.animate([{ height: "0px", opacity: 0 }, { height: `${h}px`, opacity: 1 }], { duration: 260, easing: "cubic-bezier(.16,.8,.3,1)" }).finished.then(unclip, unclip);
+      kids.animate([{ height: "0px" }, { height: `${h}px` }], { duration: 300, easing: "cubic-bezier(.22,.8,.26,1)" }).finished.then(unclip, unclip);
       kids.querySelectorAll(":scope > .oc-branch").forEach((b, i) =>
-        b.animate([{ opacity: 0, transform: "translateY(-6px)" }, { opacity: 1, transform: "none" }], { duration: 240, delay: 60 + i * 45, easing: "cubic-bezier(.16,.8,.3,1)", fill: "backwards" }));
+        b.animate([{ opacity: 0, transform: "translateY(-8px) scale(.98)" }, { opacity: 1, transform: "none" }],
+          { duration: 260, delay: 70 + i * 40, easing: "cubic-bezier(.16,.8,.3,1)", fill: "backwards" }));
     } else {
+      /* الطيّ عكس الفتح: يخفت الأبناء من الأسفل أوّلًا ثم ينطوي الارتفاع */
+      const branches = [...kids.querySelectorAll(":scope > .oc-branch")].reverse();
+      branches.forEach((b, i) => b.animate([{ opacity: 1 }, { opacity: 0, transform: "translateY(-4px)" }],
+        { duration: 140, delay: i * 25, easing: "ease-in", fill: "forwards" }));
       const h = kids.scrollHeight;
-      kids.animate([{ height: `${h}px`, opacity: 1 }, { height: "0px", opacity: 0 }], { duration: 200, easing: "cubic-bezier(.2,.7,.2,1)" })
-        .finished.then(() => { unclip(); if (!S.expanded.has(key)) kids.hidden = true; }, unclip);
+      kids.animate([{ height: `${h}px` }, { height: "0px" }], { duration: 240, delay: 60 + branches.length * 15, easing: "cubic-bezier(.4,0,.2,1)", fill: "forwards" })
+        .finished.then(() => {
+          unclip();
+          if (!S.expanded.has(key)) kids.hidden = true;
+          kids.getAnimations().forEach((a) => a.cancel());
+          branches.forEach((b) => b.getAnimations().forEach((a) => a.cancel()));
+        }, unclip);
     }
   }
 

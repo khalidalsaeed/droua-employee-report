@@ -110,7 +110,35 @@
 .oc-issues-wrap .oc-issues{margin-bottom:10px}
 .oc-issues-wrap .oc-issues[open] ul{max-height:28vh;overflow:auto}
 .oc-main{position:relative;flex:1;min-height:0;display:flex}
-.oc-canvas{flex:1;overflow:auto;overscroll-behavior:contain;padding:26px 24px 60px;cursor:grab;outline:none}
+.oc-canvas{flex:1;overflow:auto;overscroll-behavior:contain;padding:26px 24px 80px;cursor:grab;outline:none;touch-action:pan-x pan-y}
+.oc-canvas:focus-visible{box-shadow:inset 0 0 0 2px var(--slate)}
+.oc-canvas .oc-hit{cursor:pointer}
+.oc-canvas.panning .oc-hit{cursor:grabbing}
+
+/* أدوات التكبير — عائمة في زاوية اللوحة، أسفل البداية */
+.oc-zoom{position:absolute;z-index:2;bottom:16px;inset-inline-start:16px;display:flex;align-items:center;gap:2px;padding:4px;
+  background:rgba(251,249,245,.94);backdrop-filter:blur(8px);border:1px solid var(--hair);border-radius:12px;box-shadow:var(--shadow)}
+.oc-zoom[hidden]{display:none}
+.oc-zoom button{width:38px;height:38px;min-width:38px !important;min-height:38px !important;display:flex;align-items:center;justify-content:center;
+  border:none;border-radius:9px;background:none;color:var(--slate);cursor:pointer;transition:background var(--duration-fast)}
+.oc-zoom button:hover:not(:disabled){background:var(--paper)}
+.oc-zoom button:disabled{opacity:.35;cursor:default}
+.oc-zoom button:focus-visible{outline:2px solid var(--slate);outline-offset:-2px}
+.oc-zoom-v{min-width:48px;text-align:center;font-size:12.5px;font-weight:700;color:var(--slate);font-variant-numeric:tabular-nums}
+.oc-zoom-sep{width:1px;height:22px;background:var(--hair);margin:0 4px}
+
+/* معاينة الحوم */
+.oc-pop{position:absolute;z-index:4;left:0;top:0;width:260px;padding:12px 14px;border-radius:14px;
+  background:var(--paper-2);border:1px solid var(--hair);box-shadow:var(--shadow-lg);pointer-events:none;
+  opacity:0;transition:opacity var(--duration-fast) var(--easing-standard)}
+.oc-pop.show{opacity:1}
+.oc-pop[hidden]{display:none}
+.oc-pop-h{display:flex;flex-direction:column;align-items:flex-start;gap:4px;padding-bottom:8px;margin-bottom:6px;border-bottom:1px solid var(--hair-2)}
+.oc-pop-h b{font-family:var(--serif);font-weight:400;font-size:16px;line-height:1.3}
+.oc-pop-r{display:flex;justify-content:space-between;gap:10px;font-size:12.5px;padding:3px 0}
+.oc-pop-r span{color:var(--ink-soft)} .oc-pop-r b{font-weight:500;text-align:end}
+.oc-pop-note{margin-top:6px;font-size:11.5px;color:var(--warn)}
+.oc-pop-hint{margin-top:8px;padding-top:7px;border-top:1px solid var(--hair-2);font-size:11px;color:var(--brass)}
 .oc-canvas.panning{cursor:grabbing;user-select:none}
 .oc-canvas.oc-list-mode{cursor:auto;padding:8px 10px calc(30px + var(--safe-b))}
 
