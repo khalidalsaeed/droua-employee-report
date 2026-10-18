@@ -112,8 +112,8 @@ test("لا اعتمادية جديدة", () => {
 });
 
 test("ملفات الواجهة الجديدة محمّلة في الصفحة", () => {
-  for (const f of ["motion.css", "dashboard-fx.css", "org-chart.css"]) assert.match(shell, new RegExp(`href="/${f.replace(".", "\\.")}\\?v=\\d+"`));
-  for (const f of ["motion.js", "dashboard-fx.js", "org-core.js", "org-chart.js"]) assert.match(shell, new RegExp(`src="/${f.replace(".", "\\.")}\\?v=\\d+"`));
+  for (const f of ["motion.css", "dashboard-fx.css", "doc-expiry.css", "org-chart.css"]) assert.match(shell, new RegExp(`href="/${f.replace(".", "\\.")}\\?v=\\d+"`));
+  for (const f of ["motion.js", "dashboard-fx.js", "doc-expiry.js", "org-core.js", "org-chart.js"]) assert.match(shell, new RegExp(`src="/${f.replace(".", "\\.")}\\?v=\\d+"`));
   // الترتيب: الحركة قبل مستهلكيها، والمنطق قبل الواجهة، وكلها قبل سكربت الصفحة
   const pos = (f) => shell.indexOf(`src="/${f}`);
   assert.ok(pos("doc-status.js") < pos("motion.js") && pos("motion.js") < pos("dashboard-fx.js"));
@@ -121,7 +121,7 @@ test("ملفات الواجهة الجديدة محمّلة في الصفحة", 
 });
 
 test("الملفات الجديدة سكربتات كلاسيكية لا تُعرِّف ثوابت في النطاق العام", () => {
-  for (const f of ["motion.js", "dashboard-fx.js", "org-core.js", "org-chart.js"]) {
+  for (const f of ["motion.js", "dashboard-fx.js", "doc-expiry.js", "org-core.js", "org-chart.js"]) {
     assert.doesNotMatch(read(f), /^(const|let|var)\s/m, `${f}: تعريف على المستوى الأعلى يصطدم بسكربت الصفحة`);
   }
 });

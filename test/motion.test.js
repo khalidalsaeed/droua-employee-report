@@ -6,7 +6,7 @@ const path = require("node:path");
 const ROOT = path.join(__dirname, "..");
 const read = (p) => fs.readFileSync(path.join(ROOT, p), "utf8");
 /* ملفات الأنماط التي تستعمل نظام الحركة — الموجود منها فقط */
-const MOTION_CSS = ["motion.css", "dashboard-fx.css", "org-chart.css"].filter((f) => fs.existsSync(path.join(ROOT, f)));
+const MOTION_CSS = ["motion.css", "dashboard-fx.css", "doc-expiry.css", "org-chart.css"].filter((f) => fs.existsSync(path.join(ROOT, f)));
 
 /* نظام الحركة: رموز موحّدة، عدّاد لا يكذب، وتقليل الحركة يعني القيمة
    النهائية فورًا بلا أي إخفاء. */
@@ -104,7 +104,7 @@ test("الإخفاء قبل الدخول مشروطٌ بالتسليح وحده"
       const selectors = m[1].trim().split(",").map((x) => x.trim());
       for (const sel of selectors) {
         if (EXEMPT.test(sel)) continue;
-        assert.match(sel, /m-armed|dtl-armed|oc-armed/, `${file}: إخفاء غير مشروط بالتسليح: ${sel}`);
+        assert.match(sel, /m-armed|dx-armed|oc-armed/, `${file}: إخفاء غير مشروط بالتسليح: ${sel}`);
       }
     }
   }

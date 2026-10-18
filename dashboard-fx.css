@@ -65,53 +65,6 @@
 .fx-tip .fx-tip-sub.warn{color:#EED6A0} .fx-tip .fx-tip-sub.ok{color:#A9D8C0}
 .fx-tip .fx-tip-act{margin-top:4px;padding-top:6px;border-top:1px solid rgba(255,255,255,.14);color:var(--brass-soft);font-size:11.5px}
 
-/* ── الشريط الزمني ── */
-.tl-panel{margin-top:20px}
-.tl-head{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:10px 20px}
-.tl-legend{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:12px;color:var(--ink-soft)}
-.tl-legend span{display:inline-flex;align-items:center;gap:6px}
-.tl-sw{width:9px;height:9px;border-radius:50%;display:inline-block}
-.tl-sw.bad{background:var(--bad-line)} .tl-sw.today{background:var(--today-line)}
-.tl-sw.warn{background:var(--warn-line)} .tl-sw.ok{background:var(--ok-line)}
-.dtl{--dot:14px;--gap:5px;margin-top:8px;padding:0 4px}
-@media(min-width:768px){.dtl{--dot:16px}}
-.dtl-track{position:relative;margin-top:26px;block-size:calc(var(--levels,1) * (var(--dot) + var(--gap)) + 54px)}
-.dtl-zone{position:absolute;inset-inline-start:0;inset-block:0 26px;border-radius:10px;
-  background:repeating-linear-gradient(135deg,var(--bad-bg) 0 6px,transparent 6px 12px);border:1px dashed #E6C4BC}
-.dtl-zone b{position:absolute;inset-inline:0;top:-22px;text-align:center;font-size:11.5px;font-weight:500;color:var(--bad)}
-.dtl-axis{position:absolute;inset-inline:0;bottom:26px;height:2px;border-radius:2px;
-  background:linear-gradient(to left,var(--hair) 0%,var(--hair-2) 100%)}
-html[dir=rtl] .dtl-axis{background:linear-gradient(to right,var(--hair) 0%,var(--hair-2) 100%)}
-.dtl-tick{position:absolute;bottom:0;transform:translateX(50%);display:flex;flex-direction:column;align-items:center;gap:4px}
-html[dir=ltr] .dtl-tick{transform:translateX(-50%)}
-.dtl-tick i{display:block;width:1px;height:9px;background:var(--hair-2);margin-bottom:2px}
-.dtl-tick b{font-size:11px;font-weight:400;color:var(--ink-soft);white-space:nowrap}
-.dtl-tick.today i{width:2px;height:12px;background:var(--slate)}
-.dtl-tick.today b{color:var(--slate);font-weight:700}
-.dtl-dot{position:absolute;bottom:calc(30px + var(--lvl) * (var(--dot) + var(--gap)));
-  inline-size:var(--dot);block-size:var(--dot);margin-inline-start:calc(var(--dot) / -2);
-  min-width:0;min-height:0;border-radius:50%;border:2px solid var(--paper-2);padding:0;cursor:pointer;
-  box-shadow:0 1px 3px rgba(22,40,59,.25);
-  transition:transform var(--duration-fast) var(--easing-out),box-shadow var(--duration-fast)}
-/* هدف لمس أوسع من النقطة المرئية — الشكل يبقى صغيرًا والإصبع يصيبه.
-   ui.css يفرض على الجوال min-width/min-height:44px !important لكل زرّ؛
-   النقطة تستثني نفسها منه لأن ::after يوفّر هدف اللمس بدلها، وإلا تضخّمت
-   النقاط إلى 44px وغطّى بعضها بعضًا. */
-.dtl .dtl-dot{min-width:0 !important;min-height:0 !important}
-.dtl-dot::after{content:"";position:absolute;inset:-9px;border-radius:50%}
-.dtl-dot.bad{background:var(--bad-line)} .dtl-dot.today{background:var(--today-line)}
-.dtl-dot.warn{background:var(--warn-line)} .dtl-dot.ok{background:var(--ok-line)} .dtl-dot.pending{background:var(--pend-line)}
-.dtl-dot[aria-disabled=true]{cursor:default}
-.dtl-dot:focus-visible{outline:2px solid var(--slate);outline-offset:2px}
-@media(hover:hover) and (pointer:fine){.dtl-dot:hover{transform:scale(1.3);box-shadow:0 3px 10px rgba(22,40,59,.3)}}
-.dtl-armed:not(.dtl-in) .dtl-dot{opacity:0}
-.dtl-armed.dtl-in .dtl-dot{animation:m-pop var(--duration-normal) var(--easing-out) backwards;animation-delay:calc(120ms + var(--i,0) * var(--stagger))}
-.dtl-armed .dtl-axis{transform-origin:right;transform:scaleX(0);transition:transform var(--duration-slow) var(--easing-out)}
-.dtl-armed.dtl-in .dtl-axis{transform:none}
-.dtl-empty{padding:22px;text-align:center;color:var(--ok);background:var(--ok-bg);border-radius:12px;font-size:13.5px}
-@media(max-width:639px){.dtl-tick b{font-size:10px}}
-
 @media(prefers-reduced-motion:reduce){
-  .hero-art,.ha-float,.kpi-ico,.dtl-dot,.dtl-axis{animation:none !important;transition:none !important;transform:none}
-  .dtl-armed .dtl-dot{opacity:1}
+  .hero-art,.ha-float,.kpi-ico{animation:none !important;transition:none !important;transform:none}
 }

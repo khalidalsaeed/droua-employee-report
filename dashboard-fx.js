@@ -1,9 +1,8 @@
 /* dashboard-fx.js — الحركة والتفاعل فوق لوحة المؤشّرات الحالية.
    =========================================================================
    لا يحسب هذا الملف أي رقم من عنده: البطاقات والحلقات تأتيه مرسومة
-   بأرقامها النهائية من app-shell.html، والشريط الزمني يقرأ
-   DocStatus.empDocs نفسها التي تعطي البطاقات أرقامها. الدور هنا عرضيّ
-   محض — عدّ، ورسم من الصفر، وتلميح، ونقر.
+   بأرقامها النهائية من app-shell.html. الدور هنا عرضيّ محض — عدّ، ورسم من
+   الصفر، وتلميح، ونقر. قسم الوثائق القادمة على الانتهاء في doc-expiry.js.
 
    الحركة مرّة واحدة لكل عنصر: renderDashboardTop() يُعاد بعد كل تعديل
    موظف، وإعادة العدّ من الصفر عند كل حفظ ضجيج. المرّات اللاحقة تُرسم
@@ -139,103 +138,13 @@
     });
   }
 
-  /* ── الشريط الزمني ──────────────────────────────────────────────────
-     المحور يقرأ مع اتجاه الصفحة: المنتهية في البداية (يمين الشاشة)، ثم
-     «اليوم»، ثم المستقبل حتى WINDOW يومًا. المقياس جذريّ كي لا تتكدّس
-     الأيام القريبة — وهي الأهمّ — في شريحة ضيّقة. */
-  const WINDOW = 90;
-  const EXPIRED_ZONE = 14; // ٪ من العرض للمنتهية
-  const TICKS = [0, 10, 30, 60, 90];
-
-  function severity(n) {
-    if (n < 0) return "bad";
-    if (n <= 10) return "today";
-    if (n <= 30) return "warn";
-    return "ok";
-  }
-  function position(n) {
-    if (n < 0) return EXPIRED_ZONE - 2 - (Math.min(-n, WINDOW) / WINDOW) * (EXPIRED_ZONE - 5);
-    return EXPIRED_ZONE + Math.sqrt(Math.min(n, WINDOW) / WINDOW) * (100 - EXPIRED_ZONE - 3);
-  }
-
-  /* نقيّة: تجمع الوثائق في النافذة وتعطي كل واحدة موضعها وطبقتها.
-     تُرجع { points, beyond, expired }. */
-  function timelinePoints(data, permits, DS) {
-    const D = DS || (typeof DocStatus !== "undefined" ? DocStatus : null);
-    const pm = D.latestPermits(permits);
-    const all = [];
-    (data || []).forEach((e, i) => D.empDocs(e, pm).forEach((dc) => {
-      if (dc.st.key === "na" || dc.st.n == null) return;
-      all.push({ i, emp: e, type: dc.type, tk: dc.tk, exp: dc.exp, n: dc.st.n, pending: dc.st.key === "pending" });
-    }));
-    const inWin = all.filter((d) => d.n <= WINDOW).sort((a, b) => a.n - b.n);
-    const levels = []; // آخر موضع مشغول في كل طبقة
-    const points = inWin.map((d, order) => {
-      const x = position(d.n);
-      let lvl = 0;
-      while (levels[lvl] != null && Math.abs(levels[lvl] - x) < 2.6) lvl++;
-      levels[lvl] = x;
-      return { ...d, x, lvl, order, sev: d.pending ? "pending" : severity(d.n) };
-    });
-    return { points, beyond: all.length - inWin.length, expired: inWin.filter((d) => d.n < 0).length };
-  }
-
-  function timeline(el, data, permits, opts) {
-    if (!el) return;
-    const o = opts || {};
-    const F = DocStatus.F;
-    const { points, beyond, expired } = timelinePoints(data, permits);
-    const sub = document.getElementById("docTimelineSub");
-    if (sub) {
-      const parts = [`${points.length} وثيقة في النافذة`];
-      if (expired) parts.push(`منها ${expired} منتهية`);
-      if (beyond) parts.push(`و ${beyond} بعد ${WINDOW} يومًا`);
-      sub.textContent = `المنتهية والتي تنتهي خلال ${WINDOW} يومًا · ${parts.join(" · ")}`;
-    }
-    if (!points.length) {
-      el.innerHTML = `<div class="dtl-empty">لا توجد وثائق منتهية أو تنتهي خلال ${WINDOW} يومًا</div>`;
-      return;
-    }
-    const maxLvl = Math.min(5, points.reduce((m, p) => Math.max(m, p.lvl), 0));
-    const ticks = TICKS.map((d) => `<span class="dtl-tick${d === 0 ? " today" : ""}" style="inset-inline-start:${position(d).toFixed(2)}%">
-        <i></i><b>${d === 0 ? "اليوم" : d === 10 ? "10 أيام" : `${d} يومًا`}</b></span>`).join("");
-    const dots = points.map((p) => {
-      const lvl = Math.min(p.lvl, maxLvl);
-      const name = p.emp[F.name] || "";
-      const label = `${name} — ${p.type}، ${DocStatus.fmtDate(p.exp)}، ${p.pending ? "جاري السداد" : daysPhrase(p.n)}`;
-      return `<button type="button" class="dtl-dot ${p.sev}" data-k="${p.order}" style="inset-inline-start:${p.x.toFixed(2)}%;--lvl:${lvl};--i:${Math.min(p.order, 16)}"
-        aria-label="${esc(label)}"${o.onPick ? "" : ' aria-disabled="true"'}></button>`;
-    }).join("");
-    el.style.setProperty("--levels", String(maxLvl + 1));
-    el.innerHTML = `<div class="dtl-track">
-        <span class="dtl-zone" style="inline-size:${EXPIRED_ZONE}%"><b>منتهية</b></span>
-        <span class="dtl-axis"></span>${ticks}${dots}
-      </div>`;
-    const key = `timeline:${el.id}`;
-    const first = !played.has(key) && Mo && !Mo.prefersReduced();
-    played.add(key);
-    if (first) { el.classList.add("dtl-armed"); Mo.onVisible(el, () => el.classList.add("dtl-in")); }
-    else el.classList.add("dtl-in");
-
-    el.querySelectorAll(".dtl-dot").forEach((b) => {
-      const p = points[Number(b.dataset.k)];
-      const html = `<b>${esc(p.emp[F.name] || "")}</b><span>${esc(p.type)} · ${esc(DocStatus.fmtDate(p.exp))}</span>
-        <span class="fx-tip-sub ${p.sev}">${p.pending ? "جاري السداد" : daysPhrase(p.n)}</span>${o.onPick ? '<span class="fx-tip-act">اضغط لفتح ملف الموظف</span>' : ""}`;
-      b.addEventListener("pointerenter", (ev) => showTip(html, b, ev));
-      b.addEventListener("pointerleave", hideTip);
-      b.addEventListener("focus", () => showTip(html, b));
-      b.addEventListener("blur", hideTip);
-      b.addEventListener("click", () => { hideTip(); if (o.onPick) o.onPick(p.i); });
-    });
-  }
-
   if (typeof window !== "undefined") {
     window.addEventListener("scroll", hideTip, { passive: true });
     /* التسليح عند التحميل: قبله لا يُخفى شيء، ومع تقليل الحركة لا يحدث أبدًا. */
     if (Mo && typeof document !== "undefined") Mo.arm(document);
   }
 
-  const DashFx = { icon, kpis, ring, timeline, timelinePoints, severity, position, employeesPhrase, daysPhrase, showTip, hideTip, esc, WINDOW };
+  const DashFx = { icon, kpis, ring, employeesPhrase, daysPhrase, showTip, hideTip, esc };
   if (typeof module !== "undefined" && module.exports) module.exports = DashFx;
   else root.DashFx = DashFx;
 })(typeof window !== "undefined" ? window : globalThis);

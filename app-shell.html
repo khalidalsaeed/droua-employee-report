@@ -459,7 +459,8 @@ footer.site{border-top:1px solid var(--hair);margin-top:30px}
 <link rel="stylesheet" href="/admin-ui.css?v=2">
 <!-- طبقة الحركة والتفاعل وقسم الهيكل التنظيمي — ملفات مستقلّة تُحذف معًا إن أُلغي التطوير. -->
 <link rel="stylesheet" href="/motion.css?v=1">
-<link rel="stylesheet" href="/dashboard-fx.css?v=1">
+<link rel="stylesheet" href="/dashboard-fx.css?v=2">
+<link rel="stylesheet" href="/doc-expiry.css?v=1">
 <link rel="stylesheet" href="/org-chart.css?v=1">
 <!-- منع الوميض: يجب أن ترتفع طبقة الترحيب قبل أوّل رسم للجسم، وإلّا لمح
      المستخدم النظام قبل الترحيب. سطر مضمّن عمدًا — أي ملف خارجي يصل بعد
@@ -580,23 +581,9 @@ try{ if(sessionStorage.getItem("droua:welcome")==="1") document.documentElement.
       <div id="soonLic"></div>
     </div>
   </div>
-  <!-- الشريط الزمني للوثائق القادمة على الانتهاء. يُرسم من DocStatus.empDocs
-       نفسها التي تعطي البطاقات أرقامها — لا حسبة موازية. -->
-  <div class="panel tl-panel" id="docTimelinePanel">
-    <div class="tl-head">
-      <div>
-        <h3>الوثائق القادمة على انتهاء الصلاحية</h3>
-        <div class="psub" id="docTimelineSub">المنتهية والتي تنتهي خلال الأيام التسعين القادمة</div>
-      </div>
-      <div class="tl-legend" aria-hidden="true">
-        <span><i class="tl-sw bad"></i>منتهية</span>
-        <span><i class="tl-sw today"></i>0–10 أيام</span>
-        <span><i class="tl-sw warn"></i>11–30 يومًا</span>
-        <span><i class="tl-sw ok"></i>أبعد</span>
-      </div>
-    </div>
-    <div class="dtl" id="docTimeline"></div>
-  </div>
+  <!-- الوثائق القادمة على انتهاء الصلاحية — حسب التصميم المعتمد. يملؤه
+       doc-expiry.js من DocStatus.empDocs نفسها التي تعطي البطاقات أرقامها. -->
+  <div class="dx" id="docExpiry"></div>
 </section>
 
 <section class="block wrap" id="finSec">
@@ -784,12 +771,15 @@ try{ if(sessionStorage.getItem("droua:welcome")==="1") document.documentElement.
 <script src="/welcome.js?v=1"></script>
 <!-- الحركة والتفاعل (dashboard-fx.js) والهيكل التنظيمي (org-core.js + org-chart.js). -->
 <script src="/motion.js?v=1"></script>
-<script src="/dashboard-fx.js?v=1"></script>
+<script src="/dashboard-fx.js?v=2"></script>
+<script src="/doc-expiry.js?v=1"></script>
 <script src="/org-core.js?v=1"></script>
 <script src="/org-chart.js?v=1"></script>
 <script>
 let DATA = [];
 let FIN = {};
+/* لحظة وصول البيانات من الخادم — «آخر تحديث» في قسم الوثائق. */
+let DATA_LOADED_AT = null;
 /* Ajeer staffing-contract permits — matched to employees by iqama number.
    A new permit for the same iqama supersedes the older one (see dedupeAjeer). */
 let AJEER = [];
@@ -1023,9 +1013,9 @@ function donut(boxId,rows,legendId,ringOpts){
 const canFilterPeople=AdminUI.can("employees","view");
 donut("chartIqama",[["سارية",validIq,C.ok],["منتهية",expiredIq,C.bad,"bad"]],"legendIqama",{field:"iq",subject:"إقامة"});
 donut("chartLicense",[["سارية",validLic,C.ok], pendingLic?["جاري السداد",pendingLic,C.pending,"pending"]:null, ["منتهية",expiredLic,C.bad,"bad"]],"legendLicense",{field:"lic",subject:"رخصة عمل"});
-/* الشريط الزمني من مصدر البطاقات نفسه (DocStatus.empDocs) */
-DashFx.timeline(document.getElementById("docTimeline"),DATA,AJEER,{
-  onPick:canFilterPeople?(i=>openDrawer(i)):null});
+/* قسم الوثائق القادمة على الانتهاء، من مصدر البطاقات نفسه (DocStatus.empDocs) */
+DocExpiry.render(document.getElementById("docExpiry"),DATA,AJEER,{
+  loadedAt:DATA_LOADED_AT,onPick:canFilterPeople?(i=>openDrawer(i)):null});
 /* amber "expiring soon" flags below each donut (still valid, need renewal) */
 function soonFlag(id,n){const el=document.getElementById(id);if(!el)return;
   el.innerHTML = n? (canOpenSoon
@@ -1996,6 +1986,7 @@ async function loadAppData(){
   const permJson=await permRes.json();
   const settJson=await settRes.json();
   DATA = empJson.ok ? empJson.items : [];
+  DATA_LOADED_AT = new Date();
   AJEER = permJson.ok ? permJson.items : [];
   const settings = settJson.ok ? settJson.settings : {};
   FIN = settings.financial_summary || {};
