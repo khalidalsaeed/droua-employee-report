@@ -457,9 +457,10 @@ footer.site{border-top:1px solid var(--hair);margin-top:30px}
 
 </style>
 <link rel="stylesheet" href="/admin-ui.css?v=2">
-<!-- طبقة الحركة والتفاعل — ملفات مستقلّة تُحذف معًا إن أُلغي التطوير. -->
+<!-- طبقة الحركة والتفاعل وقسم الهيكل التنظيمي — ملفات مستقلّة تُحذف معًا إن أُلغي التطوير. -->
 <link rel="stylesheet" href="/motion.css?v=1">
 <link rel="stylesheet" href="/dashboard-fx.css?v=1">
+<link rel="stylesheet" href="/org-chart.css?v=1">
 <!-- منع الوميض: يجب أن ترتفع طبقة الترحيب قبل أوّل رسم للجسم، وإلّا لمح
      المستخدم النظام قبل الترحيب. سطر مضمّن عمدًا — أي ملف خارجي يصل بعد
      أن يكون الرسم قد بدأ. المفتاح نفسه في login.html و welcome.js. -->
@@ -720,6 +721,17 @@ try{ if(sessionStorage.getItem("droua:welcome")==="1") document.documentElement.
   <div class="tk-mini" id="ticketsMini"></div>
 </section>
 
+<!-- الهيكل التنظيمي: مختصر هنا (مؤشّرات + أوّل مستويين)، والشجرة الكاملة
+     في عرض منبثق داخل الصفحة نفسها. يملؤه org-chart.js. -->
+<section class="block wrap" id="orgSec">
+  <div class="sec-head"><h2>الهيكل التنظيمي</h2>
+    <div style="display:flex;align-items:center;gap:14px">
+      <span class="idx" id="orgIdx">—</span>
+    </div>
+  </div>
+  <div id="orgPreview"><div class="u-skeleton u-skeleton-card"></div></div>
+</section>
+
 <section class="block wrap" id="contactSec">
   <div class="sec-head"><h2>التواصل مع قسم الموارد البشرية</h2><span class="idx">تواصل مباشر</span></div>
   <div class="contact-card">
@@ -770,9 +782,11 @@ try{ if(sessionStorage.getItem("droua:welcome")==="1") document.documentElement.
 <script src="/doc-status.js?v=1"></script>
 <!-- شاشة الترحيب. تُستدعى من initAuthGate() بعد /api/auth/me لا قبله. -->
 <script src="/welcome.js?v=1"></script>
-<!-- الحركة والتفاعل فوق لوحة المؤشّرات (dashboard-fx.js). -->
+<!-- الحركة والتفاعل (dashboard-fx.js) والهيكل التنظيمي (org-core.js + org-chart.js). -->
 <script src="/motion.js?v=1"></script>
 <script src="/dashboard-fx.js?v=1"></script>
+<script src="/org-core.js?v=1"></script>
+<script src="/org-chart.js?v=1"></script>
 <script>
 let DATA = [];
 let FIN = {};
@@ -789,7 +803,9 @@ let AJEER = [];
    (resolved server-side from role defaults or the user's custom set), so this
    page no longer keeps its own copy of the role→pages table. */
 const ROLE_LABELS_CLIENT={owner:"المالك",admin:"مدير النظام",hr:"الموارد البشرية",finance:"المالية",viewer:"قراءة فقط"};
-const SECTION_TO_PAGE={kpiSec:"kpi",finSec:"finance",peopleSec:"employees",ajeerSec:"ajeer",ticketsSec:"tickets",contactSec:"contact"};
+/* orgSec يُحرس بصلاحية سجلّ الموظفين: يعرض أسماءهم وبريدهم، و/api/data/org-structure
+   يفرض الصلاحية نفسها على الخادم. */
+const SECTION_TO_PAGE={kpiSec:"kpi",finSec:"finance",peopleSec:"employees",ajeerSec:"ajeer",ticketsSec:"tickets",orgSec:"employees",contactSec:"contact"};
 let CURRENT_USER=null;
 /* بطاقة هوية المستخدم وروابط التنقّل انتقلت إلى app-nav.js (درج مشترك لكل
    الصفحات)؛ ما يبقى هنا هو إظهار أقسام هذه الصفحة حسب الصلاحية. */
@@ -2019,6 +2035,11 @@ function showSkeletons(){
   render();
   renderAjeer();
   renderTicketsWidget();
+  /* الهيكل التنظيمي بعد بيانات الموظفين: يربط سجلّات المصدر بسجلّات المنصّة
+     بالبريد ليفتح درج الموظف المطابق. يجلب بياناته بنفسه ولا يعطّل غيره. */
+  if(AdminUI.can("employees","view")) OrgChart.mount({
+    preview:document.getElementById("orgPreview"), idx:document.getElementById("orgIdx"),
+    platform:DATA, emailKey:F.email, openEmployee:i=>openDrawer(i)});
   /* فتح مباشر من الرابط: /#expiring يعرض القائمة فور اكتمال التحميل،
      فيصلح للحفظ في المفضّلة وللمشاركة. يأتي بعد renderDashboardTop()
      لأن followUpDocs لا تُحسب قبله. */
