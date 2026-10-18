@@ -462,6 +462,7 @@ footer.site{border-top:1px solid var(--hair);margin-top:30px}
 <link rel="stylesheet" href="/dashboard-fx.css?v=2">
 <link rel="stylesheet" href="/doc-expiry.css?v=1">
 <link rel="stylesheet" href="/org-chart.css?v=1">
+<link rel="stylesheet" href="/employee-photos.css?v=1">
 <!-- منع الوميض: يجب أن ترتفع طبقة الترحيب قبل أوّل رسم للجسم، وإلّا لمح
      المستخدم النظام قبل الترحيب. سطر مضمّن عمدًا — أي ملف خارجي يصل بعد
      أن يكون الرسم قد بدأ. المفتاح نفسه في login.html و welcome.js. -->
@@ -774,7 +775,8 @@ try{ if(sessionStorage.getItem("droua:welcome")==="1") document.documentElement.
 <script src="/dashboard-fx.js?v=2"></script>
 <script src="/doc-expiry.js?v=1"></script>
 <script src="/org-core.js?v=1"></script>
-<script src="/org-chart.js?v=1"></script>
+<script src="/employee-photos.js?v=1"></script>
+<script src="/org-chart.js?v=2"></script>
 <script>
 let DATA = [];
 let FIN = {};
@@ -870,6 +872,8 @@ function docStatusLabel(st){
 function money(v){if(v==null||v==="")return "—";return Number(v).toLocaleString("en-US",{minimumFractionDigits:0,maximumFractionDigits:2})+" ريال";}
 function clean(v){return (v==null||v===""||v==="لايوجد")?"—":v;}
 function initials(name){const p=String(name).trim().split(/\s+/);return (p[0]||"").slice(0,1)+((p[1]||"").slice(0,1)||"");}
+/* مفتاحا صورة الموظف: رقم ضمان (eid) أوّلًا ثم البريد (employee-photos.js). */
+function photoRef(e){return {eid:e[F.damanah],email:e[F.email]};}
 function esc(s){return String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
 
 /* خريطة أسماء الحقول F في doc-status.js (تستعملها empDocs هناك أيضًا) */
@@ -1086,7 +1090,7 @@ function card(e,i){
   return `<article class="card" tabindex="0" data-i="${i}" style="animation-delay:${Math.min(i*45,360)}ms">
     <div class="top">
       <div class="who">
-        <div class="avatar">${esc(initials(e[F.name]))}</div>
+        <div class="avatar">${esc(initials(e[F.name]))}${EmployeePhotos.img(photoRef(e))}</div>
         <div style="min-width:0">
           <button type="button" class="nm" data-hover="${i}" aria-label="تفاصيل سريعة عن ${esc(e[F.name])}">${esc(e[F.name])}</button>
           <div class="role">${esc(e[F.job])}</div>
@@ -1385,9 +1389,14 @@ function openDrawer(i){
   drawer.innerHTML=`
     <div class="dr-head">
       <button class="dr-close" id="drClose" aria-label="إغلاق">✕</button>
-      <span class="eyebrow">ملف الموظف · #${esc(e[F.damanah])}</span>
-      <h2 id="drName">${esc(e[F.name])}</h2>
-      <div class="drole">${esc(e[F.job])} · ${esc(e[F.nat])}</div>
+      <div class="dr-who">
+        <div class="ep-av dr-av" aria-hidden="true">${esc(initials(e[F.name]))}${EmployeePhotos.img(photoRef(e))}</div>
+        <div>
+          <span class="eyebrow">ملف الموظف · #${esc(e[F.damanah])}</span>
+          <h2 id="drName">${esc(e[F.name])}</h2>
+          <div class="drole">${esc(e[F.job])} · ${esc(e[F.nat])}</div>
+        </div>
+      </div>
     </div>
     <div class="dr-body">
       <div class="admin-row-actions" id="drAdminActions" style="display:none;margin-bottom:16px">
@@ -2014,7 +2023,9 @@ function showSkeletons(){
   const ok = await initAuthGate();
   if(!ok) return;
   try{
-    await loadAppData();
+    /* الصور مع البيانات لا بعدها: البطاقات تُرسم مرّة واحدة بصورها. load()
+       لا يرمي — فشله يترك الأحرف الأولى كما كانت. */
+    await Promise.all([loadAppData(), EmployeePhotos.load()]);
     await loadTickets();
   }catch(err){
     AdminUI.toastError("تعذّر تحميل البيانات — تحقّق من الاتصال وأعد تحميل الصفحة.");
@@ -2030,7 +2041,8 @@ function showSkeletons(){
      بالبريد ليفتح درج الموظف المطابق. يجلب بياناته بنفسه ولا يعطّل غيره. */
   if(AdminUI.can("employees","view")) OrgChart.mount({
     preview:document.getElementById("orgPreview"), idx:document.getElementById("orgIdx"),
-    platform:DATA, emailKey:F.email, openEmployee:i=>openDrawer(i)});
+    platform:DATA, emailKey:F.email, openEmployee:i=>openDrawer(i),
+    photoImg:n=>EmployeePhotos.img({email:n.email})});
   /* فتح مباشر من الرابط: /#expiring يعرض القائمة فور اكتمال التحميل،
      فيصلح للحفظ في المفضّلة وللمشاركة. يأتي بعد renderDashboardTop()
      لأن followUpDocs لا تُحسب قبله. */
