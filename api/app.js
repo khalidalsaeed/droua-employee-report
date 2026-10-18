@@ -856,6 +856,8 @@ async function handleFiles(req, res, action) {
 
   /* Rendering a permit's QR is a read, gated by ajeer:view — not a file action. */
   if (action === "qr") return filesQrImage(req, res, actor);
+  /* صورة الموظف قراءةٌ بصلاحية employees:view — لا عملية ملفّات. */
+  if (action === "employee-photo") return filesEmployeePhoto(req, res, actor);
 
   const fileAction = action === "upload" ? "upload_files" : action === "delete" ? "delete_files" : null;
   if (!fileAction) return res.status(404).json({ ok: false, error: "Not found" });
@@ -1028,6 +1030,42 @@ async function filesQrImage(req, res, actor) {
     "Cache-Control": "private, max-age=300, must-revalidate",
   });
   res.end(png);
+}
+
+/* Serves an employee photo from the private photo store. Every request is
+   authorized here (session + employees:view) — there is no public URL to fall
+   back to, and the storage key never leaves the server: the browser only ever
+   holds the random photoId. Bytes are re-verified against the manifest's
+   sha256 before they're sent (lib/photos/store.js). */
+async function filesEmployeePhoto(req, res, actor) {
+  if (req.method !== "GET") return res.status(405).json({ ok: false, error: "Method not allowed" });
+  if (!hasPermission(actor, "employees", "view")) return res.status(403).json(FORBIDDEN);
+  const photos = require("../lib/photos/store");
+  if (!photos.configured()) return res.status(404).json({ ok: false, error: "لا توجد صورة" });
+  const entry = photos.entryById((req.query || {}).id);
+  if (!entry) return res.status(404).json({ ok: false, error: "لا توجد صورة" });
+
+  const etag = `"ph-${entry.sha256.slice(0, 16)}"`;
+  const headers = {
+    ETag: etag,
+    "Cache-Control": "private, max-age=3600, must-revalidate",
+    "X-Content-Type-Options": "nosniff",
+    "Content-Security-Policy": "default-src 'none'; sandbox",
+  };
+  if (req.headers["if-none-match"] === etag) {
+    res.writeHead(304, headers);
+    return res.end();
+  }
+  let bytes;
+  try {
+    bytes = await photos.readPhoto(entry);
+  } catch (err) {
+    console.error("employee photo not served:", err && err.message);
+    return res.status(404).json({ ok: false, error: "لا توجد صورة" });
+  }
+  if (!bytes) return res.status(404).json({ ok: false, error: "لا توجد صورة" });
+  res.writeHead(200, { ...headers, "Content-Type": entry.mime, "Content-Length": bytes.length });
+  res.end(bytes);
 }
 
 async function filesDelete(req, res, actor) {
