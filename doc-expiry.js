@@ -265,6 +265,12 @@
     return `<span class="dx-pill ${bucket}"><i></i>${esc(BUCKET[bucket].pill)}</span>`;
   }
 
+  /* صورة الموظف فوق أحرفه الأولى، يقدّمها المُضيف (opts.photoImg) — هذا
+     الملف يبقى بلا نداء شبكة. لا صورة = الأحرف الأولى كما كانت. */
+  function photo(emp) {
+    return S.opts && typeof S.opts.photoImg === "function" ? S.opts.photoImg(emp) || "" : "";
+  }
+
   function drawTable(animate) {
     const wrap = S.el.querySelector(".dx-table-wrap");
     const docs = S.filter ? S.data.docs.filter((d) => d.bucket === S.filter) : S.data.docs;
@@ -278,7 +284,7 @@
       rows = list.map((d, k) => `
         <tr class="dx-row" data-i="${d.i}" style="--i:${Math.min(k, 10)}"${clickable ? ` tabindex="0" aria-label="فتح ملف ${esc(d.emp[F.name])}"` : ""}>
           <td class="dx-n"><span class="num">${k + 1}</span></td>
-          <td class="dx-emp"><div class="dx-emp-in"><span class="dx-av">${esc(initials(d.emp[F.name]))}</span><span><b>${esc(d.emp[F.name] || "—")}</b>${d.emp[F.job] ? `<small>${esc(d.emp[F.job])}</small>` : ""}</span></div></td>
+          <td class="dx-emp"><div class="dx-emp-in"><span class="dx-av">${esc(initials(d.emp[F.name]))}${photo(d.emp)}</span><span><b>${esc(d.emp[F.name] || "—")}</b>${d.emp[F.job] ? `<small>${esc(d.emp[F.job])}</small>` : ""}</span></div></td>
           <td class="dx-type"><span class="dx-type-ico">${svg(ICON[d.tk] || ICON.doc, 17)}</span>${esc(d.type)}</td>
           <td class="dx-rem ${d.bucket}" title="${esc(DocStatus.fmtDate(d.exp))}">${esc(remaining(d.n))}</td>
           <td class="dx-st">${pill(d.bucket)}</td>
@@ -291,7 +297,7 @@
       rows = list.map((g, k) => `
         <tr class="dx-row" data-i="${g.i}" style="--i:${Math.min(k, 10)}"${clickable ? ` tabindex="0" aria-label="فتح ملف ${esc(g.emp[F.name])}"` : ""}>
           <td class="dx-n"><span class="num">${k + 1}</span></td>
-          <td class="dx-emp"><div class="dx-emp-in"><span class="dx-av">${esc(initials(g.emp[F.name]))}</span><span><b>${esc(g.emp[F.name] || "—")}</b>${g.emp[F.job] ? `<small>${esc(g.emp[F.job])}</small>` : ""}</span></div></td>
+          <td class="dx-emp"><div class="dx-emp-in"><span class="dx-av">${esc(initials(g.emp[F.name]))}${photo(g.emp)}</span><span><b>${esc(g.emp[F.name] || "—")}</b>${g.emp[F.job] ? `<small>${esc(g.emp[F.job])}</small>` : ""}</span></div></td>
           <td class="dx-type dx-types">${g.docs.map((d) => `<span class="dx-type-ico" title="${esc(d.type)} — ${esc(remaining(d.n))}">${svg(ICON[d.tk] || ICON.doc, 16)}</span>`).join("")}<span class="dx-types-n">${esc(docsPhrase(g.docs.length))}</span></td>
           <td class="dx-rem ${g.worst.bucket}">${esc(g.worst.type)} · ${esc(remaining(g.worst.n))}</td>
           <td class="dx-st">${pill(g.worst.bucket)}</td>

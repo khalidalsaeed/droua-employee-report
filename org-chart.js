@@ -495,7 +495,7 @@
     const exp = kids ? isOpen(v) : false;
     return `<div class="oc-card${isRef ? " oc-ref" : ""}${n.active === false ? " oc-inactive" : ""}" data-id="${esc(n.id)}" style="--i:${Math.min(depth, 8)}">
       <button type="button" class="oc-hit" data-select="${esc(n.id)}" aria-label="${esc(n.nameAr)}${isRef ? " — عقدة مدير مرجعية" : ""}">
-        <span class="oc-av" aria-hidden="true">${esc(initials(n.nameAr))}</span>
+        <span class="oc-av" aria-hidden="true">${esc(initials(n.nameAr))}${photo(n)}</span>
         <span class="oc-txt"><b>${esc(n.nameAr)}</b>${sub}</span>
       </button>
       ${kids ? `<button type="button" class="oc-tog" data-toggle="${esc(v.key)}" aria-expanded="${exp}" aria-label="${exp ? "طيّ" : "فتح"} فريق ${esc(n.nameAr)}">
@@ -506,6 +506,13 @@
      تحت أكثر من موقع، ولكلّ ظهور فتحه. المجموعة نفسها مفتوحة دائمًا في الرسم. */
   function isOpen(v) { return !!v.group || S.expanded.has(v.key); }
   function initials(name) { const p = String(name || "").trim().split(/\s+/); return (p[0] || "").slice(0, 1) + ((p[1] || "").slice(0, 1) || ""); }
+  /* صورة الموظف فوق أحرفه الأولى، يقدّمها المُضيف (opts.photoImg) — هذا
+     الملف لا يجلب شيئًا بنفسه. عقدة المدير المرجعية لا سجلّ لها فلا صورة:
+     تبقى أحرفها الأولى مهما أعاد المُضيف. */
+  function photo(n) {
+    if (!n || n.kind !== "employee" || !S.opts || typeof S.opts.photoImg !== "function") return "";
+    return S.opts.photoImg(n) || "";
+  }
 
   function stack(v, depth) {
     if (!v.kids.length) return "";
@@ -547,6 +554,7 @@
         : n.kind === "reference" ? "عقدة مدير مرجعية" : [n.department, n.location].filter(Boolean).join(" · ");
       return `<li role="treeitem" aria-level="${r.depth + 1}" ${r.hasChildren ? `aria-expanded="${r.expanded}"` : ""} class="oc-row${r.group ? " oc-row-group" : ""}${n && n.kind === "reference" ? " oc-ref" : ""}" data-id="${esc(r.id || "")}" style="--d:${r.depth};--i:${Math.min(i, 12)}">
         ${r.hasChildren ? `<button type="button" class="oc-tog" data-toggle="${esc(r.key)}" aria-label="${r.expanded ? "طيّ" : "فتح"} ${esc(title)}"><svg class="oc-chev" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></button>` : `<span class="oc-tog-sp" aria-hidden="true"></span>`}
+        ${n ? `<span class="oc-av ep-av oc-row-av" aria-hidden="true">${esc(initials(title))}${photo(n)}</span>` : ""}
         ${r.id ? `<button type="button" class="oc-row-hit" data-select="${esc(r.id)}"><b>${esc(title)}</b><span>${esc(meta)}</span></button>`
           : `<span class="oc-row-hit"><b>${esc(title)}</b><span>${esc(meta)}</span></span>`}
         ${r.hasChildren ? `<span class="oc-cnt num">${r.size}</span>` : ""}
@@ -735,7 +743,10 @@
       <div class="oc-p-head">
         <button type="button" class="oc-x" data-close aria-label="إغلاق التفاصيل">✕</button>
         <span class="oc-badge ${isRef ? "ref" : "emp"}">${isRef ? "عقدة مدير مرجعية" : "موظف"}</span>
-        <h3>${esc(n.nameAr)}</h3>
+        <div class="oc-p-who${isRef ? " oc-ref" : ""}">
+          <span class="oc-av ep-av oc-p-av" aria-hidden="true">${esc(initials(n.nameAr))}${photo(n)}</span>
+          <h3>${esc(n.nameAr)}</h3>
+        </div>
         <div class="oc-path">${path}</div>
       </div>
       <div class="oc-p-body">
