@@ -179,7 +179,7 @@ const BLOB_ID = require.resolve("@vercel/blob");
 const AUTH_ID = require.resolve("../lib/auth/requireAuth");
 const MANIFEST_ID = require.resolve("../lib/photos/manifest");
 const PROJECT_ROOT = path.resolve(__dirname, "..");
-const ENV = ["EMPLOYEE_PHOTOS_READ_WRITE_TOKEN", "BLOB_READ_WRITE_TOKEN", "DROUA_BLOB_READ_WRITE_TOKEN"];
+const ENV = ["EMPLOYEE_PHOTOS_STORE_ID", "VERCEL_OIDC_TOKEN", "BLOB_READ_WRITE_TOKEN", "DROUA_BLOB_READ_WRITE_TOKEN"];
 
 function fakeBlob(objects) {
   const calls = [];
@@ -196,6 +196,10 @@ function fakeBlob(objects) {
         calls.push({ op: "put", pathname, opts });
         objects.set(pathname, Buffer.from(body));
         return { pathname, url: `https://example.invalid/${pathname}` };
+      },
+      async list(opts) {
+        calls.push({ op: "list", opts });
+        return { blobs: [...objects.keys()].slice(0, 1).map((pathname) => ({ pathname })), hasMore: false };
       },
     },
   };
@@ -241,16 +245,21 @@ function makeRes() {
   };
   return { res, out };
 }
-async function call(handler, apiPath, query, user, headers = {}) {
-  const { res, out } = makeRes();
-  await handler({ method: "GET", query: { kind: "api", apiPath, ...query }, headers, _user: user }, res);
-  return out;
-}
 
 const OWNER = { id: "u1", role: "owner", status: "active" };
 const HR = { id: "u2", role: "hr", status: "active" };
 const FINANCE = { id: "u3", role: "finance", status: "active" };
-const TOKEN = "vercel_blob_rw_PHOTOS_TEST";
+/* رمز OIDC اصطناعي بحمولة JWT؛ Vercel يحقنه في ترويسة كل طلب. */
+const jwt = (claims) => `h.${Buffer.from(JSON.stringify(claims)).toString("base64url")}.s`;
+const OIDC = jwt({ environment: "preview", exp: Math.floor(Date.now() / 1000) + 3600 });
+const STORE = "store_PhotosTest1";
+const STORE_ENV = { EMPLOYEE_PHOTOS_STORE_ID: STORE };
+
+async function call(handler, apiPath, query, user, headers = {}) {
+  const { res, out } = makeRes();
+  await handler({ method: "GET", query: { kind: "api", apiPath, ...query }, headers: { "x-vercel-oidc-token": OIDC, ...headers }, _user: user }, res);
+  return out;
+}
 
 function syntheticStore() {
   const png = makePng(6, 6, 7);
@@ -264,7 +273,7 @@ function syntheticStore() {
 
 test("الحارس: بلا جلسة 401، وبلا employees:view 403 — للفهرس وللصورة", async () => {
   const s = syntheticStore();
-  await withApp({ env: { EMPLOYEE_PHOTOS_READ_WRITE_TOKEN: TOKEN }, ...s }, async ({ handler, blob }) => {
+  await withApp({ env: STORE_ENV, ...s }, async ({ handler, blob }) => {
     assert.equal((await call(handler, "files/employee-photo", { id: "0123456789abcdef" }, null)).statusCode, 401);
     assert.equal((await call(handler, "files/employee-photo", { id: "0123456789abcdef" }, FINANCE)).statusCode, 403);
     assert.equal((await call(handler, "data/employee-photos", {}, FINANCE)).statusCode, 403);
@@ -274,7 +283,7 @@ test("الحارس: بلا جلسة 401، وبلا employees:view 403 — للف
 
 test("العرض: صاحب employees:view يستلم البايتات خاصّة، بلا مسار تخزين", async () => {
   const s = syntheticStore();
-  await withApp({ env: { EMPLOYEE_PHOTOS_READ_WRITE_TOKEN: TOKEN }, ...s }, async ({ handler, blob }) => {
+  await withApp({ env: STORE_ENV, ...s }, async ({ handler, blob }) => {
     const out = await call(handler, "files/employee-photo", { id: "0123456789abcdef" }, HR);
     assert.equal(out.statusCode, 200);
     assert.ok(Buffer.isBuffer(out.body) && out.body.equals(s.png));
@@ -282,16 +291,36 @@ test("العرض: صاحب employees:view يستلم البايتات خاصّة
     assert.match(out.headers["cache-control"], /^private\b/);
     assert.equal(out.headers["x-content-type-options"], "nosniff");
     assert.doesNotMatch(JSON.stringify(out.headers), /employee-photos\/|blob/i);
-    assert.deepEqual(blob.calls.map((c) => [c.op, c.opts.access, c.opts.token]), [["get", "private", TOKEN]]);
 
     const again = await call(handler, "files/employee-photo", { id: "0123456789abcdef" }, HR, { "if-none-match": out.headers.etag });
     assert.equal(again.statusCode, 304);
   });
 });
 
+test("المصادقة: OIDC من ترويسة الطلب ومعرّف المتجر صراحةً — بلا token أبدًا", async () => {
+  const s = syntheticStore();
+  await withApp({ env: { ...STORE_ENV, BLOB_READ_WRITE_TOKEN: "vercel_blob_rw_AjeerStore_x" }, ...s }, async ({ handler, blob }) => {
+    assert.equal((await call(handler, "files/employee-photo", { id: "0123456789abcdef" }, HR)).statusCode, 200);
+    const [get] = blob.calls;
+    assert.equal(get.op, "get");
+    assert.equal(get.opts.access, "private");
+    assert.equal(get.opts.oidcToken, OIDC);
+    assert.equal(get.opts.storeId, "PhotosTest1");
+    assert.ok(!("token" in get.opts), "لا توكن قراءة/كتابة — ولا سقوط إلى متجر أجير");
+  });
+});
+
+test("المصادقة: بلا رمز OIDC لا نداء للمتجر — لا سقوط صامت إلى توكن أجير", async () => {
+  const s = syntheticStore();
+  await withApp({ env: { ...STORE_ENV, BLOB_READ_WRITE_TOKEN: "vercel_blob_rw_AjeerStore_x" }, ...s }, async ({ handler, blob }) => {
+    assert.equal((await call(handler, "files/employee-photo", { id: "0123456789abcdef" }, HR, { "x-vercel-oidc-token": "" })).statusCode, 404);
+    assert.equal(blob.calls.length, 0);
+  });
+});
+
 test("الفهرس: معرّفات ومفاتيح ربط فقط — لا storageKey ولا رابط", async () => {
   const s = syntheticStore();
-  await withApp({ env: { EMPLOYEE_PHOTOS_READ_WRITE_TOKEN: TOKEN }, ...s }, async ({ handler }) => {
+  await withApp({ env: STORE_ENV, ...s }, async ({ handler }) => {
     const out = await call(handler, "data/employee-photos", {}, HR);
     assert.equal(out.statusCode, 200);
     assert.deepEqual(out.body.items, [{ photoId: "0123456789abcdef", eid: "501", email: "someone@example.com" }]);
@@ -307,10 +336,10 @@ test("المتجر غير مُهيّأ: فهرس فارغ و404 — Placeholder 
   });
 });
 
-test("التوكن: مطابقة توكن أجير العامّ أو توكن قسم المراجعة لا تُقدّم شيئًا", async () => {
+test("المتجر: معرّف متجر أجير العامّ أو متجر قسم المراجعة لا يُقدّم شيئًا", async () => {
   const s = syntheticStore();
   for (const other of ["BLOB_READ_WRITE_TOKEN", "DROUA_BLOB_READ_WRITE_TOKEN"]) {
-    await withApp({ env: { EMPLOYEE_PHOTOS_READ_WRITE_TOKEN: TOKEN, [other]: TOKEN }, ...s }, async ({ handler, blob }) => {
+    await withApp({ env: { ...STORE_ENV, [other]: "vercel_blob_rw_PhotosTest1_secret" }, ...s }, async ({ handler, blob }) => {
       assert.equal((await call(handler, "files/employee-photo", { id: "0123456789abcdef" }, OWNER)).statusCode, 404);
       assert.equal(blob.calls.length, 0, `${other}: لا نداء للمتجر`);
     });
@@ -320,14 +349,14 @@ test("التوكن: مطابقة توكن أجير العامّ أو توكن ق
 test("السلامة: كائن مُستبدَل في المتجر لا يُقدَّم", async () => {
   const s = syntheticStore();
   s.objects.set(s.entries[0].storageKey, makePng(6, 6, 99));
-  await withApp({ env: { EMPLOYEE_PHOTOS_READ_WRITE_TOKEN: TOKEN }, ...s }, async ({ handler }) => {
+  await withApp({ env: STORE_ENV, ...s }, async ({ handler }) => {
     assert.equal((await call(handler, "files/employee-photo", { id: "0123456789abcdef" }, OWNER)).statusCode, 404);
   });
 });
 
 test("المعرّف: صيغة غير صالحة أو مجهول 404 بلا نداء للمتجر", async () => {
   const s = syntheticStore();
-  await withApp({ env: { EMPLOYEE_PHOTOS_READ_WRITE_TOKEN: TOKEN }, ...s }, async ({ handler, blob }) => {
+  await withApp({ env: STORE_ENV, ...s }, async ({ handler, blob }) => {
     for (const id of ["../x", "employee-photos/" + "a".repeat(32), "ffffffffffffffff", ""]) {
       assert.equal((await call(handler, "files/employee-photo", { id }, OWNER)).statusCode, 404, id);
     }
@@ -335,18 +364,41 @@ test("المعرّف: صيغة غير صالحة أو مجهول 404 بلا ند
   });
 });
 
-test("الرفع: خاصّ دائمًا، بالتوكن صراحةً، وبالبصمة المعتمدة فقط", async () => {
+test("الرفع: خاصّ دائمًا، بـOIDC ومعرّف المتجر، وبالبصمة المعتمدة فقط", async () => {
   const s = syntheticStore();
-  await withApp({ env: { EMPLOYEE_PHOTOS_READ_WRITE_TOKEN: TOKEN }, entries: s.entries, objects: new Map() }, async ({ blob }) => {
+  await withApp({ env: STORE_ENV, entries: s.entries, objects: new Map() }, async ({ blob }) => {
     const store = require("../lib/photos/store");
-    await assert.rejects(() => store.putPhoto(s.entries[0], makePng(6, 6, 1)), /بصمة/);
-    await store.putPhoto(s.entries[0], s.png);
+    await assert.rejects(() => store.putPhoto(s.entries[0], makePng(6, 6, 1), OIDC), /بصمة/);
+    await assert.rejects(() => store.putPhoto(s.entries[0], s.png), /OIDC/, "بلا رمز لا رفع");
+    await store.putPhoto(s.entries[0], s.png, OIDC);
     const put = blob.calls.find((c) => c.op === "put");
     assert.equal(put.opts.access, "private");
-    assert.equal(put.opts.token, TOKEN);
+    assert.equal(put.opts.oidcToken, OIDC);
+    assert.equal(put.opts.storeId, "PhotosTest1");
+    assert.ok(!("token" in put.opts));
     assert.equal(put.opts.addRandomSuffix, false);
     assert.equal(put.pathname, s.entries[0].storageKey);
   });
+});
+
+test("سكربت الرفع: الرمز يجب أن يكون لبيئة preview، والفحص قراءة لا كتابة", async () => {
+  const s = syntheticStore();
+  const quiet = console.log;
+  for (const [claims, ok] of [
+    [{ environment: "preview", exp: Math.floor(Date.now() / 1000) + 3600 }, true],
+    [{ environment: "development", exp: Math.floor(Date.now() / 1000) + 3600 }, false],
+    [{ environment: "production", exp: Math.floor(Date.now() / 1000) + 3600 }, false],
+    [{ environment: "preview", exp: Math.floor(Date.now() / 1000) + 60 }, false],
+  ]) {
+    await withApp({ env: { ...STORE_ENV, VERCEL_OIDC_TOKEN: jwt(claims) }, ...s }, async ({ blob }) => {
+      console.log = () => {};
+      try {
+        const res = await require("../scripts/upload-employee-photos").checkCredentials();
+        assert.equal(res.ok, ok, JSON.stringify(claims));
+      } finally { console.log = quiet; }
+      assert.ok(blob.calls.every((c) => c.op === "list"), "لا كتابة في الفحص");
+    });
+  }
 });
 
 test("الكتابة عبر المورد مرفوضة", async () => {

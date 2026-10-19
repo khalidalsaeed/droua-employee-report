@@ -17,18 +17,21 @@
 
 | ما | أين |
 |---|---|
-| بايتات الصور | متجر Vercel Blob **خاصّ** مستقلّ، توكنه `EMPLOYEE_PHOTOS_READ_WRITE_TOKEN` |
+| بايتات الصور | متجر Vercel Blob **خاصّ** مستقلّ `droua-employee-photos`، معرّفه `EMPLOYEE_PHOTOS_STORE_ID`، والمصادقة OIDC قصير العمر — لا توكن دائم |
 | الربط (مَن ← أيّ صورة) | `lib/photos/manifest.js` — معرّف عشوائي، بصمة sha256، مسار عشوائي |
 | المستودع | لا صور، لا روابط، لا base64 |
 | قاعدة البيانات | لا شيء — لا هجرة |
 
-- لا يُستعمل متجر أجير العامّ (`BLOB_READ_WRITE_TOKEN`)، ولا متجر قسم المراجعة (`DROUA_BLOB_READ_WRITE_TOKEN`). مطابقة التوكن لأيٍّ منهما ترفض العمل.
+- لا يُستعمل متجر أجير العامّ (`BLOB_READ_WRITE_TOKEN`)، ولا متجر قسم المراجعة (`DROUA_BLOB_READ_WRITE_TOKEN`). معرّف متجر يطابق أيًّا منهما يرفض العمل.
+- رمز OIDC يُمرَّر صراحةً مع معرّف المتجر في كل نداء: `@vercel/blob` حين لا يجد OIDC يسقط صامتًا إلى `BLOB_READ_WRITE_TOKEN` (متجر أجير)، والتمرير الصريح يمنع ذلك.
+  - في الدالّة: من ترويسة `x-vercel-oidc-token`.
+  - محليًا: من `VERCEL_OIDC_TOKEN` الذي يحقنه `vercel env run`.
 - العرض عبر `/api/files/employee-photo?id=<photoId>` داخل الدالّة الخادمة نفسها (عدد الدوالّ يبقى 2).
   - فحص الجلسة و`employees:view` في كل طلب.
   - `Cache-Control: private`.
   - تحقّق من البصمة والتوقيع قبل الإرسال.
   - مسار التخزين لا يخرج من الخادم.
-- غياب التوكن (الإنتاج قبل الاعتماد) = لا صور = الأحرف الأولى في كل مكان، بلا روابط مكسورة.
+- غياب `EMPLOYEE_PHOTOS_STORE_ID` (الإنتاج قبل الاعتماد) = لا صور = الأحرف الأولى في كل مكان، بلا روابط مكسورة.
 
 ## المطابقة
 
@@ -52,9 +55,11 @@
 
 ## الرفع (Preview)
 
+بـVercel CLI، الذي يحقن متغيّرات Preview في العملية وحدها بلا ملفّ:
+
 ```
-node scripts/upload-employee-photos.js "<مجلّد الصور المعالجة>"          # معاينة
-node scripts/upload-employee-photos.js "<مجلّد الصور المعالجة>" --apply  # رفع
+vercel env run -e preview -- node scripts/upload-employee-photos.js "<المجلّد>"          # معاينة
+vercel env run -e preview -- node scripts/upload-employee-photos.js "<المجلّد>" --apply  # رفع
 ```
 
 يفحص السكربت:
@@ -63,7 +68,12 @@ node scripts/upload-employee-photos.js "<مجلّد الصور المعالجة>
 - التكرار
 - تطابق البصمة مع الـmanifest
 
-ثم يتحقّق بعد كل رفع أن الكائن لا يُقدَّم بلا مصادقة.
+ثم يفحص بيانات الاعتماد بلا طباعة أي قيمة سرّية:
+- وجود المعرّف والرمز
+- بيئة الرمز (يجب أن تكون preview)
+- قراءة واحدة لا تكتب
+
+وبعد كل رفع يتحقّق أن الكائن لا يُقدَّم بلا مصادقة.
 
 ## الانتقال إلى الإنتاج (لاحقًا، بموافقة)
 

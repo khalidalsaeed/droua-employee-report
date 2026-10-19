@@ -14,15 +14,19 @@
         اعتُمد، لا نسخة أخرى.
    ثم بعد الرفع: فحص حاسم أن الكائن **لا** يُقدَّم بلا مصادقة.
 
-   لا يطبع توكنًا ولا رابط تخزين ولا اسم ملفّ داخل المتجر.
+   لا يطبع رمزًا ولا رابط تخزين ولا اسم ملفّ داخل المتجر.
 
-   المعاينة (لا كتابة):  node scripts/upload-employee-photos.js "<المجلّد>"
-   الرفع:               node scripts/upload-employee-photos.js "<المجلّد>" --apply
+   المصادقة OIDC وحدها (lib/photos/store.js) — لا توكن قراءة/كتابة دائم.
+   يُشغَّل عبر Vercel CLI الذي يحقن متغيّرات بيئة Preview في العملية وحدها
+   بلا كتابة ملفّ: EMPLOYEE_PHOTOS_STORE_ID ورمز VERCEL_OIDC_TOKEN قصير العمر.
 
-   التوكن من البيئة EMPLOYEE_PHOTOS_READ_WRITE_TOKEN — على PowerShell:
-     $s = Read-Host -AsSecureString
-     $env:EMPLOYEE_PHOTOS_READ_WRITE_TOKEN = [Runtime.InteropServices.Marshal]::PtrToStringAuto(
-       [Runtime.InteropServices.Marshal]::SecureStringToBSTR($s))
+   المعاينة (لا كتابة):
+     vercel env run -e preview -- node scripts/upload-employee-photos.js "<المجلّد>"
+   تفحص الملفّات، ثم — إن وُجدت بيانات الاعتماد — بيئة الرمز وصلاحيته
+   بقراءة واحدة (list) لا تكتب شيئًا.
+   الرفع:
+     vercel env run -e preview -- node scripts/upload-employee-photos.js "<المجلّد>" --apply
+   يُرفض الرفع ما لم يكن الرمز صادرًا لبيئة preview.
 
    الرجوع: حذف المتجر كله من Vercel (Storage ← المتجر ← Delete) — لا شيء
    آخر يُكتب في أي مكان. */
@@ -81,6 +85,48 @@ function plan(files) {
   };
 }
 
+/* حمولة رمز OIDC (JWT) — للبيئة والانتهاء فقط. الحمولة ليست سرًّا؛ الرمز
+   نفسه لا يُطبع أبدًا. */
+function oidcClaims(token) {
+  try {
+    const seg = String(token).split(".")[1] || "";
+    return JSON.parse(Buffer.from(seg.replace(/-/g, "+").replace(/_/g, "/"), "base64").toString("utf8"));
+  } catch (err) {
+    return null;
+  }
+}
+
+/* يطبع حالة بيانات الاعتماد بلا أي قيمة سرّية، ويجرّب قراءة واحدة لا تكتب.
+   الرفع مسموح فقط برمز صادر لبيئة preview. */
+async function checkCredentials() {
+  const store = require("../lib/photos/store");
+  const out = { ok: false, oidcToken: null };
+  const hasStore = store.configured();
+  const token = String(process.env.VERCEL_OIDC_TOKEN || "").trim();
+  console.log("\ncredentials:");
+  console.log(`  ${store.ENV_STORE_ID} present: ${hasStore}`);
+  console.log(`  VERCEL_OIDC_TOKEN present: ${!!token}`);
+  if (!hasStore || !token) return out;
+  const claims = oidcClaims(token);
+  const env = claims && claims.environment;
+  const expMin = claims && claims.exp ? Math.round((claims.exp * 1000 - Date.now()) / 60000) : null;
+  console.log(`  token environment: ${env || "unknown"}`);
+  console.log(`  token expires in (min): ${expMin == null ? "unknown" : expMin}`);
+  if (env !== "preview") { console.log("  ⛔ الرمز ليس لبيئة preview"); return out; }
+  if (expMin != null && expMin < 5) { console.log("  ⛔ الرمز ينتهي قريبًا — أعد التشغيل"); return out; }
+  try {
+    const { list } = require("@vercel/blob");
+    const r = await list({ limit: 1, ...store.credentials(token) });
+    console.log(`  read check: OK (store objects: ${r.blobs.length}${r.hasMore ? "+" : ""})`);
+  } catch (err) {
+    console.log(`  read check: FAILED — ${err.message}`);
+    return out;
+  }
+  out.ok = true;
+  out.oidcToken = token;
+  return out;
+}
+
 function readFolder(dir) {
   return fs.readdirSync(dir)
     .filter((f) => fs.statSync(path.join(dir, f)).isFile())
@@ -102,7 +148,13 @@ async function main() {
   console.log(`\ntotal images: ${summary.total}\nmatched: ${summary.matched}\nambiguous: ${summary.ambiguous}\nunmatched: ${summary.unmatched}\nrejected: ${summary.rejected}\n`);
   items.forEach((it) => console.log(`${it.label} -> ${it.status}${it.error ? ` (${it.error})` : ""}`));
 
+  const cred = await checkCredentials();
   if (!apply) { console.log("\nمعاينة فقط — لم يُكتب شيء. أضف --apply للرفع.\n"); return; }
+  if (!cred.ok) {
+    console.error("\n⛔ لا رفع: بيانات الاعتماد غير جاهزة (انظر credentials أعلاه).\n");
+    process.exitCode = 1;
+    return;
+  }
   if (summary.matched !== summary.total) {
     console.error("\n⛔ لا رفع: كل الصور يجب أن تكون matched وسليمة.\n");
     process.exitCode = 1;
@@ -113,11 +165,11 @@ async function main() {
   let failed = 0;
   for (const it of items) {
     try {
-      const result = await store.putPhoto(it.entry, it.bytes);
+      const result = await store.putPhoto(it.entry, it.bytes, cred.oidcToken);
       /* الفحص الحاسم: الرابط بلا مصادقة يجب ألّا يُقدّم الصورة. */
       const r = await fetch(result.url).catch(() => null);
       if (r && r.ok) throw new Error("⚠️ الكائن يُقدَّم بلا مصادقة — المتجر ليس خاصًّا");
-      const back = await store.readPhoto(it.entry);
+      const back = await store.readPhoto(it.entry, cred.oidcToken);
       if (!back) throw new Error("تعذّرت القراءة بعد الرفع");
       console.log(`  ✅ ${it.label} مرفوع وخاصّ ومُتحقَّق`);
     } catch (err) {
@@ -136,4 +188,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { plan };
+module.exports = { plan, checkCredentials };

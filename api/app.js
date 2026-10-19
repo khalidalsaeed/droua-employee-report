@@ -1058,7 +1058,8 @@ async function filesEmployeePhoto(req, res, actor) {
   }
   let bytes;
   try {
-    bytes = await photos.readPhoto(entry);
+    /* OIDC token Vercel injects into this request; never a long-lived token. */
+    bytes = await photos.readPhoto(entry, req.headers["x-vercel-oidc-token"]);
   } catch (err) {
     console.error("employee photo not served:", err && err.message);
     return res.status(404).json({ ok: false, error: "لا توجد صورة" });
