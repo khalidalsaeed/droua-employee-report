@@ -381,12 +381,13 @@ test("الرفع: خاصّ دائمًا، بـOIDC ومعرّف المتجر، �
   });
 });
 
-test("سكربت الرفع: الرمز يجب أن يكون لبيئة preview، والفحص قراءة لا كتابة", async () => {
+test("سكربت الرفع: رمز development أو preview فقط — لا production — والفحص قراءة لا كتابة", async () => {
   const s = syntheticStore();
   const quiet = console.log;
   for (const [claims, ok] of [
     [{ environment: "preview", exp: Math.floor(Date.now() / 1000) + 3600 }, true],
-    [{ environment: "development", exp: Math.floor(Date.now() / 1000) + 3600 }, false],
+    [{ environment: "development", exp: Math.floor(Date.now() / 1000) + 3600 }, true],
+    [{ exp: Math.floor(Date.now() / 1000) + 3600 }, false],
     [{ environment: "production", exp: Math.floor(Date.now() / 1000) + 3600 }, false],
     [{ environment: "preview", exp: Math.floor(Date.now() / 1000) + 60 }, false],
   ]) {

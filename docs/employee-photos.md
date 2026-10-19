@@ -55,11 +55,13 @@
 
 ## الرفع (Preview)
 
-بـVercel CLI، الذي يحقن متغيّرات Preview في العملية وحدها بلا ملفّ:
+بـVercel CLI، الذي يحقن متغيّرات البيئة في العملية وحدها بلا ملفّ.
+
+الـCLI لا يصدر محليًا إلا رمز OIDC لبيئة development. لذلك يُربط المتجر ببيئة Development أيضًا أثناء الرفع، ثم يُفكّ ربطها إن شئت. Production لا يُربط.
 
 ```
-vercel env run -e preview -- node scripts/upload-employee-photos.js "<المجلّد>"          # معاينة
-vercel env run -e preview -- node scripts/upload-employee-photos.js "<المجلّد>" --apply  # رفع
+vercel env run -e development -- node scripts/upload-employee-photos.js "<المجلّد>"          # معاينة
+vercel env run -e development -- node scripts/upload-employee-photos.js "<المجلّد>" --apply  # رفع
 ```
 
 يفحص السكربت:
@@ -70,7 +72,7 @@ vercel env run -e preview -- node scripts/upload-employee-photos.js "<المجل
 
 ثم يفحص بيانات الاعتماد بلا طباعة أي قيمة سرّية:
 - وجود المعرّف والرمز
-- بيئة الرمز (يجب أن تكون preview)
+- بيئة الرمز (development أو preview، ولا production)
 - قراءة واحدة لا تكتب
 
 وبعد كل رفع يتحقّق أن الكائن لا يُقدَّم بلا مصادقة.

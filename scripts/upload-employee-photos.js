@@ -17,16 +17,20 @@
    لا يطبع رمزًا ولا رابط تخزين ولا اسم ملفّ داخل المتجر.
 
    المصادقة OIDC وحدها (lib/photos/store.js) — لا توكن قراءة/كتابة دائم.
-   يُشغَّل عبر Vercel CLI الذي يحقن متغيّرات بيئة Preview في العملية وحدها
-   بلا كتابة ملفّ: EMPLOYEE_PHOTOS_STORE_ID ورمز VERCEL_OIDC_TOKEN قصير العمر.
+   يُشغَّل عبر Vercel CLI الذي يحقن متغيّرات البيئة في العملية وحدها بلا
+   كتابة ملفّ: EMPLOYEE_PHOTOS_STORE_ID ورمز VERCEL_OIDC_TOKEN قصير العمر.
+
+   الـCLI لا يصدر محليًا إلا رمز OIDC لبيئة development (vercel project
+   token: "Get a development OIDC token"). فالرفع المحلي يحتاج أن يكون المتجر
+   مربوطًا ببيئة Development أيضًا — ويُفكّ ربطها بعد الرفع إن شئت.
 
    المعاينة (لا كتابة):
-     vercel env run -e preview -- node scripts/upload-employee-photos.js "<المجلّد>"
+     vercel env run -e development -- node scripts/upload-employee-photos.js "<المجلّد>"
    تفحص الملفّات، ثم — إن وُجدت بيانات الاعتماد — بيئة الرمز وصلاحيته
    بقراءة واحدة (list) لا تكتب شيئًا.
    الرفع:
-     vercel env run -e preview -- node scripts/upload-employee-photos.js "<المجلّد>" --apply
-   يُرفض الرفع ما لم يكن الرمز صادرًا لبيئة preview.
+     vercel env run -e development -- node scripts/upload-employee-photos.js "<المجلّد>" --apply
+   يُرفض الرفع برمز production أو مجهول البيئة.
 
    الرجوع: حذف المتجر كله من Vercel (Storage ← المتجر ← Delete) — لا شيء
    آخر يُكتب في أي مكان. */
@@ -85,6 +89,8 @@ function plan(files) {
   };
 }
 
+const UPLOAD_ENVS = ["development", "preview"];
+
 /* حمولة رمز OIDC (JWT) — للبيئة والانتهاء فقط. الحمولة ليست سرًّا؛ الرمز
    نفسه لا يُطبع أبدًا. */
 function oidcClaims(token) {
@@ -97,7 +103,7 @@ function oidcClaims(token) {
 }
 
 /* يطبع حالة بيانات الاعتماد بلا أي قيمة سرّية، ويجرّب قراءة واحدة لا تكتب.
-   الرفع مسموح فقط برمز صادر لبيئة preview. */
+   الرفع مسموح برمز development أو preview فقط — لا production أبدًا. */
 async function checkCredentials() {
   const store = require("../lib/photos/store");
   const out = { ok: false, oidcToken: null };
@@ -112,7 +118,7 @@ async function checkCredentials() {
   const expMin = claims && claims.exp ? Math.round((claims.exp * 1000 - Date.now()) / 60000) : null;
   console.log(`  token environment: ${env || "unknown"}`);
   console.log(`  token expires in (min): ${expMin == null ? "unknown" : expMin}`);
-  if (env !== "preview") { console.log("  ⛔ الرمز ليس لبيئة preview"); return out; }
+  if (!UPLOAD_ENVS.includes(env)) { console.log("  ⛔ بيئة الرمز غير مسموحة للرفع (development أو preview فقط)"); return out; }
   if (expMin != null && expMin < 5) { console.log("  ⛔ الرمز ينتهي قريبًا — أعد التشغيل"); return out; }
   try {
     const { list } = require("@vercel/blob");
