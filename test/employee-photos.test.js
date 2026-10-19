@@ -112,6 +112,12 @@ test("manifest: كل مدخل يطابق موظفًا في المصدر، وال
   }
 });
 
+test("manifest: رقم ضمان — حين يُملأ — نصّ أرقام وفريد", () => {
+  const eids = manifest.map((e) => e.match.eid).filter((v) => v != null);
+  for (const v of eids) assert.match(v, /^\d+$/);
+  assert.equal(new Set(eids).size, eids.length);
+});
+
 test("manifest: لا صور ولا روابط ولا base64 في المستودع", () => {
   /* القيم لا التعليقات: التعليق يشرح لماذا لا base64، والفحص على البيانات. */
   const data = JSON.stringify(manifest);
@@ -436,6 +442,13 @@ test("الواجهة: رقم ضمان أوّلًا ثم البريد، وراب�
   assert.match(EP.img({ eid: "501" }), /^<img class="ep-img" src="\/api\/files\/employee-photo\?id=1{16}" alt=""/);
 });
 
+test("الواجهة: سجلّ بريده يختلف عن بريد المصدر يُحلّ برقم ضمان", async () => {
+  const { EP } = loadClient([{ photoId: "3333333333333333", eid: "511", email: "source@x.com" }]);
+  await EP.load();
+  assert.equal(EP.idFor({ eid: 511, email: "different@x.com" }), "3333333333333333");
+  assert.equal(EP.idFor({ eid: "512", email: "different@x.com" }), null, "لا تخمين: لا eid ولا بريد مطابق");
+});
+
 test("الواجهة: بلا صورة لا وسم img — والأحرف الأولى تبقى", async () => {
   const { EP } = loadClient([]);
   await EP.load();
@@ -486,8 +499,21 @@ test("الهيكل: الصورة في العقدة واللوحة وقائمة �
   assert.doesNotMatch(js, /\/api\/files\/employee-photo|EmployeePhotos/, "الهيكل لا يجلب الصور بنفسه");
 });
 
+test("أكثر الوثائق إلحاحًا: الصورة فوق الأحرف الأولى في العرضين، من المُضيف", () => {
+  const js = read("doc-expiry.js");
+  assert.match(js, /<span class="dx-av">\$\{esc\(initials\(d\.emp\[F\.name\]\)\)\}\$\{photo\(d\.emp\)\}<\/span>/, "حسب المدة");
+  assert.match(js, /<span class="dx-av">\$\{esc\(initials\(g\.emp\[F\.name\]\)\)\}\$\{photo\(g\.emp\)\}<\/span>/, "حسب الموظف");
+  assert.match(read("app-shell.html"), /photoImg:e=>EmployeePhotos\.img\(photoRef\(e\)\)\}\);/);
+});
+
+test("أكثر الوثائق إلحاحًا: بلا photoImg تبقى الأحرف كما كانت", () => {
+  const DocExpiry = require("../doc-expiry.js");
+  assert.equal(typeof DocExpiry.render, "function");
+  assert.doesNotMatch(read("doc-expiry.js"), /EmployeePhotos|\/api\/files/, "الملف لا يجلب الصور بنفسه");
+});
+
 test("العرض: قصّ بصري فقط مع حفظ النسبة", () => {
   const css = read("employee-photos.css");
   assert.match(css, /\.ep-img\{[^}]*object-fit:cover/);
-  assert.match(css, /\.avatar,\.oc-av,\.ep-av\{position:relative;overflow:hidden\}/);
+  assert.match(css, /\.avatar,\.oc-av,\.ep-av,\.dx-av\{position:relative;overflow:hidden\}/);
 });
