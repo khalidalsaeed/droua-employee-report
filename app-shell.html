@@ -463,7 +463,7 @@ footer.site{border-top:1px solid var(--hair);margin-top:30px}
 <link rel="stylesheet" href="/doc-expiry.css?v=1">
 <link rel="stylesheet" href="/org-chart.css?v=1">
 <link rel="stylesheet" href="/employee-photos.css?v=2">
-<link rel="stylesheet" href="/municipal-cards.css?v=1">
+<link rel="stylesheet" href="/municipal-cards.css?v=2">
 <!-- منع الوميض: يجب أن ترتفع طبقة الترحيب قبل أوّل رسم للجسم، وإلّا لمح
      المستخدم النظام قبل الترحيب. سطر مضمّن عمدًا — أي ملف خارجي يصل بعد
      أن يكون الرسم قد بدأ. المفتاح نفسه في login.html و welcome.js. -->
@@ -702,35 +702,46 @@ try{ if(sessionStorage.getItem("droua:welcome")==="1") document.documentElement.
 <!-- البطاقات البلدية (الشهادات الصحية): بجوار تصاريح أجير لأنهما وثيقتا
      امتثال لكل موظف. يملؤه municipal-cards.js من ملفّات الشهادات نفسها. -->
 <section class="block wrap" id="municipalSec">
-  <div class="sec-head"><h2>البطاقات البلدية</h2>
-    <div class="mc-head-actions">
-      <span class="idx" id="municipalIdx">—</span>
-      <button class="admin-add-btn" id="addMunicipalBtn" type="button" style="display:none">
+  <header class="mc-top">
+    <div class="mc-title">
+      <span class="mc-title-ico" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="4.5" width="19" height="15" rx="2.5"/><circle cx="8.5" cy="11" r="2.3"/><path d="M5.3 16.2c.6-1.6 1.8-2.4 3.2-2.4s2.6.8 3.2 2.4M14 9.5h4.5M14 13h4.5"/></svg></span>
+      <div>
+        <h2>البطاقات البلدية</h2>
+        <p>يمكنك الاطلاع على البطاقات البلدية (الشهادات الصحية) لموظفيك بسرعة وسهولة.</p>
+      </div>
+    </div>
+    <div class="mc-top-actions">
+      <span class="mc-count" id="municipalIdx">—</span>
+      <button class="mc-btn-ghost" id="addMunicipalBtn" type="button" style="display:none">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
         إضافة بطاقة
       </button>
       <input type="file" id="municipalFile" accept="application/pdf,.pdf" multiple hidden>
+      <button class="mc-btn-dark" id="municipalAllBtn" type="button" style="display:none">
+        <span>عرض الكل</span>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M11 6l-6 6 6 6"/></svg>
+      </button>
     </div>
+  </header>
+  <div class="mc-filters">
+    <label class="mc-f mc-f-status">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16l-6 7.5V19l-4-2v-4.5Z"/></svg>
+      <span class="mc-sr">الحالة</span>
+      <select id="municipalStatus">
+        <option value="">جميع الحالات</option><option value="ok">سارية</option><option value="warn">قريبة الانتهاء</option><option value="bad">منتهية</option>
+      </select>
+    </label>
+    <label class="mc-f mc-f-dept">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c0-3.6 2.9-5.6 6.5-5.6s6.5 2 6.5 5.6"/><path d="M16 4.6a3.5 3.5 0 0 1 0 6.8M21.5 20c0-2.6-1.5-4.4-3.6-5.1"/></svg>
+      <span class="mc-sr">القسم</span>
+      <select id="municipalDept"><option value="">جميع الأقسام</option></select>
+    </label>
+    <label class="mc-f mc-f-search">
+      <span class="mc-sr">بحث</span>
+      <input id="municipalQ" type="search" placeholder="ابحث بالاسم أو رقم الشهادة أو رقم الهوية" autocomplete="off" enterkeyhint="search">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+    </label>
   </div>
-  <p class="mc-lede">الشهادات الصحية الصادرة من أمانة منطقة الرياض لكل موظف، مع رمز التحقّق الخاص بكل شهادة.</p>
-  <div class="controls">
-    <div class="ctrl-grid" style="grid-template-columns:1.6fr 1fr 1fr">
-      <div class="field">
-        <label for="municipalQ">بحث مباشر</label>
-        <div class="search-wrap">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
-          <input id="municipalQ" class="in" type="search" placeholder="اسم الموظف، رقم الشهادة، رقم الهوية…" autocomplete="off" enterkeyhint="search">
-        </div>
-      </div>
-      <div class="field"><label for="municipalStatus">الحالة</label>
-        <select id="municipalStatus" class="in">
-          <option value="">كل الحالات</option><option value="ok">سارية</option><option value="warn">قريبة الانتهاء</option><option value="bad">منتهية</option>
-        </select>
-      </div>
-      <div class="field"><label for="municipalOcc">المهنة</label><select id="municipalOcc" class="in"><option value="">كل المهن</option></select></div>
-    </div>
-  </div>
-  <div class="mc-summary" id="municipalSummary"></div>
   <div class="mc-grid" id="municipalGrid"><div class="u-skeleton u-skeleton-card"></div></div>
 </section>
 
@@ -813,7 +824,7 @@ try{ if(sessionStorage.getItem("droua:welcome")==="1") document.documentElement.
 <script src="/org-core.js?v=1"></script>
 <script src="/employee-photos.js?v=1"></script>
 <script src="/org-chart.js?v=2"></script>
-<script src="/municipal-cards.js?v=1"></script>
+<script src="/municipal-cards.js?v=2"></script>
 <script>
 let DATA = [];
 let FIN = {};
@@ -2085,8 +2096,8 @@ function showSkeletons(){
      الإقامة. تجلب بياناتها بنفسها، وفشلها لا يمسّ بقية الصفحة. */
   if(AdminUI.can("municipal","view")) MunicipalCards.mount({
     grid:document.getElementById("municipalGrid"), idx:document.getElementById("municipalIdx"),
-    summary:document.getElementById("municipalSummary"), search:document.getElementById("municipalQ"),
-    status:document.getElementById("municipalStatus"), occ:document.getElementById("municipalOcc"),
+    search:document.getElementById("municipalQ"), status:document.getElementById("municipalStatus"),
+    dept:document.getElementById("municipalDept"), allBtn:document.getElementById("municipalAllBtn"),
     addBtn:document.getElementById("addMunicipalBtn"), fileInput:document.getElementById("municipalFile"),
     platform:DATA, F, openEmployee:i=>openDrawer(i)});
   /* فتح مباشر من الرابط: /#expiring يعرض القائمة فور اكتمال التحميل،

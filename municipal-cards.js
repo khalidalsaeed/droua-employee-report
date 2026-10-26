@@ -17,7 +17,9 @@
   "use strict";
 
   const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-  const S = { items: [], opts: null, q: "", status: "", occ: "", popModal: null };
+  const S = { items: [], opts: null, q: "", status: "", dept: "", showAll: false, popModal: null };
+  /* صفّان على الشاشة العريضة قبل «عرض الكل»، كما في المرجع. */
+  const PREVIEW_COUNT = 8;
 
   const ICON = {
     qr: '<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3h-3zM20 14v.01M14 20h.01M17 20h4v-3"/>',
@@ -27,6 +29,7 @@
     check: '<path d="m5 12.5 4.5 4.5L19 7.5"/>',
     clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
     alert: '<circle cx="12" cy="12" r="9"/><path d="M12 7.5v5.5M12 16.5v.01"/>',
+    shield: '<path d="M12 3 5 6v5.5c0 4.2 2.9 7.6 7 9.5 4.1-1.9 7-5.3 7-9.5V6Z"/><path d="M9 12.5c1-.9 2-1.3 3-1.3s2 .4 3 1.3M12 8v3.2"/>',
     plus: '<path d="M12 5v14M5 12h14"/>',
     search: '<circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/>',
   };
@@ -40,10 +43,10 @@
   function statusOf(item) {
     const n = item.expiryDate ? daysLeft(item.expiryDate) : null;
     if (n === null) return { key: "na", cls: "na", n, label: "تاريخ الانتهاء غير متاح", icon: "clock" };
-    if (n < 0) return { key: "bad", cls: "bad", n, label: `منتهية منذ ${daysUnit(-n)}`, icon: "alert" };
-    if (n === 0) return { key: "bad", cls: "bad", n, label: "تنتهي اليوم", icon: "alert" };
-    if (n <= RENEW_DAYS) return { key: "warn", cls: "bad", n, label: `تنتهي خلال ${daysUnit(n)}`, icon: "alert" };
-    if (n <= NOTICE_DAYS) return { key: "warn", cls: "warn", n, label: `تنتهي خلال ${daysUnit(n)}`, icon: "clock" };
+    if (n < 0) return { key: "bad", cls: "bad", n, label: "منتهية", icon: "alert" };
+    if (n === 0) return { key: "bad", cls: "bad", n, label: "ينتهي اليوم", icon: "alert" };
+    if (n <= RENEW_DAYS) return { key: "warn", cls: "bad", n, label: `ينتهي خلال ${daysUnit(n)}`, icon: "alert" };
+    if (n <= NOTICE_DAYS) return { key: "warn", cls: "warn", n, label: `ينتهي خلال ${daysUnit(n)}`, icon: "clock" };
     return { key: "ok", cls: "ok", n, label: "سارية", icon: "check" };
   }
 
@@ -54,9 +57,10 @@
     return i < 0 ? null : { i, e: o.platform[i] };
   }
 
+  /* الهجري كما طُبع على الشهادة: يوم/شهر/سنة. */
   const hijriText = (h) => {
     const m = String(h || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
-    return m ? `${m[3]}/${m[2]}/${m[1]} هـ` : "";
+    return m ? `${m[3]}/${m[2]}/${m[1]}` : "";
   };
   const initialsOf = (name) => {
     const p = String(name || "").trim().split(/\s+/);
@@ -65,72 +69,68 @@
   const qrUrl = (it, dl) => `/api/files/municipal-qr?card=${encodeURIComponent(it.certNo)}${dl ? "&download=1" : ""}`;
   const photoUrl = (it) => `/api/files/municipal-photo?card=${encodeURIComponent(it.certNo)}&v=${encodeURIComponent(it.photoVersion || "")}`;
 
-  /* ── البطاقة ── */
+  /* ── البطاقة ──
+     وجه الشهادة نفسها كما تُصدرها الأمانة: الترويسة، الصورة والرمز، عنوان
+     «شهادة صحية»، ثم جدول الحقول. السطر الذي لم يُقرأ من الملفّ لا يُرسم. */
+  function personOf(it) {
+    const m = employeeOf(it);
+    const o = S.opts;
+    return {
+      m,
+      name: m ? m.e[o.F.name] : it.name,
+      role: (m && m.e[o.F.job]) || it.occupation || "",
+    };
+  }
+
   function cardFace(it) {
-    const rows = [
-      ["رقم الهوية", it.idNumber, true],
-      ["الجنسية", it.nationality],
-      ["المهنة", it.occupation],
-    ].filter((r) => r[1]);
+    const row = (k, v, ltr) => (v ? `<div class="mc-row"><dt>${k}</dt><dd${ltr ? ' class="ltr"' : ""}>${esc(v)}</dd></div>` : "");
+    const top = row("رقم الشهادة", it.certNo, true) + row("مكان الاصدار", it.issuer) +
+      (it.expiryHijri || it.expiryDate ? `<div class="mc-row"><dt>تاريخ الانتهاء</dt><dd class="ltr" title="${esc(it.expiryDate ? fmtDate(it.expiryDate) : "")}">${esc(hijriText(it.expiryHijri) || fmtDate(it.expiryDate))}</dd></div>` : "");
+    const who = row("الاسم", it.name) + row("رقم الهوية", it.idNumber, true) + row("الجنس", it.gender) + row("الجنسية", it.nationality);
     const photo = it.hasPhoto ? `<img class="mc-photo-img" src="${photoUrl(it)}" alt="" loading="lazy" decoding="async" draggable="false">` : "";
     return `
-      <div class="mc-card" role="group" aria-label="الشهادة الصحية ${esc(it.certNo)}">
-        <div class="mc-card-shine" aria-hidden="true"></div>
-        <div class="mc-card-top">
-          <div class="mc-issuer">
-            <span class="mc-issuer-ar">${esc(it.issuer || "أمانة منطقة الرياض")}</span>
-            <span class="mc-issuer-en">Health Certificate · شهادة صحية</span>
-          </div>
-          <span class="mc-chip" aria-hidden="true"><i></i><i></i><i></i></span>
+      <div class="mc-cert">
+        <div class="mc-cert-head">
+          <span class="mc-emblem" aria-hidden="true">${icon("shield", 22)}</span>
+          <span class="mc-org"><b>أمانة منطقة الرياض</b><small>RIYADH REGION MUNICIPALITY</small></span>
         </div>
-        <div class="mc-card-mid">
-          <div class="mc-photo" aria-hidden="true"><span>${esc(initialsOf(it.name))}</span>${photo}</div>
-          <div class="mc-holder">
-            ${it.name ? `<div class="mc-holder-name">${esc(it.name)}</div>` : ""}
-            <dl class="mc-facts">${rows.map((r) => `<div><dt>${r[0]}</dt><dd${r[2] ? ' class="ltr"' : ""}>${esc(r[1])}</dd></div>`).join("")}</dl>
-          </div>
+        <div class="mc-cert-media">
+          ${it.hasQr ? `<button type="button" class="mc-cert-qr" data-qr="${esc(it.certNo)}" aria-label="تكبير الباركود"><img src="${qrUrl(it)}" alt="" loading="lazy" decoding="async"></button>` : `<span class="mc-cert-qr is-empty" aria-hidden="true"></span>`}
+          <span class="mc-photo" aria-hidden="true"><span>${esc(initialsOf(it.name))}</span>${photo}</span>
         </div>
-        <div class="mc-card-bottom">
-          <div class="mc-num"><span class="mc-k">رقم الشهادة</span><span class="mc-v ltr">${esc(it.certNo)}</span></div>
-          ${it.expiryDate || it.expiryHijri ? `<div class="mc-exp"><span class="mc-k">صالحة حتى</span>
-            <span class="mc-v">${it.expiryDate ? esc(fmtDate(it.expiryDate)) : ""}</span>
-            ${it.expiryHijri ? `<span class="mc-h">${esc(hijriText(it.expiryHijri))}</span>` : ""}</div>` : ""}
-        </div>
+        <div class="mc-cert-title">شهادة صحية</div>
+        <dl class="mc-table">
+          <div class="mc-group">${top}</div>
+          ${who ? `<div class="mc-group">${who}</div>` : ""}
+        </dl>
       </div>`;
   }
 
   function tile(it, idx) {
     const st = statusOf(it);
-    const m = employeeOf(it);
-    const o = S.opts;
-    const name = m ? m.e[o.F.name] : it.name;
-    const role = m ? [m.e[o.F.job], m.e[o.F.damanah] ? `#${m.e[o.F.damanah]}` : ""].filter(Boolean).join(" · ") : (it.occupation || "");
+    const p = personOf(it);
     const canDelete = AdminUI.can("municipal", "delete");
     return `
-      <article class="mc-tile" style="animation-delay:${Math.min(idx * 45, 360)}ms" data-card="${esc(it.certNo)}">
+      <article class="mc-tile" style="animation-delay:${Math.min(idx * 40, 320)}ms" data-card="${esc(it.certNo)}">
         <div class="mc-tile-head">
-          <span class="mc-status ${st.cls}">${icon(st.icon, 14)}${esc(st.label)}</span>
-          ${m ? "" : `<span class="mc-unlinked" title="رقم الهوية في الشهادة لا يطابق أي سجلّ موظف">غير مرتبطة بسجلّ</span>`}
+          <span class="mc-status ${st.cls}">${icon(st.icon, 15)}<span>${esc(st.label)}</span></span>
         </div>
         ${cardFace(it)}
         <div class="mc-who">
-          ${m ? `<button type="button" class="mc-name" data-open-emp="${m.i}">${esc(name)}</button>` : `<div class="mc-name is-static">${esc(name || "—")}</div>`}
-          ${role ? `<div class="mc-role">${esc(role)}</div>` : ""}
+          ${p.m ? `<button type="button" class="mc-name" data-open-emp="${p.m.i}" title="فتح ملف الموظف">${esc(p.name)}</button>` : `<div class="mc-name is-static">${esc(p.name || "—")}</div>`}
+          ${p.role ? `<div class="mc-role">${esc(p.role)}</div>` : ""}
+          ${p.m ? "" : `<div class="mc-unlinked" title="رقم الهوية في الشهادة لا يطابق أي سجلّ موظف">غير مرتبطة بسجلّ موظف</div>`}
         </div>
-        ${it.hasQr ? `
-        <button type="button" class="mc-qr-btn" data-qr="${esc(it.certNo)}" aria-label="عرض الباركود الخاص بـ${esc(name || it.certNo)} بحجم كبير">
-          <span class="mc-qr-thumb"><img src="${qrUrl(it)}" alt="" loading="lazy" decoding="async"></span>
-          <span class="mc-qr-txt"><b>عرض الباركود</b><small>اضغط للتكبير والمسح بالجوال</small></span>
-          <span class="mc-qr-go" aria-hidden="true">${icon("scan", 18)}</span>
-        </button>` : `<div class="mc-qr-btn is-empty">لا يوجد رمز QR في ملفّ هذه الشهادة</div>`}
-        ${canDelete ? `<div class="mc-admin"><button type="button" class="admin-mini-btn danger" data-del="${esc(it.certNo)}">حذف البطاقة</button></div>` : ""}
+        ${it.hasQr ? `<button type="button" class="mc-qr-btn" data-qr="${esc(it.certNo)}" aria-label="عرض الباركود الخاص بـ${esc(p.name || it.certNo)}">
+          <span>عرض الباركود</span>${icon("qr", 20)}</button>` : `<div class="mc-qr-btn is-empty">لا يوجد باركود في الملف</div>`}
+        ${canDelete ? `<button type="button" class="mc-del" data-del="${esc(it.certNo)}">حذف البطاقة</button>` : ""}
       </article>`;
   }
 
   /* ── التصفية ── */
   function matches(it) {
     if (S.status && statusOf(it).key !== S.status) return false;
-    if (S.occ && (it.occupation || "") !== S.occ) return false;
+    if (S.dept && personOf(it).role !== S.dept) return false;
     const q = S.q.trim().toLowerCase();
     if (!q) return true;
     const m = employeeOf(it);
@@ -142,16 +142,17 @@
   function render() {
     const o = S.opts;
     const all = S.items;
-    const shown = all.filter(matches);
-    o.idx.textContent = all.length ? `${shown.length} من ${all.length}` : "—";
+    const filtered = all.filter(matches);
+    const filtering = !!(S.q.trim() || S.status || S.dept);
+    const shown = S.showAll || filtering ? filtered : filtered.slice(0, PREVIEW_COUNT);
+    o.idx.textContent = all.length ? `${filtered.length} من ${all.length}` : "";
 
-    const count = (k) => all.filter((it) => statusOf(it).key === k).length;
-    o.summary.innerHTML = all.length ? [
-      ["ok", "سارية", count("ok")],
-      ["warn", "قريبة الانتهاء", count("warn")],
-      ["bad", "منتهية", count("bad")],
-    ].map(([k, l, n]) => `<button type="button" class="mc-sum ${k}${S.status === k ? " on" : ""}" data-sum="${k}" aria-pressed="${S.status === k}">
-        <b class="num">${n}</b><span>${l}</span></button>`).join("") : "";
+    /* «عرض الكل» يظهر حين يخفي المعاينة شيئًا أو حين توجد تصفية تُلغى. */
+    if (o.allBtn) {
+      const hidden = !filtering && !S.showAll && filtered.length > PREVIEW_COUNT;
+      o.allBtn.style.display = hidden || filtering ? "" : "none";
+      o.allBtn.querySelector("span").textContent = filtering ? "إلغاء التصفية" : "عرض الكل";
+    }
 
     if (!all.length) {
       o.grid.innerHTML = `<div class="mc-empty">${icon("qr", 28)}<p>لا توجد بطاقات بلدية مسجّلة بعد.</p>
@@ -161,12 +162,12 @@
     o.grid.innerHTML = shown.length ? shown.map(tile).join("") : `<div class="mc-empty"><p>لا توجد بطاقات مطابقة</p></div>`;
   }
 
-  function fillOccupations() {
-    const sel = S.opts.occ;
-    const list = [...new Set(S.items.map((it) => it.occupation).filter(Boolean))].sort((a, b) => a.localeCompare(b, "ar"));
-    sel.innerHTML = `<option value="">كل المهن</option>` + list.map((v) => `<option value="${esc(v)}">${esc(v)}</option>`).join("");
-    sel.value = list.includes(S.occ) ? S.occ : "";
-    S.occ = sel.value;
+  function fillDepartments() {
+    const sel = S.opts.dept;
+    const list = [...new Set(S.items.map((it) => personOf(it).role).filter(Boolean))].sort((a, b) => a.localeCompare(b, "ar"));
+    sel.innerHTML = `<option value="">جميع الأقسام</option>` + list.map((v) => `<option value="${esc(v)}">${esc(v)}</option>`).join("");
+    sel.value = list.includes(S.dept) ? S.dept : "";
+    S.dept = sel.value;
   }
 
   /* ── نافذة الباركود ── */
@@ -174,26 +175,23 @@
     const it = S.items.find((x) => x.certNo === certNo);
     if (!it || !it.hasQr) return;
     closeQr();
-    const m = employeeOf(it);
-    const name = m ? m.e[S.opts.F.name] : it.name;
-    const role = m ? m.e[S.opts.F.job] : it.occupation;
+    const p = personOf(it);
     const scrim = document.createElement("div");
     scrim.className = "mc-scrim";
     scrim.innerHTML = `
       <div class="mc-modal" role="dialog" aria-modal="true" aria-labelledby="mcQrTitle">
         <div class="mc-modal-head">
           <h3 id="mcQrTitle">الباركود الخاص بالموظف</h3>
-          <button type="button" class="mc-x" data-close aria-label="إغلاق">${icon("close", 18)}</button>
+          <button type="button" class="mc-x" data-close aria-label="إغلاق">${icon("close", 20)}</button>
         </div>
         <div class="mc-modal-body">
           <div class="mc-qr-big"><img src="${qrUrl(it)}" alt="رمز QR للشهادة الصحية ${esc(it.certNo)}"></div>
           <div class="mc-modal-who">
-            <b>${esc(name || "")}</b>
-            ${role ? `<span>${esc(role)}</span>` : ""}
-            <span class="mc-modal-num ltr">${esc(it.certNo)}</span>
+            <b>${esc(p.name || "")}</b>
+            ${p.role ? `<span>${esc(p.role)}</span>` : ""}
           </div>
-          <div class="mc-hint">${icon("scan", 22)}<span>امسح الرمز بكاميرا الجوال لعرض الشهادة الصحية من موقع أمانة منطقة الرياض.</span></div>
-          <a class="mc-dl" href="${qrUrl(it, true)}" download="municipal-card-${esc(it.certNo)}-QR.png">${icon("download", 17)}تحميل الباركود</a>
+          <div class="mc-hint">${icon("scan", 26)}<span>يمكن مسح هذا الباركود باستخدام الهاتف لعرض بيانات الشهادة الصحية</span></div>
+          <a class="mc-dl" href="${qrUrl(it, true)}" download="municipal-card-${esc(it.certNo)}-QR.png">${icon("download", 18)}<span>تحميل الباركود</span></a>
         </div>
       </div>`;
     document.body.appendChild(scrim);
@@ -267,7 +265,7 @@
       S.opts.grid.innerHTML = `<div class="mc-empty"><p>تعذّر تحميل البطاقات البلدية.</p></div>`;
       return;
     }
-    fillOccupations();
+    fillDepartments();
     render();
   }
 
@@ -277,7 +275,7 @@
     const t = ev.target;
     if (!t || t.tagName !== "IMG") return;
     if (t.classList.contains("mc-photo-img")) t.remove();
-    else if (t.closest(".mc-qr-thumb")) t.replaceWith(Object.assign(document.createElement("span"), { textContent: "—", className: "mc-qr-miss" }));
+    else if (t.closest(".mc-cert-qr")) t.remove();
     else if (t.closest(".mc-qr-big")) t.closest(".mc-qr-big").innerHTML = `<p class="mc-qr-fail">تعذّر تحميل الرمز — أعد المحاولة.</p>`;
   }
 
@@ -292,17 +290,19 @@
       const del = ev.target.closest("[data-del]");
       if (del) removeCard(del.dataset.del);
     });
-    o.summary.addEventListener("click", (ev) => {
-      const b = ev.target.closest("[data-sum]");
-      if (!b) return;
-      S.status = S.status === b.dataset.sum ? "" : b.dataset.sum;
-      o.status.value = S.status;
+    if (o.allBtn) o.allBtn.addEventListener("click", () => {
+      if (S.q.trim() || S.status || S.dept) {
+        S.q = S.status = S.dept = "";
+        o.search.value = o.status.value = o.dept.value = "";
+      } else {
+        S.showAll = true;
+      }
       render();
     });
     let t;
     o.search.addEventListener("input", (ev) => { S.q = ev.target.value; clearTimeout(t); t = setTimeout(render, 160); });
     o.status.addEventListener("change", (ev) => { S.status = ev.target.value; render(); });
-    o.occ.addEventListener("change", (ev) => { S.occ = ev.target.value; render(); });
+    o.dept.addEventListener("change", (ev) => { S.dept = ev.target.value; render(); });
     document.addEventListener("error", onImgError, true);
 
     if (o.addBtn && o.fileInput && AdminUI.can("municipal", "create")) {
