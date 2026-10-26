@@ -67,9 +67,11 @@ test("الهيكل التنظيمي بعد التذاكر مباشرة وقبل 
   assert.equal(ids[at + 1], "contactSec");
 });
 
+/* البطاقات البلدية أُضيفت بعد تصاريح أجير عمدًا (وثيقتا امتثال متجاورتان)؛
+   بقية الترتيب كما كان. */
 test("ترتيب الأقسام الأخرى كما كان", () => {
   const ids = [...shell.matchAll(/<section class="block wrap" id="(\w+)"/g)].map((m) => m[1]).filter((x) => x !== "orgSec");
-  assert.deepEqual(ids, ["kpiSec", "finSec", "peopleSec", "ajeerSec", "ticketsSec", "contactSec"]);
+  assert.deepEqual(ids, ["kpiSec", "finSec", "peopleSec", "ajeerSec", "municipalSec", "ticketsSec", "contactSec"]);
 });
 
 test("قسم الهيكل محروس بصلاحية سجلّ الموظفين في الواجهة", () => {
