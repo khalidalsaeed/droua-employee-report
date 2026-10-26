@@ -3,16 +3,16 @@
    سكربت كلاسيكي → MunicipalCards في النطاق العام، على نمط org-chart.js:
    يجلب بياناته بنفسه بعد بيانات الموظفين، ولا يعطّل غيره إن فشل.
 
-   كل ما يُعرض مصدره ملفّ الشهادة نفسه (lib/municipal/extractCard.js) —
-   لا قيمة مفترضة: حقلٌ لم يُقرأ من الملفّ لا يُرسم سطره أصلًا.
+   البطاقة المعروضة هي وجه الشهادة الأصلي مرسومًا من ملفّ الأمانة نفسه
+   (شعارها وصورتها ورمزها ونصوصها كما هي) — المنصّة تصمّم ما حولها فقط.
+   والرمز في النافذة المكبّرة هو صورة QR الأصلية من الملفّ نفسه.
 
-   الربط بسجلّ الموظف برقم الإقامة (كما في تصاريح أجير)، فالاسم تحت
-   البطاقة هو اسم المنصّة حين يُطابَق، والبطاقة نفسها تحمل الاسم كما
-   طُبع عليها.
+   الربط بالموظف بـemployeeEid (employees.eid = «الرقم الوظيفي») الذي حُسم
+   عند الاستيراد برقم الإقامة — لا بالاسم.
 
-   الرمز والصورة يُطلبان من /api/files/municipal-qr و municipal-photo،
-   وكلاهما يعيد فحص الجلسة وmunicipal:view؛ نصّ الرمز (رابط التحقّق) لا
-   يصل إلى المتصفّح إلا داخل صورة الرمز. */
+   الصورتان تُطلبان بالمعرّف العشوائي cardId من /api/files/municipal-card-image
+   و /api/files/municipal-qr، وكلاهما يعيد فحص الجلسة وmunicipal:view من متجر
+   خاصّ. لا رابط تخزين ولا رابط الرمز في أي استجابة JSON. */
 (function (root) {
   "use strict";
 
@@ -20,6 +20,7 @@
   const S = { items: [], opts: null, q: "", status: "", dept: "", showAll: false, popModal: null };
   /* صفّان على الشاشة العريضة قبل «عرض الكل»، كما في المرجع. */
   const PREVIEW_COUNT = 8;
+  const ID_RE = /^[0-9a-f]{16}$/;
 
   const ICON = {
     qr: '<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3h-3zM20 14v.01M14 20h.01M17 20h4v-3"/>',
@@ -29,13 +30,10 @@
     check: '<path d="m5 12.5 4.5 4.5L19 7.5"/>',
     clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
     alert: '<circle cx="12" cy="12" r="9"/><path d="M12 7.5v5.5M12 16.5v.01"/>',
-    shield: '<path d="M12 3 5 6v5.5c0 4.2 2.9 7.6 7 9.5 4.1-1.9 7-5.3 7-9.5V6Z"/><path d="M9 12.5c1-.9 2-1.3 3-1.3s2 .4 3 1.3M12 8v3.2"/>',
-    plus: '<path d="M12 5v14M5 12h14"/>',
-    search: '<circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/>',
   };
   const icon = (n, s) => `<svg width="${s || 16}" height="${s || 16}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON[n]}</svg>`;
 
-  /* ── الحالة ──
+  /* ── الحالة — من تاريخ الانتهاء الحقيقي، محسوبة عند كل تحميل ──
      الشهادة نفسها تنصّ على تجديدها قبل انتهائها بثلاثين يومًا، فالثلاثون
      الأخيرة حمراء (وقت التجديد)، والثلاثون التي قبلها كهرمانية للتنبيه. */
   const RENEW_DAYS = 30, NOTICE_DAYS = 60;
@@ -52,78 +50,40 @@
 
   function employeeOf(item) {
     const o = S.opts;
-    if (!o || !item.idNumber) return null;
-    const i = (o.platform || []).findIndex((e) => String(e[o.F.iqama] || "").replace(/\D/g, "") === item.idNumber);
+    if (!o || !item.employeeEid) return null;
+    const i = (o.platform || []).findIndex((e) => String(e[o.F.damanah]) === String(item.employeeEid));
     return i < 0 ? null : { i, e: o.platform[i] };
   }
 
-  /* الهجري كما طُبع على الشهادة: يوم/شهر/سنة. */
-  const hijriText = (h) => {
-    const m = String(h || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
-    return m ? `${m[3]}/${m[2]}/${m[1]}` : "";
-  };
-  const initialsOf = (name) => {
-    const p = String(name || "").trim().split(/\s+/);
-    return (p[0] || "").slice(0, 1) + ((p[1] || "").slice(0, 1) || "");
-  };
-  const qrUrl = (it, dl) => `/api/files/municipal-qr?card=${encodeURIComponent(it.certNo)}${dl ? "&download=1" : ""}`;
-  const photoUrl = (it) => `/api/files/municipal-photo?card=${encodeURIComponent(it.certNo)}&v=${encodeURIComponent(it.photoVersion || "")}`;
-
-  /* ── البطاقة ──
-     وجه الشهادة نفسها كما تُصدرها الأمانة: الترويسة، الصورة والرمز، عنوان
-     «شهادة صحية»، ثم جدول الحقول. السطر الذي لم يُقرأ من الملفّ لا يُرسم. */
+  /* الاسم والمسمّى من سجلّ المنصّة؛ ومن لا يملك عرض سجلّ الموظفين يرى ما
+     طُبع على الشهادة نفسها. */
   function personOf(it) {
     const m = employeeOf(it);
     const o = S.opts;
-    return {
-      m,
-      name: m ? m.e[o.F.name] : it.name,
-      role: (m && m.e[o.F.job]) || it.occupation || "",
-    };
+    return { m, name: (m && m.e[o.F.name]) || it.nameOnCard || "", role: (m && m.e[o.F.job]) || it.occupation || "" };
   }
 
-  function cardFace(it) {
-    const row = (k, v, ltr) => (v ? `<div class="mc-row"><dt>${k}</dt><dd${ltr ? ' class="ltr"' : ""}>${esc(v)}</dd></div>` : "");
-    const top = row("رقم الشهادة", it.certNo, true) + row("مكان الاصدار", it.issuer) +
-      (it.expiryHijri || it.expiryDate ? `<div class="mc-row"><dt>تاريخ الانتهاء</dt><dd class="ltr" title="${esc(it.expiryDate ? fmtDate(it.expiryDate) : "")}">${esc(hijriText(it.expiryHijri) || fmtDate(it.expiryDate))}</dd></div>` : "");
-    const who = row("الاسم", it.name) + row("رقم الهوية", it.idNumber, true) + row("الجنس", it.gender) + row("الجنسية", it.nationality);
-    const photo = it.hasPhoto ? `<img class="mc-photo-img" src="${photoUrl(it)}" alt="" loading="lazy" decoding="async" draggable="false">` : "";
-    return `
-      <div class="mc-cert">
-        <div class="mc-cert-head">
-          <span class="mc-emblem" aria-hidden="true">${icon("shield", 22)}</span>
-          <span class="mc-org"><b>أمانة منطقة الرياض</b><small>RIYADH REGION MUNICIPALITY</small></span>
-        </div>
-        <div class="mc-cert-media">
-          ${it.hasQr ? `<button type="button" class="mc-cert-qr" data-qr="${esc(it.certNo)}" aria-label="تكبير الباركود"><img src="${qrUrl(it)}" alt="" loading="lazy" decoding="async"></button>` : `<span class="mc-cert-qr is-empty" aria-hidden="true"></span>`}
-          <span class="mc-photo" aria-hidden="true"><span>${esc(initialsOf(it.name))}</span>${photo}</span>
-        </div>
-        <div class="mc-cert-title">شهادة صحية</div>
-        <dl class="mc-table">
-          <div class="mc-group">${top}</div>
-          ${who ? `<div class="mc-group">${who}</div>` : ""}
-        </dl>
-      </div>`;
-  }
+  const cardUrl = (it) => `/api/files/municipal-card-image?id=${it.cardId}&v=${encodeURIComponent(it.version || "")}`;
+  const qrUrl = (it, dl) => `/api/files/municipal-qr?id=${it.cardId}&v=${encodeURIComponent(it.version || "")}${dl ? "&download=1" : ""}`;
 
   function tile(it, idx) {
     const st = statusOf(it);
     const p = personOf(it);
-    const canDelete = AdminUI.can("municipal", "delete");
     return `
-      <article class="mc-tile" style="animation-delay:${Math.min(idx * 40, 320)}ms" data-card="${esc(it.certNo)}">
+      <article class="mc-tile" style="animation-delay:${Math.min(idx * 40, 320)}ms" data-card="${it.cardId}">
         <div class="mc-tile-head">
           <span class="mc-status ${st.cls}">${icon(st.icon, 15)}<span>${esc(st.label)}</span></span>
         </div>
-        ${cardFace(it)}
+        <div class="mc-cert">
+          <img class="mc-cert-img" src="${cardUrl(it)}" width="605" height="950" loading="lazy" decoding="async" draggable="false"
+            alt="الشهادة الصحية رقم ${esc(it.certificateNumber)}${p.name ? ` — ${esc(p.name)}` : ""}">
+        </div>
         <div class="mc-who">
           ${p.m ? `<button type="button" class="mc-name" data-open-emp="${p.m.i}" title="فتح ملف الموظف">${esc(p.name)}</button>` : `<div class="mc-name is-static">${esc(p.name || "—")}</div>`}
           ${p.role ? `<div class="mc-role">${esc(p.role)}</div>` : ""}
-          ${p.m ? "" : `<div class="mc-unlinked" title="رقم الهوية في الشهادة لا يطابق أي سجلّ موظف">غير مرتبطة بسجلّ موظف</div>`}
         </div>
-        ${it.hasQr ? `<button type="button" class="mc-qr-btn" data-qr="${esc(it.certNo)}" aria-label="عرض الباركود الخاص بـ${esc(p.name || it.certNo)}">
+        ${it.hasQr ? `<button type="button" class="mc-qr-btn" data-qr="${it.cardId}" aria-label="عرض الباركود الخاص بـ${esc(p.name || it.certificateNumber)}">
           <span>عرض الباركود</span>${icon("qr", 20)}</button>` : `<div class="mc-qr-btn is-empty">لا يوجد باركود في الملف</div>`}
-        ${canDelete ? `<button type="button" class="mc-del" data-del="${esc(it.certNo)}">حذف البطاقة</button>` : ""}
       </article>`;
   }
 
@@ -133,8 +93,9 @@
     if (S.dept && personOf(it).role !== S.dept) return false;
     const q = S.q.trim().toLowerCase();
     if (!q) return true;
-    const m = employeeOf(it);
-    const hay = [it.name, it.certNo, it.idNumber, it.occupation, it.nationality, m && m.e[S.opts.F.name], m && m.e[S.opts.F.damanah]]
+    const p = personOf(it);
+    const o = S.opts;
+    const hay = [p.name, it.nameOnCard, it.certificateNumber, it.occupation, it.employeeEid, p.m && p.m.e[o.F.iqama]]
       .filter(Boolean).join(" ").toLowerCase();
     return hay.includes(q);
   }
@@ -155,8 +116,7 @@
     }
 
     if (!all.length) {
-      o.grid.innerHTML = `<div class="mc-empty">${icon("qr", 28)}<p>لا توجد بطاقات بلدية مسجّلة بعد.</p>
-        ${AdminUI.can("municipal", "create") ? "<small>ارفع ملفّ الشهادة الصحية (PDF) من زرّ «إضافة بطاقة» وستُقرأ بياناتها ورمزها تلقائيًا.</small>" : ""}</div>`;
+      o.grid.innerHTML = `<div class="mc-empty">${icon("qr", 28)}<p>لا توجد بطاقات بلدية مسجّلة بعد.</p></div>`;
       return;
     }
     o.grid.innerHTML = shown.length ? shown.map(tile).join("") : `<div class="mc-empty"><p>لا توجد بطاقات مطابقة</p></div>`;
@@ -170,9 +130,9 @@
     S.dept = sel.value;
   }
 
-  /* ── نافذة الباركود ── */
-  function openQr(certNo) {
-    const it = S.items.find((x) => x.certNo === certNo);
+  /* ── نافذة الباركود — صورة الرمز الأصلية من الملفّ ── */
+  function openQr(cardId) {
+    const it = S.items.find((x) => x.cardId === cardId);
     if (!it || !it.hasQr) return;
     closeQr();
     const p = personOf(it);
@@ -185,13 +145,13 @@
           <button type="button" class="mc-x" data-close aria-label="إغلاق">${icon("close", 20)}</button>
         </div>
         <div class="mc-modal-body">
-          <div class="mc-qr-big"><img src="${qrUrl(it)}" alt="رمز QR للشهادة الصحية ${esc(it.certNo)}"></div>
+          <div class="mc-qr-big"><img src="${qrUrl(it)}" alt="رمز QR للشهادة الصحية ${esc(it.certificateNumber)}"></div>
           <div class="mc-modal-who">
-            <b>${esc(p.name || "")}</b>
+            <b>${esc(p.name)}</b>
             ${p.role ? `<span>${esc(p.role)}</span>` : ""}
           </div>
           <div class="mc-hint">${icon("scan", 26)}<span>يمكن مسح هذا الباركود باستخدام الهاتف لعرض بيانات الشهادة الصحية</span></div>
-          <a class="mc-dl" href="${qrUrl(it, true)}" download="municipal-card-${esc(it.certNo)}-QR.png">${icon("download", 18)}<span>تحميل الباركود</span></a>
+          <a class="mc-dl" href="${qrUrl(it, true)}" download="municipal-card-${esc(it.certificateNumber)}-QR.png">${icon("download", 18)}<span>تحميل الباركود</span></a>
         </div>
       </div>`;
     document.body.appendChild(scrim);
@@ -213,53 +173,10 @@
     if (pop) pop();
   }
 
-  /* ── الرفع والحذف ── */
-  function postPdf(file) {
-    return fetch("/api/files/municipal-card", {
-      method: "POST",
-      headers: { "Content-Type": "application/pdf", "X-Filename": encodeURIComponent(file.name) },
-      body: file,
-    }).then(async (r) => {
-      let j = null;
-      try { j = await r.json(); } catch (e) { /* ردّ غير JSON */ }
-      if (!r.ok || !j || !j.ok) throw new Error((j && j.error) || "تعذّر رفع الملف");
-      return j;
-    });
-  }
-
-  async function uploadFiles(files, btn) {
-    const list = [...files].filter((f) => /\.pdf$/i.test(f.name) || f.type === "application/pdf");
-    if (!list.length) { AdminUI.toastError("اختر ملفّ PDF للشهادة الصحية"); return; }
-    btn.classList.add("is-busy");
-    btn.setAttribute("aria-busy", "true");
-    let ok = 0;
-    const failed = [];
-    for (const f of list) {
-      try { await postPdf(f); ok++; } catch (err) { failed.push(`${f.name}: ${err.message}`); }
-    }
-    btn.classList.remove("is-busy");
-    btn.removeAttribute("aria-busy");
-    if (ok) AdminUI.toastOk(ok === 1 ? "أُضيفت البطاقة" : `أُضيفت ${ok} بطاقات`);
-    failed.forEach((m) => AdminUI.toastError(m, 7000));
-    if (ok) await reload();
-  }
-
-  async function removeCard(certNo) {
-    const yes = await AdminUI.confirmDanger(`حذف البطاقة ${certNo} من المنصّة؟ يمكن إضافتها لاحقًا برفع ملفّها من جديد.`, { confirmLabel: "حذف" });
-    if (!yes) return;
-    try {
-      await AdminUI.api("DELETE", `/api/data/municipal-cards?id=${encodeURIComponent(certNo)}`);
-      AdminUI.toastOk("حُذفت البطاقة");
-      await reload();
-    } catch (err) {
-      AdminUI.toastError(err.message);
-    }
-  }
-
   async function reload() {
     try {
       const j = await AdminUI.api("GET", "/api/data/municipal-cards");
-      S.items = (j.items || []).filter((it) => it && it.certNo);
+      S.items = (j.items || []).filter((it) => it && ID_RE.test(String(it.cardId || "")));
     } catch (err) {
       S.items = [];
       S.opts.grid.innerHTML = `<div class="mc-empty"><p>تعذّر تحميل البطاقات البلدية.</p></div>`;
@@ -269,13 +186,12 @@
     render();
   }
 
-  /* حدث error لا يصعد: صورة لم تُحمَّل تُزال فتبقى الأحرف الأولى، ورمزٌ
-     لم يُحمَّل يُستبدل بشرطة — لا صورة مكسورة أبدًا. */
+  /* حدث error لا يصعد: بطاقة لم تُحمَّل تُستبدل برسالة هادئة، ورمزٌ لم
+     يُحمَّل في النافذة كذلك — لا صورة مكسورة أبدًا. */
   function onImgError(ev) {
     const t = ev.target;
     if (!t || t.tagName !== "IMG") return;
-    if (t.classList.contains("mc-photo-img")) t.remove();
-    else if (t.closest(".mc-cert-qr")) t.remove();
+    if (t.classList.contains("mc-cert-img")) t.closest(".mc-cert").innerHTML = `<p class="mc-cert-fail">تعذّر تحميل صورة البطاقة</p>`;
     else if (t.closest(".mc-qr-big")) t.closest(".mc-qr-big").innerHTML = `<p class="mc-qr-fail">تعذّر تحميل الرمز — أعد المحاولة.</p>`;
   }
 
@@ -286,9 +202,7 @@
       const q = ev.target.closest("[data-qr]");
       if (q) { openQr(q.dataset.qr); return; }
       const emp = ev.target.closest("[data-open-emp]");
-      if (emp && o.openEmployee) { o.openEmployee(Number(emp.dataset.openEmp)); return; }
-      const del = ev.target.closest("[data-del]");
-      if (del) removeCard(del.dataset.del);
+      if (emp && o.openEmployee) o.openEmployee(Number(emp.dataset.openEmp));
     });
     if (o.allBtn) o.allBtn.addEventListener("click", () => {
       if (S.q.trim() || S.status || S.dept) {
@@ -304,16 +218,6 @@
     o.status.addEventListener("change", (ev) => { S.status = ev.target.value; render(); });
     o.dept.addEventListener("change", (ev) => { S.dept = ev.target.value; render(); });
     document.addEventListener("error", onImgError, true);
-
-    if (o.addBtn && o.fileInput && AdminUI.can("municipal", "create")) {
-      o.addBtn.style.display = "";
-      o.addBtn.addEventListener("click", () => o.fileInput.click());
-      o.fileInput.addEventListener("change", async () => {
-        const files = o.fileInput.files;
-        if (files && files.length) await uploadFiles(files, o.addBtn);
-        o.fileInput.value = "";
-      });
-    }
     return reload();
   }
 

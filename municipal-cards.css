@@ -1,10 +1,8 @@
 /* البطاقات البلدية (municipal-cards.js).
-   المرجع البصري المعتمد: وجه الشهادة الصحية نفسها هو العنصر الرئيسي —
-   أبيض، ترويسة الأمانة بالأخضر، الصورة والرمز متجاوران، ثم جدول الحقول —
-   داخل حاوية فاتحة، وفوقها شارة الحالة، وتحتها الاسم والمسمّى وزرّ
+   المرجع البصري المعتمد: وجه الشهادة الصحية الأصلي (صورة من ملفّ الأمانة
+   نفسه) هو العنصر الرئيسي، داخل حاوية فاتحة، وفوقها شارة الحالة، وتحتها الاسم والمسمّى وزرّ
    «عرض الباركود». الألوان المحايدة والحالة والظلال من رموز المنصّة. */
 
-#municipalSec{--mc-green:#0E7A43;--mc-green-2:#0B5F35}
 .mc-sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 .ltr{direction:ltr;unicode-bidi:isolate}
 
@@ -18,15 +16,12 @@
 @media(min-width:768px){.mc-title h2{font-size:28px}}
 .mc-top-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-inline-start:auto}
 .mc-count{font-size:13px;color:var(--ink-soft);font-variant-numeric:tabular-nums}
-.mc-btn-dark,.mc-btn-ghost{display:inline-flex;align-items:center;gap:10px;min-height:46px;padding:0 22px;border-radius:10px;
+.mc-btn-dark{display:inline-flex;align-items:center;gap:10px;min-height:46px;padding:0 22px;border-radius:10px;
   font-family:var(--sans);font-size:14px;font-weight:600;cursor:pointer;transition:background .25s,border-color .25s,transform .2s}
 .mc-btn-dark{background:var(--slate);color:#fff;border:1px solid var(--slate);box-shadow:0 8px 18px -10px rgba(22,40,59,.7)}
 @media(hover:hover){.mc-btn-dark:hover{background:var(--slate-2)}}
-.mc-btn-ghost{background:var(--paper-2);color:var(--slate);border:1px solid var(--hair)}
-@media(hover:hover){.mc-btn-ghost:hover{border-color:var(--slate)}}
-.mc-btn-dark:active,.mc-btn-ghost:active{transform:scale(.98)}
-.mc-btn-dark:focus-visible,.mc-btn-ghost:focus-visible{outline:2px solid var(--brass);outline-offset:2px}
-.mc-btn-ghost.is-busy{opacity:.6;pointer-events:none}
+.mc-btn-dark:active{transform:scale(.98)}
+.mc-btn-dark:focus-visible{outline:2px solid var(--brass);outline-offset:2px}
 
 /* ── الفلاتر: الحالة، القسم، ثم البحث بعرض أكبر ── */
 .mc-filters{display:grid;grid-template-columns:1fr;gap:10px;margin-bottom:20px}
@@ -60,35 +55,14 @@
 .mc-status.bad{background:var(--bad-bg);color:var(--bad)}
 .mc-status.na{background:var(--na-bg);color:var(--na)}
 
-/* ── وجه الشهادة ── */
-.mc-cert{background:#fff;border:1px solid #E6E1D7;border-radius:12px;padding:12px 12px 10px;
-  box-shadow:0 6px 18px -12px rgba(22,40,59,.35);color:#1B1B1B;container-type:inline-size}
-.mc-cert-head{display:flex;align-items:center;justify-content:center;gap:8px}
-.mc-emblem{flex:none;width:38px;height:38px;border-radius:50%;background:var(--mc-green);color:#fff;
-  display:flex;align-items:center;justify-content:center;box-shadow:0 0 0 2px #fff,0 0 0 3px rgba(14,122,67,.35)}
-.mc-org{display:flex;flex-direction:column;line-height:1.15;text-align:start}
-.mc-org b{font-size:clamp(14px,7cqw,17px);font-weight:700;color:var(--mc-green)}
-.mc-org small{font-size:clamp(7.5px,3.4cqw,9px);font-weight:700;letter-spacing:.02em;color:var(--mc-green-2)}
-
-.mc-cert-media{display:flex;justify-content:center;align-items:center;gap:10px;margin:10px 0 2px}
-.mc-photo{position:relative;flex:none;width:clamp(56px,25cqw,72px);aspect-ratio:4/5;border-radius:4px;overflow:hidden;
-  background:#ECEAE4;display:flex;align-items:center;justify-content:center;font-family:var(--serif);font-size:20px;color:#8A857A}
-.mc-photo-img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:50% 25%;display:block;background:#ECEAE4}
-.mc-cert-qr{flex:none;width:clamp(56px,25cqw,72px);aspect-ratio:1;padding:0;border:none;background:#fff;cursor:zoom-in;border-radius:2px}
-.mc-cert-qr img{width:100%;height:100%;object-fit:contain;display:block;image-rendering:pixelated}
-.mc-cert-qr.is-empty{cursor:default;background:repeating-linear-gradient(45deg,#F2F0EB 0 4px,#fff 4px 8px)}
-.mc-cert-qr:focus-visible{outline:2px solid var(--brass);outline-offset:2px}
-
-.mc-cert-title{text-align:center;font-size:clamp(17px,8.4cqw,21px);font-weight:700;color:var(--mc-green);line-height:1.4;margin-bottom:6px}
-
-.mc-table{margin:0;border:1px solid #D9D6CF;border-radius:6px;overflow:hidden}
-.mc-group{padding:3px 8px}
-.mc-group+.mc-group{border-top:1.5px solid #B9B6AE}
-.mc-row{display:grid;grid-template-columns:minmax(64px,34%) 1fr;align-items:baseline;gap:6px;padding:2.5px 0;
-  font-size:clamp(10.5px,4.6cqw,12.5px);line-height:1.45}
-.mc-row+.mc-row{border-top:1px solid #F0EEE9}
-.mc-row dt{color:#6B675F;font-size:.88em}
-.mc-row dd{margin:0;font-weight:600;text-align:center;min-width:0;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
+/* ── وجه الشهادة الأصلي (صورة من ملفّ الأمانة) ──
+   الإطار للمنصّة، والمحتوى صورة البطاقة كما هي: لا قصّ ولا تمديد. */
+.mc-cert{background:#fff;border:1px solid #E6E1D7;border-radius:12px;padding:6px;overflow:hidden;
+  box-shadow:0 6px 18px -12px rgba(22,40,59,.35)}
+.mc-cert-img{display:block;width:100%;height:auto;aspect-ratio:605/950;object-fit:contain;border-radius:8px;
+  background:#fff;user-select:none;-webkit-user-drag:none}
+.mc-cert-fail{aspect-ratio:605/950;margin:0;display:flex;align-items:center;justify-content:center;text-align:center;
+  font-size:13px;color:var(--ink-soft);background:var(--paper)}
 
 /* ── تحت الشهادة ── */
 .mc-who{text-align:center;padding:4px 4px 0;min-width:0}
@@ -98,7 +72,6 @@
 .mc-name.is-static{cursor:default}
 .mc-name:focus-visible{outline:2px solid var(--brass);outline-offset:2px;border-radius:4px}
 .mc-role{font-size:13px;color:var(--ink-soft);margin-top:2px}
-.mc-unlinked{display:inline-block;margin-top:6px;font-size:11px;color:var(--na);background:var(--na-bg);border-radius:999px;padding:2px 9px}
 
 .mc-qr-btn{align-self:center;display:inline-flex;align-items:center;justify-content:center;gap:12px;min-height:46px;
   min-width:min(100%,180px);padding:0 20px;border:1px solid var(--hair);border-radius:10px;background:#F1EEE8;color:var(--ink);
@@ -109,9 +82,6 @@
 button.mc-qr-btn:active{transform:scale(.98)}
 .mc-qr-btn:focus-visible{outline:2px solid var(--brass);outline-offset:2px}
 .mc-qr-btn.is-empty{cursor:default;font-size:12.5px;font-weight:400;color:var(--ink-soft)}
-.mc-del{align-self:center;border:none;background:none;padding:4px 10px;min-height:32px;font-family:var(--sans);font-size:12px;
-  color:var(--bad);opacity:.75;cursor:pointer;border-radius:8px}
-@media(hover:hover){.mc-del:hover{opacity:1;background:var(--bad-bg)}}
 
 .mc-empty{grid-column:1/-1;text-align:center;padding:56px 16px;color:var(--ink-soft);display:flex;flex-direction:column;align-items:center;gap:6px}
 .mc-empty svg{opacity:.5}
@@ -136,7 +106,7 @@ button.mc-qr-btn:active{transform:scale(.98)}
 /* أبيض صرف وهامش هادئ: ما تحتاجه الكاميرا لالتقاط الرمز من الشاشة. */
 .mc-qr-big{width:min(260px,70vw);aspect-ratio:1;background:#fff;border:1px solid #DEDAD1;border-radius:10px;padding:6px;
   display:flex;align-items:center;justify-content:center}
-.mc-qr-big img{width:100%;height:100%;object-fit:contain;display:block;image-rendering:pixelated}
+.mc-qr-big img{width:100%;height:100%;object-fit:contain;display:block}
 .mc-qr-fail{font-size:13px;color:var(--bad)}
 .mc-modal-who{display:flex;flex-direction:column;gap:2px}
 .mc-modal-who b{font-size:18px;font-weight:700}
