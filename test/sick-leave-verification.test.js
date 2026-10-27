@@ -5,7 +5,7 @@ const path = require("node:path");
 
 process.env.SESSION_SECRET = process.env.SESSION_SECRET || "test-secret-sick-leave";
 
-const { makeSickLeavePdf, makeScannedPdf, DEFAULT } = require("./helpers/sick-leave-fixtures");
+const { makeSickLeavePdf, makeScannedPdf, makeMobileStylePdf, appendIncrementalUpdate, DEFAULT } = require("./helpers/sick-leave-fixtures");
 const { makeFakeSql } = require("./helpers/fake-sql");
 const { validateUpload, displayName } = require("../lib/sickLeave/validate");
 const { extractSickLeave, parseDate, qrSummaryFromText } = require("../lib/sickLeave/extract");
@@ -46,9 +46,11 @@ test("validate: يُحكم على النوع من التوقيع لا من ال�
   assert.equal(validateUpload(Buffer.alloc(5 * 1024 * 1024, 0x25), "application/pdf").reason, "too_large");
 });
 
-test("validate: PDF مقطوع (بلا %%EOF) يُرفض قبل أن يصل إلى المحلّل", async () => {
+test("validate: لا فحص شكليًّا لـ%%EOF — المحلّل هو الحَكَم، والترويسة ضمن أوّل 1024 بايتًا", async () => {
   const pdf = await validPdf();
-  assert.equal(validateUpload(pdf.subarray(0, Math.floor(pdf.length / 2)), "application/pdf").reason, "malformed");
+  assert.equal(validateUpload(pdf.subarray(0, Math.floor(pdf.length / 2)), "application/pdf").kind, "pdf");
+  assert.equal(validateUpload(Buffer.concat([Buffer.from("\r\n junk\n"), pdf]), "application/pdf").kind, "pdf");
+  assert.equal(validateUpload(Buffer.concat([Buffer.alloc(1100, 0x20), pdf]), "application/pdf").reason, "unsupported_type");
 });
 
 test("validate: اسم الملف للعرض فقط — بلا مسارات ولا محارف تحكّم", () => {
@@ -335,9 +337,10 @@ test("http: صورة PNG مقبولة بأمان → إدخال يدوي (لا O
 test("http: PDF تالف / ليس إجازة / نوع مزيّف → رسائل واضحة بأكواد صحيحة", async () => {
   const h = harness();
   const pdf = await validPdf();
+  /* ملفّ لم يقرأه المحلّل لا يُرفض: يُكمل المستخدم الحقول يدويًا. */
   const torn = await h.extract(pdf.subarray(0, 600));
-  assert.equal(torn.statusCode, 415);
-  assert.equal(torn.body.reason, "malformed");
+  assert.equal(torn.statusCode, 200);
+  assert.equal(torn.body.status, "needs_manual");
   const notLeave = await h.extract(await makeSickLeavePdf({}, { notSickLeave: true }));
   assert.equal(notLeave.statusCode, 422);
   assert.equal(notLeave.body.reason, "not_sick_leave");
@@ -527,4 +530,97 @@ test("qr: رابط صحة الرسمي يُفتح، والمواقع المنت�
   assert.equal(qrSummaryFromText("http://www.seha.sa/x", "").url, null, "http لا يُفتح");
   assert.equal(qrSummaryFromText("javascript:alert(1)", "").url, null);
   assert.deepEqual(qrSummaryFromText(null), { found: false });
+});
+
+/* ─── ملفّات PDF صالحة من مولّدات مختلفة لا تُرفض ─── */
+
+const EXPECT = ["GSL25091234567", "2456789012", "2026-09-15", "2026-09-17"];
+const crit = (r) => [r.fields.leaveId, r.fields.idNumber, r.fields.startDate, r.fields.endDate];
+
+test("pdf: أسلوب الجوال/واتساب (PDF 1.5، Object Streams، xref stream مضغوط)", async () => {
+  const r = await extractSickLeave(makeMobileStylePdf());
+  assert.equal(r.status, "extracted");
+  assert.deepEqual(crit(r), EXPECT);
+});
+
+test("pdf: تحديثات متراكمة (incremental update) — لملفّ كلاسيكي ولملفّ xref stream", async () => {
+  for (const buf of [appendIncrementalUpdate(await validPdf()), appendIncrementalUpdate(makeMobileStylePdf())]) {
+    const r = await extractSickLeave(buf);
+    assert.equal(r.status, "extracted");
+    assert.deepEqual(crit(r), EXPECT);
+  }
+});
+
+test("pdf: بلا %%EOF، أو ببايتات زائدة بعده، أو startxref خاطئ، أو بايتات قبل الترويسة — يُقرأ", async () => {
+  const base = await validPdf();
+  const latin = base.toString("latin1");
+  const variants = {
+    noEOF: Buffer.from(latin.replace(/%%EOF\s*$/, ""), "latin1"),
+    trailingJunk: Buffer.concat([base, Buffer.alloc(400, 0)]),
+    badStartxref: Buffer.from(latin.replace(/startxref\s+\d+/, "startxref\n999999"), "latin1"),
+    leadingBytes: Buffer.concat([Buffer.from("\r\n\r\n junk\n", "latin1"), base]),
+  };
+  for (const [name, buf] of Object.entries(variants)) {
+    assert.equal(validateUpload(buf, "application/pdf").ok, true, name);
+    const r = await extractSickLeave(buf);
+    assert.equal(r.status, "extracted", name);
+    assert.deepEqual(crit(r), EXPECT, name);
+  }
+});
+
+test("http: الأشكال نفسها عبر المسار الكامل → extracted، والممسوح → إدخال يدوي", async () => {
+  const h = harness();
+  for (const buf of [makeMobileStylePdf(), appendIncrementalUpdate(await validPdf())]) {
+    const ex = await h.extract(buf, "application/pdf", "DOC-20261018-WA0035.pdf");
+    assert.equal(ex.statusCode, 200);
+    assert.equal(ex.body.status, "extracted");
+    assert.equal(ex.body.fileName, "DOC-20261018-WA0035.pdf");
+  }
+  assert.equal((await h.extract(makeScannedPdf())).body.status, "needs_manual");
+});
+
+test("pdf: بيئة Vercel بلا @napi-rs/canvas — يُقرأ الملفّ (كان: DOMMatrix is not defined → «ملف تالف»)", () => {
+  const script = `
+    const F = require(${JSON.stringify(path.join(__dirname, "helpers/sick-leave-fixtures"))});
+    const { extractSickLeave } = require(${JSON.stringify(path.join(ROOT, "lib/sickLeave/extract"))});
+    (async () => {
+      const out = [];
+      for (const b of [await F.makeSickLeavePdf({}), F.makeMobileStylePdf()]) {
+        const r = await extractSickLeave(b);
+        out.push(r.ok ? r.status + ":" + r.fields.leaveId : "fail:" + r.reason);
+      }
+      let canvas = true; try { require("@napi-rs/canvas"); } catch { canvas = false; }
+      process.stdout.write(JSON.stringify({ out, canvas }));
+    })();`;
+  const res = require("node:child_process").spawnSync(process.execPath, ["--require", path.join(__dirname, "helpers/no-canvas.js"), "-e", script], { encoding: "utf8", timeout: 60000 });
+  const parsed = JSON.parse(res.stdout);
+  assert.equal(parsed.canvas, false, "المحاكاة تحجب canvas فعلًا");
+  assert.deepEqual(parsed.out, ["extracted:GSL25091234567", "extracted:GSL25091234567"]);
+});
+
+test("pdf: عطل تحميل المحلّل يُسمّى عطل خادم ويُحوَّل لإدخال يدوي — لا «ملف تالف»", async () => {
+  const env = require("../lib/sickLeave/pdfjsEnv");
+  const original = env.loadPdfjs;
+  env.loadPdfjs = () => Promise.reject(new ReferenceError("DOMMatrix is not defined"));
+  try {
+    const r = await extractSickLeave(await validPdf());
+    assert.equal(r.reason, "parser_unavailable");
+    assert.equal(r.diagnostic.name, "ReferenceError");
+    const h = harness();
+    const ex = await h.extract(await validPdf());
+    assert.equal(ex.statusCode, 200);
+    assert.equal(ex.body.status, "needs_manual");
+    assert.equal(ex.body.reason, "parser_unavailable");
+  } finally {
+    env.loadPdfjs = original;
+  }
+});
+
+test("pdfjsEnv: مصفوفة DOMMatrix البديلة صحيحة رياضيًا", () => {
+  const { DOMMatrix2D } = require("../lib/sickLeave/pdfjsEnv");
+  const m = new DOMMatrix2D([2, 0, 0, 3, 10, 20]);
+  assert.deepEqual(m.transformPoint({ x: 1, y: 1 }), { x: 12, y: 23, z: 0, w: 1 });
+  const id = m.inverse().multiply(m);
+  [id.a, id.b, id.c, id.d, id.e, id.f].forEach((v, i) => assert.ok(Math.abs(v - [1, 0, 0, 1, 0, 0][i]) < 1e-9));
+  assert.ok(new DOMMatrix2D().isIdentity);
 });
