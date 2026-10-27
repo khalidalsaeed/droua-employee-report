@@ -173,6 +173,9 @@ test("وجه التصريح: الصفحة الأصلية مرسومة، مقصو
   assert.ok(card.height < full.height * 0.62 && card.height > full.height * 0.4, `${card.height}/${full.height}`);
   assert.deepEqual([...card.png.subarray(1, 4)].map((c) => String.fromCharCode(c)).join(""), "PNG");
   assert.equal(full.width, Math.round(595 * view.FACE_SCALE));
+  /* العامل مستورَد صراحةً: متتبّع ملفّات Vercel لا يرى استيراد pdf.js الديناميكي له. */
+  assert.ok(globalThis.pdfjsWorker && globalThis.pdfjsWorker.WorkerMessageHandler);
+  assert.match(read("lib/ajeer/permitView.js"), /import\("pdfjs-dist\/legacy\/build\/pdf\.worker\.mjs"\)/);
 });
 
 test("القصّ: بلا خطوط أفقية تُعرض الصفحة كاملة", () => {
