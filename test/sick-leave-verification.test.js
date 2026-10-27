@@ -624,3 +624,38 @@ test("pdfjsEnv: مصفوفة DOMMatrix البديلة صحيحة رياضيًا"
   [id.a, id.b, id.c, id.d, id.e, id.f].forEach((v, i) => assert.ok(Math.abs(v - [1, 0, 0, 1, 0, 0][i]) < 1e-9));
   assert.ok(new DOMMatrix2D().isIdentity);
 });
+
+test("pdf: العامل يُحمَّل في الخيط نفسه — لا بحث عن pdf.worker.mjs بمسار محسوب (كان: Setting up fake worker failed)", () => {
+  /* workerSrc يُوجَّه إلى ملفّ غير موجود — كما على Vercel حين لا يُضمَّن العامل.
+     القراءة يجب أن تنجح لأن العامل مسجَّل مسبقًا في globalThis.pdfjsWorker. */
+  const script = `
+    const env = require(${JSON.stringify(path.join(ROOT, "lib/sickLeave/pdfjsEnv"))});
+    const F = require(${JSON.stringify(path.join(__dirname, "helpers/sick-leave-fixtures"))});
+    const { extractSickLeave } = require(${JSON.stringify(path.join(ROOT, "lib/sickLeave/extract"))});
+    (async () => {
+      const pdfjs = await env.loadPdfjs();
+      pdfjs.GlobalWorkerOptions.workerSrc = "/nonexistent/pdf.worker.mjs";
+      const r = await extractSickLeave(F.makeMobileStylePdf());
+      process.stdout.write(JSON.stringify({ status: r.status || r.reason, worker: !!(globalThis.pdfjsWorker && globalThis.pdfjsWorker.WorkerMessageHandler) }));
+    })();`;
+  const run = (s) => require("node:child_process").spawnSync(process.execPath, [
+    "--require", path.join(__dirname, "helpers/no-canvas.js"),
+    "--import", require("node:url").pathToFileURL(path.join(__dirname, "helpers/no-pdf-worker.mjs")).href,
+    "-e", s], { encoding: "utf8", timeout: 60000 });
+  assert.deepEqual(JSON.parse(run(script).stdout), { status: "extracted", worker: true });
+  /* المحاكاة حقيقية: pdfjs وحده بلا تسجيل العامل يفشل بالخطأ نفسه الذي ظهر على Preview. */
+  const bare = run(`
+    (async () => {
+      globalThis.DOMMatrix = require(${JSON.stringify(path.join(ROOT, "lib/sickLeave/pdfjsEnv"))}).DOMMatrix2D;
+      const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+      try { await pdfjs.getDocument({ data: new Uint8Array(require("fs").readFileSync(process.argv[1] || "/dev/null")) }).promise; process.stdout.write("ok"); }
+      catch (e) { process.stdout.write(String(e.message)); }
+    })();`);
+  assert.match(bare.stdout, /fake worker failed/i);
+});
+
+test("structure: ملفّ عامل pdfjs مُضمَّن في حزمة الدالّة، وباستيراد ثابت", () => {
+  const vercel = JSON.parse(read("vercel.json"));
+  assert.match(vercel.functions["api/app.js"].includeFiles, /pdfjs-dist\/legacy\/build\/pdf\.worker\.mjs/);
+  assert.match(read("lib/sickLeave/pdfjsEnv.js"), /import\("pdfjs-dist\/legacy\/build\/pdf\.worker\.mjs"\)/);
+});

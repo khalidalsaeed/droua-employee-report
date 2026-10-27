@@ -4,7 +4,7 @@
   ],
   "functions": {
     "api/app.js": {
-      "includeFiles": "{*-shell.html,assets/fonts/*.ttf}"
+      "includeFiles": "{*-shell.html,assets/fonts/*.ttf,node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs}"
     }
   },
   "headers": [
