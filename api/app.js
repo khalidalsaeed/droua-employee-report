@@ -385,6 +385,7 @@ async function handleData(req, res, resource) {
 
   if (resource === "users") return handleUsers(req, res, actor);
   if (resource === "tickets") return handleTickets(req, res, actor);
+  if (resource === "municipal-cards") return handleMunicipalCards(req, res, actor);
 
   const mod = getResource(resource);
   if (!mod || !mod.section) return res.status(404).json({ ok: false, error: "قسم بيانات غير معروف" });
@@ -858,6 +859,10 @@ async function handleFiles(req, res, action) {
   if (action === "qr") return filesQrImage(req, res, actor);
   /* صورة الموظف قراءةٌ بصلاحية employees:view — لا عملية ملفّات. */
   if (action === "employee-photo") return filesEmployeePhoto(req, res, actor);
+  /* البطاقات البلدية: وجه الشهادة الأصلي وصورة رمزها الأصلية من المتجر
+     الخاصّ — قراءةٌ بـmunicipal:view. */
+  if (action === "municipal-card-image") return filesMunicipalObject(req, res, actor, "card");
+  if (action === "municipal-qr") return filesMunicipalObject(req, res, actor, "qr");
 
   const fileAction = action === "upload" ? "upload_files" : action === "delete" ? "delete_files" : null;
   if (!fileAction) return res.status(404).json({ ok: false, error: "Not found" });
@@ -1067,6 +1072,61 @@ async function filesEmployeePhoto(req, res, actor) {
   if (!bytes) return res.status(404).json({ ok: false, error: "لا توجد صورة" });
   res.writeHead(200, { ...headers, "Content-Type": entry.mime, "Content-Length": bytes.length });
   res.end(bytes);
+}
+
+/* ─── البطاقات البلدية (الشهادات الصحية) ───
+   كل شيء من المتجر الخاصّ (lib/municipal/store.js) برمز OIDC الذي يحقنه
+   Vercel في هذا الطلب نفسه. لا رفع من الواجهة في هذه المرحلة: الاستيراد
+   بسكربت scripts/import-municipal-cards.js. */
+async function handleMunicipalCards(req, res, actor) {
+  if (req.method !== "GET") return res.status(405).json({ ok: false, error: "البطاقات البلدية للقراءة فقط" });
+  if (!hasPermission(actor, "municipal", "view")) return res.status(403).json(FORBIDDEN);
+  const cards = getResource("municipal-cards");
+  try {
+    res.setHeader("Cache-Control", "private, no-store");
+    return res.status(200).json({ ok: true, items: await cards.listFor(req.headers["x-vercel-oidc-token"]) });
+  } catch (err) {
+    console.error("municipal cards not listed:", err && err.message);
+    return res.status(503).json({ ok: false, error: "تعذّر تحميل البطاقات البلدية" });
+  }
+}
+
+/* يقدّم وجه البطاقة (kind=card) أو صورة الرمز الأصلية (kind=qr) بعد التحقّق
+   من بصمتها مقابل الفهرس. ?download=1 للرمز يطلبه ملفًّا للحفظ. مسار التخزين
+   لا يخرج من الخادم؛ المتصفّح لا يعرف إلا cardId العشوائي. */
+async function filesMunicipalObject(req, res, actor, kind) {
+  if (req.method !== "GET") return res.status(405).json({ ok: false, error: "Method not allowed" });
+  if (!hasPermission(actor, "municipal", "view")) return res.status(403).json(FORBIDDEN);
+  const store = require("../lib/municipal/store");
+  const notFound = () => res.status(404).json({ ok: false, error: "غير موجود" });
+  if (!store.configured()) return notFound();
+  const oidc = req.headers["x-vercel-oidc-token"];
+  let entry, bytes;
+  try {
+    entry = store.entryById(await store.readIndex(oidc), (req.query || {}).id);
+    if (!entry || (kind === "qr" && !entry.qrKey)) return notFound();
+    const sha = kind === "qr" ? entry.qrSha256 : entry.cardSha256;
+    const download = kind === "qr" && String((req.query || {}).download || "") === "1";
+    const etag = `"mc-${kind}-${sha.slice(0, 16)}${download ? "-d" : ""}"`;
+    const headers = {
+      ETag: etag,
+      "Cache-Control": "private, max-age=3600, must-revalidate",
+      "X-Content-Type-Options": "nosniff",
+      "Content-Security-Policy": "default-src 'none'; sandbox",
+    };
+    if (download) headers["Content-Disposition"] = `attachment; filename="municipal-card-${entry.certificateNumber}-QR.png"`;
+    if (req.headers["if-none-match"] === etag) {
+      res.writeHead(304, headers);
+      return res.end();
+    }
+    bytes = await store.readObject(entry, kind, oidc);
+    if (!bytes) return notFound();
+    res.writeHead(200, { ...headers, "Content-Type": "image/png", "Content-Length": bytes.length });
+    return res.end(bytes);
+  } catch (err) {
+    console.error("municipal card object not served:", err && err.message);
+    return notFound();
+  }
 }
 
 async function filesDelete(req, res, actor) {
