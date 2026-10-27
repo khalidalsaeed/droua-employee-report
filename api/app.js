@@ -227,6 +227,7 @@ async function handleAuth(req, res, action) {
   if (action === "me") return authMe(req, res);
   if (action === "change-password") return authChangePassword(req, res);
   if (action === "permissions-catalogue") return authCatalogue(req, res);
+  if (action === "update-tour") return authUpdateTour(req, res);
   res.status(404).json({ ok: false, error: "Not found" });
 }
 
@@ -299,6 +300,44 @@ async function authMe(req, res) {
     res.setHeader("Set-Cookie", sessionCookie(fresh, false));
   }
   res.status(200).json({ ok: true, user: sessionUser(user) });
+}
+
+/* ---------------- جولة التحديثات ----------------
+   GET  — هل تُعرض جولة الإصدار الحالي لصاحب الجلسة، وبأي خطوات (مُرشَّحة
+          بصلاحياته على الخادم). POST {version, action} — بدأ/أكمل/تخطّى.
+
+   لا صلاحية خاصة: حالة المشاهدة شأن شخصي، والهدف يُشتقّ من الجلسة وحدها
+   فلا يستطيع أحد الكتابة عن غيره. الإصدار يجب أن يطابق الحالي حرفيًا —
+   لا يُكتب في audit_log معرّفٌ يختاره العميل. التفاصيل في
+   lib/tour/updateTour.js. */
+async function authUpdateTour(req, res) {
+  const actor = await requireUser(req);
+  if (!actor) return res.status(401).json({ ok: false, error: "غير مسجّل الدخول" });
+  const tour = require("../lib/tour/updateTour");
+  const { getSql } = require("../lib/db");
+
+  if (req.method === "GET") {
+    try {
+      return res.status(200).json({ ok: true, ...(await tour.stateFor(getSql(), actor, tour.CURRENT_VERSION)) });
+    } catch (err) {
+      /* القاعدة غير متاحة: لا نعرض شيئًا بدل أن نعرض جولة قد تكون مكتملة. */
+      return res.status(503).json({ ok: false, error: "تعذّر قراءة حالة الجولة" });
+    }
+  }
+  if (req.method !== "POST") return res.status(405).json({ ok: false, error: "Method not allowed" });
+
+  const body = parseBody(req);
+  const action = body && body.action;
+  if (!tour.ACTIONS.has(action)) return res.status(400).json({ ok: false, error: "إجراء غير معروف" });
+  if (!body || body.version !== tour.CURRENT_VERSION) {
+    return res.status(409).json({ ok: false, error: "إصدار الجولة لم يعد الحالي", version: tour.CURRENT_VERSION });
+  }
+  try {
+    await tour.record(getSql(), actor, tour.CURRENT_VERSION, action, { steps: body.steps });
+  } catch (err) {
+    return res.status(503).json({ ok: false, error: "تعذّر حفظ حالة الجولة" });
+  }
+  res.status(200).json({ ok: true, version: tour.CURRENT_VERSION, action });
 }
 
 /* ---------------- تغيير كلمة مرور الحساب المحميّ (Self-service) ----------------
