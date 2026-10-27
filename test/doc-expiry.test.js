@@ -91,3 +91,63 @@ test("الشريط الزمني القديم أُزيل بالكامل", () => {
     assert.doesNotMatch(fs.readFileSync(path.join(root, f), "utf8"), /docTimeline|dtl-|DashFx\.timeline|timelinePoints/, f);
   }
 });
+
+/* ── دمج وثائق الموظف المنتهية في اليوم نفسه ─────────────────────────── */
+const rows = (data, permits = []) => DocExpiry.groupSameDay(collect(data, permits).docs);
+const types = (row) => row.docs.map((d) => d.type);
+
+test("الدمج: موظف بوثيقتين بالتاريخ نفسه = صفّ واحد بنوعيهما ومدّة واحدة", () => {
+  const r = rows([emp("محمد", inDays(7), inDays(7))]);
+  assert.equal(r.length, 1);
+  assert.deepEqual(types(r[0]), ["إقامة", "رخصة عمل"]);
+  assert.equal(r[0].n, 7);
+  assert.equal(r[0].bucket, "d10");
+  assert.equal(DocExpiry.remaining(r[0].n), "باقي 7 أيام");
+  assert.equal(r[0].i, 0, "الصفّ يفتح ملف الموظف نفسه");
+});
+
+test("الدمج: ثلاث وثائق بالتاريخ نفسه = صفّ واحد بالأنواع الثلاثة", () => {
+  const permits = [{ permit: "P-1", iqama: "2000000001", issueDate: inDays(-30), expiryDate: inDays(7) }];
+  const r = rows([emp("محمد", inDays(7), inDays(7))], permits);
+  assert.equal(r.length, 1);
+  assert.deepEqual(types(r[0]), ["إقامة", "رخصة عمل", "تصريح أجير"]);
+});
+
+test("الدمج: الموظف نفسه بتواريخ مختلفة = صفوف منفصلة، وفرق يوم واحد لا يُدمج", () => {
+  const r = rows([emp("محمد", inDays(7), inDays(8), { [F.passExp]: inDays(45) })]);
+  assert.deepEqual(r.map((x) => x.n), [7, 8, 45]);
+  assert.ok(r.every((x) => x.docs.length === 1));
+});
+
+test("الدمج: موظفان بالتاريخ نفسه لا يُدمجان", () => {
+  const r = rows([emp("محمد", inDays(7), null), emp("سالم", inDays(7), null)]);
+  assert.equal(r.length, 2);
+  assert.deepEqual(r.map((x) => x.emp[F.name]), ["محمد", "سالم"]);
+});
+
+test("الدمج: الإحصائيات تبقى على عدد الوثائق لا الصفوف", () => {
+  const data = [emp("محمد", inDays(7), inDays(7), { [F.passExp]: inDays(45) }), emp("سالم", inDays(-3), inDays(-3)), emp("هند", inDays(20), null)];
+  const c = collect(data);
+  const r = DocExpiry.groupSameDay(c.docs);
+  assert.equal(c.total, 6, "إجمالي الوثائق (مركز الحلقة وزرّ «عرض جميع الوثائق») لا يتغيّر بالدمج");
+  assert.deepEqual(c.counts, { expired: 2, d10: 2, d30: 1, d90: 1 }, "الفئات تعدّ الوثائق");
+  assert.equal(r.length, 4, "الصفوف أقلّ بعد الدمج");
+  assert.equal(r.reduce((s, x) => s + x.docs.length, 0), c.total, "كل وثيقة في صفّ واحد بالضبط");
+  assert.deepEqual(r.map((x) => x.n), [-3, 7, 20, 45], "الصفوف مرتّبة بالأكثر إلحاحًا");
+  assert.equal(c.docs.length, 6, "الدمج لا يمسّ مصدر الوثائق");
+});
+
+test("الدمج: «حسب الموظف» مجموعة لكل تاريخ داخل صفّ الموظف", () => {
+  const g = DocExpiry.byEmployee(collect([emp("محمد", inDays(7), inDays(7), { [F.passExp]: inDays(45) })]).docs);
+  assert.equal(g.length, 1);
+  assert.deepEqual(g[0].sets.map((s) => [types(s), s.n]), [[["إقامة", "رخصة عمل"], 7], [["الجواز"], 45]]);
+  assert.equal(g[0].docs.length, 3);
+});
+
+test("الدمج: العرضان يرسمان الصفوف المدموجة، والزرّ يعدّ الوثائق", () => {
+  const src = fs.readFileSync(path.join(__dirname, "..", "doc-expiry.js"), "utf8");
+  assert.match(src, /const sets = groupSameDay\(docs\);/, "حسب المدة");
+  assert.match(src, /g\.sets\.map\(/, "حسب الموظف");
+  assert.match(src, /const totalShown = S\.view === "dur" \? docs\.length : count;/);
+  assert.match(src, /<span class="dx-tag">/);
+});
