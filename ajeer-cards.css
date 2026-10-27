@@ -1,0 +1,151 @@
+/* بطاقات تصاريح أجير (app-shell.html: ajeerCard / openAjeerQr).
+   الفلسفة نفسها المعتمدة في البطاقات البلدية — الوثيقة الأصلية هي العنصر
+   الرئيسي، فوقها شارة الحالة، وتحتها بيانات الموظف ثم زرّ الباركود — بهوية
+   أجير: أخضر أجير الداكن لمسةً، وإطار ورقة A4 لأن التصريح صفحة لا بطاقة. */
+
+#ajeerSec{--aj:#0F6E5C;--aj-2:#0B5848;--aj-soft:#E7F2EE;--aj-line:#CFE3DB}
+
+/* ── الرأس ── */
+.aj-top{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:18px}
+.aj-title{display:flex;align-items:flex-start;gap:12px;min-width:0}
+.aj-title-ico{flex:none;width:44px;height:44px;border-radius:12px;background:var(--aj);color:#fff;
+  display:flex;align-items:center;justify-content:center;box-shadow:0 8px 18px -12px rgba(15,110,92,.9)}
+.aj-title h2{margin:0;font-family:var(--sans);font-weight:700;font-size:24px;line-height:1.3;letter-spacing:0}
+.aj-title p{margin:4px 0 0;font-size:14px;color:var(--ink-soft)}
+@media(min-width:768px){.aj-title h2{font-size:28px}}
+.aj-top-actions{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-inline-start:auto}
+.aj-count{font-size:13px;color:var(--ink-soft);font-variant-numeric:tabular-nums}
+
+/* ── الفلاتر ── */
+.aj-filters{display:grid;grid-template-columns:1fr;gap:10px;margin-bottom:20px}
+@media(min-width:720px){.aj-filters{grid-template-columns:minmax(190px,.8fr) 1.6fr;gap:12px}}
+.aj-f{position:relative;display:flex;align-items:center;gap:8px;min-height:48px;padding:0 14px;border:1px solid var(--hair);
+  border-radius:10px;background:var(--paper-2);color:var(--ink-soft);box-shadow:0 1px 2px rgba(25,24,21,.04)}
+.aj-f:focus-within{border-color:var(--aj)}
+.aj-f svg{flex:none}
+.aj-f select,.aj-f input{flex:1;min-width:0;height:46px;border:none;background:transparent;font-family:var(--sans);
+  font-size:14px;color:var(--ink);outline:none;appearance:none;-webkit-appearance:none}
+.aj-f select{cursor:pointer}
+.aj-f input::placeholder{color:#9A9488}
+@media(max-width:719px){.aj-f-search{order:-1}}
+.aj-sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+
+/* ── الشبكة: بطاقة على الجوال، 2 ثم 3 ثم 4 ── */
+.aj-grid{display:grid;grid-template-columns:minmax(0,1fr);gap:16px}
+@media(min-width:600px){.aj-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(min-width:960px){.aj-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:18px}}
+@media(min-width:1240px){.aj-grid{grid-template-columns:repeat(4,minmax(0,1fr))}}
+
+.aj-card{position:relative;display:flex;flex-direction:column;gap:12px;min-width:0;padding:12px 12px 14px;
+  background:var(--paper-2);border:1px solid var(--hair);border-top:3px solid var(--aj);border-radius:14px;
+  box-shadow:0 1px 2px rgba(25,24,21,.04);animation:rise .55s var(--ease) both;
+  transition:box-shadow .35s,border-color .35s,transform .35s}
+@media(hover:hover){.aj-card:hover{box-shadow:var(--shadow);transform:translateY(-2px)}}
+
+.aj-card-head{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:30px}
+.aj-brand{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:var(--aj);letter-spacing:.02em}
+.aj-brand i{width:7px;height:7px;border-radius:2px;background:var(--aj);transform:rotate(45deg)}
+.aj-status{display:inline-flex;align-items:center;gap:6px;padding:4px 11px;border-radius:8px;font-size:12.5px;font-weight:700;line-height:1.5;white-space:nowrap}
+.aj-status.ok{background:var(--ok-bg);color:var(--ok)}
+.aj-status.warn{background:var(--warn-bg);color:var(--warn)}
+.aj-status.warn2{background:var(--today-bg);color:var(--today)}
+.aj-status.bad{background:var(--bad-bg);color:var(--bad)}
+.aj-status.na{background:var(--na-bg);color:var(--na)}
+
+/* ── صفحة التصريح الأصلية: ورقة بيضاء، تُعرض كما رُسمت (لا تمديد) ── */
+.aj-doc{position:relative;display:block;width:100%;padding:0;border:1px solid #E3E0D8;border-radius:10px;background:#fff;
+  overflow:hidden;cursor:zoom-in;box-shadow:0 10px 22px -16px rgba(15,60,50,.55)}
+.aj-doc:focus-visible{outline:2px solid var(--aj);outline-offset:2px}
+.aj-doc img{display:block;width:100%;height:auto;aspect-ratio:817/696;object-fit:contain;object-position:top;background:#fff;
+  user-select:none;-webkit-user-drag:none}
+.aj-doc-zoom{position:absolute;inset-inline-start:8px;bottom:8px;display:inline-flex;align-items:center;gap:5px;padding:3px 9px;
+  border-radius:999px;background:rgba(255,255,255,.92);border:1px solid var(--aj-line);color:var(--aj);font-size:11.5px;font-weight:600;
+  opacity:0;transition:opacity .25s}
+@media(hover:hover){.aj-doc:hover .aj-doc-zoom{opacity:1}}
+.aj-doc:focus-visible .aj-doc-zoom{opacity:1}
+.aj-doc-empty{aspect-ratio:817/696;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;padding:16px;
+  text-align:center;font-size:13px;line-height:1.7;color:var(--ink-soft);background:repeating-linear-gradient(135deg,#FBFAF7 0 10px,#F5F3EE 10px 20px);
+  border:1px dashed var(--hair);border-radius:10px}
+
+/* ── بيانات الموظف تحت التصريح ── */
+.aj-who{min-width:0;padding:0 2px}
+.aj-name{display:block;max-width:100%;font-family:var(--sans);font-size:16.5px;font-weight:700;line-height:1.4;color:var(--ink);
+  background:none;border:none;padding:0;text-align:start;cursor:pointer;overflow-wrap:anywhere}
+@media(hover:hover){button.aj-name:hover{color:var(--aj)}}
+.aj-name.is-static{cursor:default}
+.aj-name:focus-visible{outline:2px solid var(--aj);outline-offset:2px;border-radius:4px}
+.aj-role{font-size:13px;color:var(--ink-soft);margin-top:1px;overflow-wrap:anywhere}
+.aj-facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;margin:0}
+.aj-facts>div{min-width:0;padding:7px 10px;border-radius:8px;background:var(--paper);border:1px solid #EFECE5}
+.aj-facts dt{font-size:11.5px;color:var(--ink-soft);line-height:1.4}
+.aj-facts dd{margin:1px 0 0;font-size:13.5px;font-weight:600;color:var(--ink);overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
+.aj-facts dd.ok{color:var(--ok)} .aj-facts dd.warn{color:var(--warn)} .aj-facts dd.warn2{color:var(--today)}
+.aj-facts dd.bad{color:var(--bad)} .aj-facts dd.na{color:var(--na)}
+.aj-facts .ltr{direction:ltr;unicode-bidi:isolate}
+
+/* ── الباركود: الرمز الأصلي مصغّرًا + زرّ واضح ── */
+.aj-qr-btn{display:flex;align-items:center;gap:12px;width:100%;min-height:62px;padding:8px 10px 8px 14px;border:1px solid var(--aj-line);
+  border-radius:10px;background:var(--aj-soft);color:var(--aj-2);font-family:var(--sans);font-size:14.5px;font-weight:700;cursor:pointer;
+  text-align:start;transition:background .25s,border-color .25s,box-shadow .25s,transform .2s}
+.aj-qr-btn .aj-qr-mini{flex:none;width:46px;height:46px;border-radius:6px;background:#fff;border:1px solid var(--aj-line);padding:2px;
+  display:flex;align-items:center;justify-content:center;overflow:hidden}
+.aj-qr-mini img{width:100%;height:100%;object-fit:contain;image-rendering:pixelated;display:block}
+.aj-qr-btn .aj-qr-txt{flex:1;min-width:0;display:flex;flex-direction:column;line-height:1.35}
+.aj-qr-btn small{font-size:11.5px;font-weight:500;color:var(--ink-soft)}
+.aj-qr-btn>svg{flex:none}
+@media(hover:hover){button.aj-qr-btn:hover{background:#fff;border-color:var(--aj);box-shadow:0 6px 14px -10px rgba(15,110,92,.7)}}
+button.aj-qr-btn:active{transform:scale(.985)}
+.aj-qr-btn:focus-visible{outline:2px solid var(--aj);outline-offset:2px}
+.aj-qr-btn.is-empty,.aj-qr-btn[disabled]{cursor:default;background:var(--paper);border-color:var(--hair);color:var(--ink-soft);font-weight:500;font-size:13px}
+
+.aj-links{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:12.5px}
+.aj-links a{color:var(--ink-soft);text-decoration:none;border-bottom:1px dashed var(--hair)}
+@media(hover:hover){.aj-links a:hover{color:var(--aj);border-bottom-color:var(--aj)}}
+.aj-card .admin-row-actions{margin-top:0}
+
+.aj-empty{grid-column:1/-1;text-align:center;padding:56px 16px;color:var(--ink-soft)}
+.aj-sub-head{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin:34px 0 14px}
+.aj-sub-head h3{margin:0;font-family:var(--sans);font-size:18px;font-weight:700}
+.aj-sub-head span{font-size:12.5px;color:var(--ink-soft)}
+
+/* ── النوافذ: الباركود وصفحة التصريح كاملة ── */
+.aj-scrim{position:fixed;inset:0;z-index:120;background:rgba(10,40,34,.34);backdrop-filter:blur(2px);
+  display:flex;align-items:center;justify-content:center;padding:20px;opacity:0;transition:opacity .25s}
+.aj-scrim.show{opacity:1}
+.aj-modal{width:min(460px,100%);max-height:calc(100dvh - 40px);overflow:auto;background:#fff;border-radius:16px;border-top:4px solid var(--aj, #0F6E5C);
+  box-shadow:0 30px 70px -24px rgba(10,40,34,.6),0 2px 8px rgba(10,40,34,.12);transform:translateY(12px) scale(.98);transition:transform .3s var(--ease)}
+.aj-modal.is-doc{width:min(860px,100%)}
+.aj-scrim.show .aj-modal{transform:none}
+.aj-modal-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:16px 18px 6px}
+.aj-modal-head h3{margin:0;font-family:var(--sans);font-weight:700;font-size:18px;line-height:1.45}
+.aj-x{width:40px;height:40px;flex:none;border-radius:10px;border:none;background:none;color:var(--ink);
+  display:flex;align-items:center;justify-content:center;cursor:pointer}
+@media(hover:hover){.aj-x:hover{background:var(--paper)}}
+.aj-x:focus-visible{outline:2px solid #0F6E5C;outline-offset:2px}
+.aj-modal-body{padding:8px 20px 20px;display:flex;flex-direction:column;align-items:center;gap:14px;text-align:center}
+/* أبيض صرف، والرمز بكسلاته الأصلية مكبّرة بلا تنعيم: أوضح ما يكون للكاميرا. */
+.aj-qr-big{width:min(340px,76vw);aspect-ratio:1;background:#fff;border:1px solid #DCE6E2;border-radius:12px;padding:8px;
+  display:flex;align-items:center;justify-content:center}
+.aj-qr-big img{width:100%;height:100%;object-fit:contain;image-rendering:pixelated;display:block}
+.aj-qr-fail{font-size:13px;color:var(--bad)}
+.aj-modal-who{display:flex;flex-direction:column;gap:3px}
+.aj-modal-who b{font-size:19px;font-weight:700;overflow-wrap:anywhere}
+.aj-modal-who span{font-size:13.5px;color:var(--ink-soft)}
+.aj-modal-who .aj-permit-no{direction:ltr;unicode-bidi:isolate;font-variant-numeric:tabular-nums;color:#0F6E5C;font-weight:700}
+.aj-hint{display:flex;align-items:center;gap:12px;width:100%;padding:13px 16px;border-radius:10px;background:#E7F2EE;
+  border:1px solid #CFE3DB;font-size:14px;font-weight:600;line-height:1.7;color:#0B5848;text-align:start}
+.aj-hint svg{flex:none}
+.aj-dl{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;min-height:48px;border-radius:10px;
+  background:#0F6E5C;color:#fff;font-size:15px;font-weight:600;text-decoration:none;transition:background .25s}
+@media(hover:hover){.aj-dl:hover{background:#0B5848}}
+.aj-dl:focus-visible{outline:2px solid var(--brass);outline-offset:2px}
+.aj-doc-full{width:100%;background:#fff;border:1px solid #E3E0D8;border-radius:10px;overflow:hidden}
+.aj-doc-full img{display:block;width:100%;height:auto}
+
+@media(max-width:599px){
+  .aj-top-actions{width:100%;margin-inline-start:0}
+  .aj-scrim{align-items:flex-end;padding:0}
+  .aj-modal,.aj-modal.is-doc{width:100%;border-radius:var(--sheet-r) var(--sheet-r) 0 0;max-height:92dvh;padding-bottom:var(--safe-b);transform:translateY(40px)}
+  .aj-qr-big{width:min(320px,82vw)}
+}
+@media(prefers-reduced-motion:reduce){.aj-card,.aj-modal,.aj-scrim{transition:none;animation:none}}
