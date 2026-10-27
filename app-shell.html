@@ -346,17 +346,6 @@ select.in{appearance:none;cursor:pointer;background-image:url("data:image/svg+xm
 .spill.pending{background:var(--pend-bg);color:var(--pend)} .spill.pending .d{background:var(--pend-line)}
 .spill.na{background:var(--na-bg);color:var(--na)} .spill.na .d{background:var(--na-line)}
 .spill.warn2{background:var(--today-bg);color:var(--today)} .spill.warn2 .d{background:var(--today-line)}
-.ajeer-status{margin:14px 0 12px}
-.ajeer-status .achip{margin-bottom:7px}
-.ajeer-status .adays{font-size:12.5px;color:var(--ink-soft)}
-.qr-thumb{width:52px;height:52px;flex:none;border-radius:10px;border:1px solid var(--hair);
-  background:#fff;padding:3px;cursor:pointer;transition:.25s;overflow:hidden}
-.qr-thumb:hover{border-color:var(--slate);transform:scale(1.06)}
-.qr-thumb:focus-visible{outline:2px solid var(--brass);outline-offset:2px}
-.qr-thumb img{width:100%;height:100%;object-fit:contain;display:block}
-.qr-row{display:flex;align-items:center;gap:12px;margin-top:14px;padding:10px 12px;
-  background:var(--paper);border:1px solid var(--hair);border-radius:12px}
-.qr-row .qr-hint{font-size:12px;line-height:1.55;color:var(--ink-soft)}
 .qr-thumb-inline{width:34px;height:34px;flex:none;border-radius:8px;border:1px solid var(--hair);
   background:#fff;padding:2px;cursor:pointer;transition:.25s;overflow:hidden;display:inline-block;vertical-align:middle;margin-inline-start:8px}
 .qr-thumb-inline:hover{border-color:var(--slate);transform:scale(1.06)}
@@ -464,6 +453,7 @@ footer.site{border-top:1px solid var(--hair);margin-top:30px}
 <link rel="stylesheet" href="/org-chart.css?v=1">
 <link rel="stylesheet" href="/employee-photos.css?v=2">
 <link rel="stylesheet" href="/municipal-cards.css?v=3">
+<link rel="stylesheet" href="/ajeer-cards.css?v=1">
 <!-- منع الوميض: يجب أن ترتفع طبقة الترحيب قبل أوّل رسم للجسم، وإلّا لمح
      المستخدم النظام قبل الترحيب. سطر مضمّن عمدًا — أي ملف خارجي يصل بعد
      أن يكون الرسم قد بدأ. المفتاح نفسه في login.html و welcome.js. -->
@@ -668,34 +658,38 @@ try{ if(sessionStorage.getItem("droua:welcome")==="1") document.documentElement.
 </section>
 
 <section class="block wrap" id="ajeerSec">
-  <div class="sec-head"><h2>تصاريح أجير</h2>
-    <div style="display:flex;align-items:center;gap:14px">
-      <span class="idx" id="ajeerIdx">—</span>
+  <header class="aj-top">
+    <div class="aj-title">
+      <span class="aj-title-ico" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8Z"/><path d="M14 3v5h5M9 13h6M9 17h4"/></svg></span>
+      <div>
+        <h2>تصاريح أجير</h2>
+        <p>صفحة تصريح أجير الأصلية لكل موظف، مع حالة التصريح ورمز التحقق الرسمي.</p>
+      </div>
+    </div>
+    <div class="aj-top-actions">
+      <span class="aj-count" id="ajeerIdx">—</span>
       <button class="admin-add-btn" id="addPermitBtn" type="button" style="display:none">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
         إضافة تصريح
       </button>
     </div>
+  </header>
+  <div class="aj-filters">
+    <label class="aj-f">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16l-6 7.5V19l-4-2v-4.5Z"/></svg>
+      <span class="aj-sr">الحالة</span>
+      <select id="ajeerStatus"></select>
+    </label>
+    <label class="aj-f aj-f-search">
+      <span class="aj-sr">بحث مباشر</span>
+      <input id="ajeerQ" type="search" placeholder="ابحث باسم الموظف أو المهنة أو رقم التصريح" autocomplete="off" enterkeyhint="search">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+    </label>
   </div>
-  <div class="controls">
-    <div class="ctrl-grid" style="grid-template-columns:1.6fr 1fr">
-      <div class="field">
-        <label for="ajeerQ">بحث مباشر</label>
-        <div class="search-wrap">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
-          <input id="ajeerQ" class="in" type="search" placeholder="اسم الموظف، رقم التصريح…" autocomplete="off">
-        </div>
-      </div>
-      <div class="field"><label for="ajeerStatus">الحالة</label><select id="ajeerStatus" class="in"></select></div>
-    </div>
-  </div>
-  <div class="grid" id="ajeerGrid"></div>
-  <div id="ajeerUnlinkedWrap" style="display:none;margin-top:34px">
-    <div class="sec-head" style="border-bottom:none;margin-bottom:16px;padding-bottom:0">
-      <h3 style="font-family:var(--serif);font-size:19px">تصاريح غير مرتبطة</h3>
-      <span class="idx">بانتظار الربط اليدوي</span>
-    </div>
-    <div class="grid" id="ajeerUnlinkedGrid"></div>
+  <div class="aj-grid" id="ajeerGrid"></div>
+  <div id="ajeerUnlinkedWrap" style="display:none">
+    <div class="aj-sub-head"><h3>تصاريح غير مرتبطة</h3><span>بانتظار الربط اليدوي</span></div>
+    <div class="aj-grid" id="ajeerUnlinkedGrid"></div>
   </div>
 </section>
 
@@ -935,7 +929,7 @@ fillSelect(fNat,uniq(F.nat),"كل الجنسيات");
 fIq.innerHTML=`<option value="">كل الحالات</option><option value="ok">سارية</option><option value="warn">قريبة الانتهاء</option><option value="bad">منتهية</option>`;
 fLic.innerHTML=`<option value="">كل الحالات</option><option value="ok">سارية</option><option value="warn">قريبة الانتهاء</option><option value="bad">منتهية</option><option value="pending">جاري السداد</option>`;
 sort.innerHTML=`<option value="eid">رقم ضمان</option><option value="name">الاسم (أ-ي)</option><option value="iq">انتهاء الإقامة (الأقرب)</option><option value="lic">انتهاء رخصة العمل (الأقرب)</option><option value="salary">إجمالي الراتب (الأعلى)</option>`;
-ajeerStatus.innerHTML=`<option value="">كل الحالات</option><option value="ok">ساري</option><option value="warn">ينتهي قريبًا</option><option value="today">ينتهي اليوم</option><option value="bad">منتهي</option>`;
+ajeerStatus.innerHTML=`<option value="">جميع الحالات</option><option value="ok">ساري</option><option value="warn">ينتهي قريبًا</option><option value="today">ينتهي اليوم</option><option value="bad">منتهي</option>`;
 
 /* ---------- KPIs + charts ---------- */
 const C={ok:"#2E8C64",warn:"#C7962F",bad:"#C24A3B",pending:"#3A6E92",today:"#D2691E",slate:"#16283B",brass:"#A98544"};
@@ -1288,72 +1282,83 @@ function ajeerChip(st){
   const icon=st.key==="ok"?"✔ ":"";
   return `<span class="chip ${st.cls} achip"><span class="d"></span>${icon}${ajeerStatusLabel(st)}</span>`;
 }
-/* bar fill relative to the permit's own issue→expiry window (~1 month), not the
-   365-day assumption the generic barPct() uses for annual iqama/license documents */
-function ajeerBarPct(p,st){
-  if(st.n===null)return 8;
-  if(st.n<0)return 100;
-  const issue=parseDate(p.issueDate),expiry=parseDate(p.expiryDate);
-  const total=(issue&&expiry)?Math.max(1,Math.round((expiry-issue)/86400000)):30;
-  return Math.max(8,Math.min(100,100-(st.n/total*100)));
+/* خيارات فلتر الحالة (ok/warn/today/bad) أوسع من مفاتيح ajeerStatusOf:
+   «ينتهي قريبًا» تجمع شريحتي 5 أيام ويومين، و«منتهي» هي expired. */
+function ajeerFilterKey(st){return st.key==="expired"?"bad":(st.key==="warn2"||st.key==="warn5")?"warn":st.key;}
+function ajeerPerson(p){
+  const emp=findEmployeeByIqama(p.iqama);
+  return {emp,name:(emp&&emp[F.name])||p.nameOnPermit||"",role:(emp&&emp[F.job])||""};
 }
 function ajeerMatches(p){
-  const emp=findEmployeeByIqama(p.iqama);
-  const name=emp?emp[F.name]:p.nameOnPermit;
+  const who=ajeerPerson(p);
   const q=ajeerState.q.trim().toLowerCase();
-  if(q&&!(String(name).toLowerCase().includes(q)||p.permit.toLowerCase().includes(q)))return false;
-  if(ajeerState.status&&ajeerStatusOf(p.expiryDate).key!==ajeerState.status)return false;
+  if(q&&![who.name,p.nameOnPermit,who.role,p.permit].filter(Boolean).join(" ").toLowerCase().includes(q))return false;
+  if(ajeerState.status&&ajeerFilterKey(ajeerStatusOf(p.expiryDate))!==ajeerState.status)return false;
   return true;
 }
+/* الصورتان من ملفّ التصريح نفسه على الخادم (lib/ajeer/permitView.js) برقم
+   التصريح فقط؛ v بصمة قصيرة لرابط الملفّ تُسقط النسخة المخزّنة عند استبداله. */
+function ajeerFileVer(p){let h=0;const s=String(p.file||"");for(let i=0;i<s.length;i++)h=(h*31+s.charCodeAt(i))|0;return (h>>>0).toString(36);}
+function ajeerFaceUrl(p,full){return `/api/files/ajeer-permit-face?permit=${encodeURIComponent(p.permit)}&v=${ajeerFileVer(p)}${full?"&full=1":""}`;}
+function ajeerQrUrl(p,dl){return `/api/files/ajeer-permit-qr?permit=${encodeURIComponent(p.permit)}&v=${ajeerFileVer(p)}${dl?"&download=1":""}`;}
+const AJ_ICON={
+  qr:'<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3h-3zM20 14v.01M14 20h.01M17 20h4v-3"/>',
+  scan:'<path d="M4 8V5a1 1 0 0 1 1-1h3M20 8V5a1 1 0 0 0-1-1h-3M4 16v3a1 1 0 0 0 1 1h3M20 16v3a1 1 0 0 1-1 1h-3"/><path d="M7 12h10"/>',
+  download:'<path d="M12 3v12"/><path d="m7 12 5 5 5-5"/><path d="M5 21h14"/>',
+  close:'<path d="M18 6 6 18M6 6l12 12"/>',
+  zoom:'<circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3M11 8v6M8 11h6"/>',
+  doc:'<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8Z"/><path d="M14 3v5h5"/>',
+  chev:'<path d="m15 6-6 6 6 6"/>'
+};
+function ajIcon(n,s){return `<svg width="${s||16}" height="${s||16}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${AJ_ICON[n]}</svg>`;}
 function ajeerCard(p,i){
-  const emp=findEmployeeByIqama(p.iqama);
   const st=ajeerStatusOf(p.expiryDate);
-  const name=emp?emp[F.name]:p.nameOnPermit;
-  return `<article class="card" tabindex="0" style="animation-delay:${Math.min(i*45,360)}ms">
-    <div class="top">
-      <div class="who">
-        <div class="avatar">${esc(initials(name))}</div>
-        <div style="min-width:0">
-          <div class="nm">${esc(name)}</div>
-          <div class="role">${esc(p.permit)}${emp?` · #${esc(emp[F.damanah])}`:""}</div>
-        </div>
-      </div>
+  const who=ajeerPerson(p);
+  const name=who.name;
+  const empIdx=who.emp?DATA.indexOf(who.emp):-1;
+  return `<article class="aj-card" style="animation-delay:${Math.min(i*40,320)}ms" data-permit-card="${esc(p.permit)}">
+    <div class="aj-card-head">
+      <span class="aj-brand"><i></i>تصريح أجير</span>
+      <span class="aj-status ${st.cls}">${ajeerStatusLabel(st)}</span>
     </div>
-    <div class="qr-row">
-      ${p.qr?`<button class="qr-thumb" type="button" data-qr="${esc(p.qr)}" data-permit="${esc(p.permit)}" aria-label="عرض رمز QR للتصريح ${esc(p.permit)}" title="عرض رمز QR">
-        <img src="${esc(p.qr)}" alt="QR ${esc(p.permit)}" loading="lazy">
-      </button>`:`<div class="qr-thumb" style="display:flex;align-items:center;justify-content:center;font-size:17px;color:var(--ink-soft)" title="لا يوجد رمز QR لهذا التصريح">—</div>`}
-      <div class="qr-hint">${p.qr?"📱 امسح رمز QR للاطلاع على التصريح":"لا يوجد رمز QR — ارفع ملف التصريح (PDF) لاستخراجه تلقائيًا"}</div>
+    ${p.file?`<button type="button" class="aj-doc" data-aj-doc="${esc(p.permit)}" aria-label="عرض صفحة التصريح ${esc(p.permit)} كاملة">
+      <img src="${ajeerFaceUrl(p)}" width="817" height="696" loading="lazy" decoding="async" draggable="false" alt="تصريح أجير رقم ${esc(p.permit)}${name?` — ${esc(name)}`:""}">
+      <span class="aj-doc-zoom">${ajIcon("zoom",13)}عرض التصريح كاملًا</span>
+    </button>`:`<div class="aj-doc-empty">${ajIcon("doc",26)}<span>لا يوجد ملف تصريح مرفوع</span>${AdminUI.can("ajeer","edit")?`<span>ارفع ملف PDF من «تعديل»</span>`:""}</div>`}
+    <div class="aj-who">
+      ${empIdx>=0?`<button type="button" class="aj-name" data-open-emp="${empIdx}" title="فتح ملف الموظف">${esc(name)}</button>`:`<div class="aj-name is-static">${esc(name||"—")}</div>`}
+      <div class="aj-role">${esc(who.role||"المهنة غير مسجّلة")}</div>
     </div>
-    <div class="meta">
-      <span class="mi">إصدار <span class="num">${fmtDate(p.issueDate)}</span></span>
-      <span class="mi">انتهاء <span class="num">${fmtDate(p.expiryDate)}</span></span>
-    </div>
-    <div class="ajeer-status">
-      ${ajeerChip(st)}
-      <div class="adays">${ajeerDaysLine(st)}</div>
-    </div>
-    <div class="tl">
-      <div class="row">
-        <div class="bar ${st.cls}"><span style="width:0" data-w="${ajeerBarPct(p,st)}"></span></div>
-      </div>
-    </div>
-    <div class="actions" style="margin-top:14px">
-      <a class="reset" href="${esc(p.file)}" target="_blank" rel="noopener">فتح الملف</a>
-      <a class="reset" href="${esc(p.file)}" download>تحميل</a>
-    </div>
-    ${AdminUI.canAny("ajeer",["edit","delete"])?`<div class="admin-row-actions" style="margin-top:10px" data-permit-actions="${esc(p.permit)}">
+    <dl class="aj-facts">
+      <div><dt>رقم التصريح</dt><dd class="ltr">${esc(p.permit||"—")}</dd></div>
+      <div><dt>حالة التصريح</dt><dd class="${st.cls}">${ajeerStatusLabel(st)}</dd></div>
+      <div><dt>تاريخ الانتهاء</dt><dd>${p.expiryDate?`<span class="num">${fmtDate(p.expiryDate)}</span>`:"—"}</dd></div>
+      <div><dt>الأيام المتبقية</dt><dd class="${st.cls}">${ajeerDaysLeftText(st)}</dd></div>
+    </dl>
+    ${p.file?`<button type="button" class="aj-qr-btn" data-aj-qr="${esc(p.permit)}" aria-label="عرض الباركود الخاص بتصريح ${esc(name||p.permit)}">
+      <span class="aj-qr-mini"><img src="${ajeerQrUrl(p)}" alt="" loading="lazy" decoding="async" draggable="false"></span>
+      <span class="aj-qr-txt"><span>عرض الباركود</span><small>رمز التحقق الأصلي</small></span>
+      ${ajIcon("chev",18)}
+    </button>`:`<div class="aj-qr-btn is-empty">${ajIcon("qr",18)}<span>لا يوجد باركود — يُستخرج من ملف التصريح</span></div>`}
+    ${p.file?`<div class="aj-links"><a href="${esc(p.file)}" target="_blank" rel="noopener">فتح ملف PDF</a><a href="${esc(p.file)}" download>تحميل</a></div>`:""}
+    ${AdminUI.canAny("ajeer",["edit","delete"])?`<div class="admin-row-actions" data-permit-actions="${esc(p.permit)}">
       ${AdminUI.can("ajeer","edit")?`<button class="admin-mini-btn" data-act="edit-permit" data-permit="${esc(p.permit)}">تعديل</button>`:""}
       ${AdminUI.can("ajeer","delete")?`<button class="admin-mini-btn danger" data-act="delete-permit" data-permit="${esc(p.permit)}">حذف</button>`:""}
     </div>`:""}
   </article>`;
+}
+function ajeerDaysLeftText(st){
+  if(st.n==null)return "—";
+  if(st.n<0)return `منتهٍ منذ ${Math.abs(st.n)} يوم`;
+  if(st.n===0)return "ينتهي اليوم";
+  return `${st.n} ${st.n===1?"يوم":st.n===2?"يومان":st.n<=10?"أيام":"يومًا"}`;
 }
 function renderAjeer(){
   const linked=ajeerLinked(), unlinked=ajeerUnlinked();
   const shown=linked.filter(ajeerMatches);
   ajeerIdx.textContent=`${shown.length} من ${linked.length}`;
   ajeerGrid.innerHTML=shown.length?shown.map((p,i)=>ajeerCard(p,i)).join(""):
-    `<div style="grid-column:1/-1;text-align:center;padding:60px 0;color:var(--ink-soft)">لا توجد تصاريح مطابقة</div>`;
+    `<div class="aj-empty">لا توجد تصاريح مطابقة</div>`;
   const uw=document.getElementById("ajeerUnlinkedWrap");
   if(unlinked.length){
     uw.style.display="";
@@ -1361,12 +1366,84 @@ function renderAjeer(){
   }else{
     uw.style.display="none";
   }
-  requestAnimationFrame(()=>document.querySelectorAll("#ajeerGrid .bar span,#ajeerUnlinkedGrid .bar span").forEach(s=>s.style.width=s.dataset.w+"%"));
-  document.querySelectorAll("#ajeerGrid .qr-thumb,#ajeerUnlinkedGrid .qr-thumb").forEach(btn=>{
-    btn.addEventListener("click",ev=>{ev.stopPropagation();openQrModal(btn.dataset.permit,btn.dataset.qr);});
-  });
-  document.querySelectorAll('[data-act="edit-permit"]').forEach(b=>b.addEventListener("click",ev=>{ev.stopPropagation();openPermitForm(AJEER_LATEST.find(p=>p.permit===b.dataset.permit));}));
-  document.querySelectorAll('[data-act="delete-permit"]').forEach(b=>b.addEventListener("click",ev=>{ev.stopPropagation();deletePermit(b.dataset.permit);}));
+  document.querySelectorAll('#ajeerSec [data-act="edit-permit"]').forEach(b=>b.addEventListener("click",ev=>{ev.stopPropagation();openPermitForm(AJEER_LATEST.find(p=>p.permit===b.dataset.permit));}));
+  document.querySelectorAll('#ajeerSec [data-act="delete-permit"]').forEach(b=>b.addEventListener("click",ev=>{ev.stopPropagation();deletePermit(b.dataset.permit);}));
+}
+/* نقرة واحدة مفوَّضة للقسم: الباركود، صفحة التصريح كاملة، ملف الموظف. */
+document.getElementById("ajeerSec").addEventListener("click",ev=>{
+  const q=ev.target.closest("[data-aj-qr]");
+  if(q&&!q.disabled){openAjeerQr(q.dataset.ajQr);return;}
+  const d=ev.target.closest("[data-aj-doc]");
+  if(d){openAjeerDoc(d.dataset.ajDoc);return;}
+  const e=ev.target.closest("[data-open-emp]");
+  if(e)openDrawer(Number(e.dataset.openEmp));
+});
+/* error لا يصعد: صفحة لم تُرسم ورمز لم يُتحقَّق منه (422) يُستبدلان برسالة
+   هادئة — لا صورة مكسورة، ولا زرّ باركود يفتح نافذة فارغة. */
+document.addEventListener("error",ev=>{
+  const t=ev.target;
+  if(!t||t.tagName!=="IMG")return;
+  const doc=t.closest(".aj-doc");
+  if(doc){doc.outerHTML=`<div class="aj-doc-empty">${ajIcon("doc",26)}<span>تعذّر عرض صفحة التصريح</span></div>`;return;}
+  const mini=t.closest(".aj-qr-btn");
+  if(mini){mini.disabled=true;mini.querySelector(".aj-qr-mini").innerHTML=ajIcon("qr",20);mini.querySelector(".aj-qr-txt").innerHTML=`<span>تعذّر التحقق من الباركود</span><small>افتح ملف PDF للاطلاع على التصريح</small>`;return;}
+  const big=t.closest(".aj-qr-big");
+  if(big)big.innerHTML=`<p class="aj-qr-fail">تعذّر تحميل الرمز — أعد المحاولة.</p>`;
+},true);
+
+/* ── نوافذ أجير: الباركود الأصلي، وصفحة التصريح كاملة ── */
+let ajModal=null;
+function ajOpenLayer(html,labelId,wide){
+  closeAjeerModal(true);
+  const scrim=document.createElement("div");
+  scrim.className="aj-scrim";
+  scrim.innerHTML=`<div class="aj-modal${wide?" is-doc":""}" role="dialog" aria-modal="true" aria-labelledby="${labelId}">${html}</div>`;
+  document.body.appendChild(scrim);
+  requestAnimationFrame(()=>scrim.classList.add("show"));
+  scrim.addEventListener("click",ev=>{if(ev.target===scrim||ev.target.closest("[data-aj-close]"))closeAjeerModal();});
+  ajModal={scrim,pop:AdminUI.pushLayer(scrim.querySelector(".aj-modal"),()=>closeAjeerModal(),{noAutofocus:true})};
+  setTimeout(()=>{const b=scrim.querySelector("[data-aj-close]");if(b)b.focus({preventScroll:true});},60);
+}
+function closeAjeerModal(instant){
+  if(!ajModal)return;
+  const {scrim,pop}=ajModal;ajModal=null;
+  scrim.classList.remove("show");
+  if(instant)scrim.remove();else setTimeout(()=>scrim.remove(),300);
+  if(pop)pop();
+}
+function openAjeerQr(permitNo){
+  const p=AJEER_LATEST.find(x=>x.permit===permitNo);
+  if(!p||!p.file)return;
+  const who=ajeerPerson(p);
+  ajOpenLayer(`
+    <div class="aj-modal-head">
+      <h3 id="ajQrTitle">الباركود الخاص بتصريح الموظف</h3>
+      <button type="button" class="aj-x" data-aj-close aria-label="إغلاق">${ajIcon("close",20)}</button>
+    </div>
+    <div class="aj-modal-body">
+      <div class="aj-qr-big"><img src="${ajeerQrUrl(p)}" alt="رمز QR لتصريح أجير ${esc(p.permit)}"></div>
+      <div class="aj-modal-who">
+        <b>${esc(who.name||"—")}</b>
+        ${who.role?`<span>${esc(who.role)}</span>`:""}
+        <span>رقم التصريح: <span class="aj-permit-no">${esc(p.permit)}</span></span>
+      </div>
+      <div class="aj-hint">${ajIcon("scan",24)}<span>امسح الباركود للاطلاع على تصريح الموظف</span></div>
+      <a class="aj-dl" href="${ajeerQrUrl(p,true)}" download="ajeer-${esc(p.permit)}-QR.png">${ajIcon("download",18)}<span>تحميل الباركود</span></a>
+    </div>`,"ajQrTitle");
+}
+function openAjeerDoc(permitNo){
+  const p=AJEER_LATEST.find(x=>x.permit===permitNo);
+  if(!p||!p.file)return;
+  const who=ajeerPerson(p);
+  ajOpenLayer(`
+    <div class="aj-modal-head">
+      <h3 id="ajDocTitle">تصريح أجير — ${esc(who.name||p.permit)}</h3>
+      <button type="button" class="aj-x" data-aj-close aria-label="إغلاق">${ajIcon("close",20)}</button>
+    </div>
+    <div class="aj-modal-body">
+      <div class="aj-doc-full"><img src="${ajeerFaceUrl(p,true)}" alt="صفحة تصريح أجير رقم ${esc(p.permit)} كاملة"></div>
+      <a class="aj-dl" href="${esc(p.file)}" target="_blank" rel="noopener">${ajIcon("doc",18)}<span>فتح ملف PDF الأصلي</span></a>
+    </div>`,"ajDocTitle",true);
 }
 const renderAjeerDebounced=debounce(renderAjeer,160);
 ajeerQ.addEventListener("input",e=>{ajeerState.q=e.target.value;renderAjeerDebounced();});

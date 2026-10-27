@@ -485,9 +485,10 @@ test("ملف الموظف: الصورة في رأس الملف فوق الأحر
 
 test("أجير: بطاقات التصاريح بلا صور — خارج نطاق هذه الميزة", () => {
   const html = read("app-shell.html");
-  const ajeer = html.slice(html.indexOf("function ajeerCard"), html.indexOf("function ajeerCard") + 800);
-  assert.match(ajeer, /<div class="avatar">\$\{esc\(initials\(name\)\)\}<\/div>/);
-  assert.doesNotMatch(ajeer, /EmployeePhotos/);
+  /* البطاقة تعرض صفحة التصريح الأصلية بدل الصورة الرمزية — ولا صورة موظف. */
+  const ajeer = html.slice(html.indexOf("function ajeerCard"), html.indexOf("function renderAjeer"));
+  assert.ok(ajeer.length > 200);
+  assert.doesNotMatch(ajeer, /EmployeePhotos|employee-photo/);
 });
 
 test("الهيكل: الصورة في العقدة واللوحة وقائمة الجوال، والمرجعية بلا صورة", () => {

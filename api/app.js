@@ -857,6 +857,10 @@ async function handleFiles(req, res, action) {
 
   /* Rendering a permit's QR is a read, gated by ajeer:view — not a file action. */
   if (action === "qr") return filesQrImage(req, res, actor);
+  /* بطاقات أجير: صفحة التصريح الأصلية ورمزه الأصلي من ملفّ التصريح نفسه —
+     قراءةٌ بـajeer:view. */
+  if (action === "ajeer-permit-face") return filesAjeerPermitView(req, res, actor, "face");
+  if (action === "ajeer-permit-qr") return filesAjeerPermitView(req, res, actor, "qr");
   /* صورة الموظف قراءةٌ بصلاحية employees:view — لا عملية ملفّات. */
   if (action === "employee-photo") return filesEmployeePhoto(req, res, actor);
   /* البطاقات البلدية: وجه الشهادة الأصلي وصورة رمزها الأصلية من المتجر
@@ -1034,6 +1038,66 @@ async function filesQrImage(req, res, actor) {
     ETag: etag,
     "Cache-Control": "private, max-age=300, must-revalidate",
   });
+  res.end(png);
+}
+
+/* ─── بطاقات أجير (lib/ajeer/permitView.js) ───
+   kind=face: الصفحة الأولى من ملفّ التصريح مرسومةً كما هي (?full=1 كاملة).
+   kind=qr:   صورة الرمز الأصلية من الملفّ — لا تُولَّد — ولا تُرسَل إلا إذا
+              قُرئت كما هي مرسومة إلى الرابط الرسمي نفسه المحفوظ عند الرفع.
+   المتصفّح يطلب برقم التصريح فقط؛ رابط الملفّ يُقرأ من القاعدة هنا. لا كتابة
+   في القاعدة ولا في أي متجر. */
+async function filesAjeerPermitView(req, res, actor, kind) {
+  if (req.method !== "GET") return res.status(405).json({ ok: false, error: "Method not allowed" });
+  if (!hasPermission(actor, "ajeer", "view")) return res.status(403).json(FORBIDDEN);
+  const view = require("../lib/ajeer/permitView");
+  const q = req.query || {};
+  const permitNo = String(q.permit || "");
+  if (!permitNo || permitNo.length > 64) return res.status(400).json({ ok: false, error: "رقم التصريح مطلوب" });
+  const notFound = (error) => res.status(404).json({ ok: false, error: error || "لا يوجد ملف تصريح" });
+
+  const permit = await getResource("permits").get(permitNo);
+  if (!permit || !view.isTrustedPermitUrl(permit.file)) return notFound();
+
+  const full = kind === "face" && String(q.full || "") === "1";
+  const download = kind === "qr" && String(q.download || "") === "1";
+  const variant = kind === "face" ? (full ? "full" : "card") : "qr";
+  const tag = `${view.fileTag(permit.file)}-${variant}`;
+  const etag = `"aj-${tag}${download ? "-d" : ""}"`;
+  const headers = {
+    ETag: etag,
+    "Cache-Control": "private, max-age=86400, must-revalidate",
+    "X-Content-Type-Options": "nosniff",
+    "Content-Security-Policy": "default-src 'none'; sandbox",
+  };
+  if (download) headers["Content-Disposition"] = `attachment; filename="ajeer-${permitNo.replace(/[^\w-]/g, "")}-QR.png"`;
+  if (req.headers["if-none-match"] === etag) {
+    res.writeHead(304, headers);
+    return res.end();
+  }
+
+  let png = view.cacheGet(tag);
+  if (!png) {
+    const pdf = await view.fetchPermitPdf(permit.file);
+    if (!pdf) return notFound("تعذّر قراءة ملف التصريح");
+    try {
+      if (kind === "face") {
+        png = (await view.renderPermitFace(pdf, { full })).png;
+      } else {
+        const out = view.originalQrPng(pdf, permit.qrText);
+        if (out.error) {
+          console.error("ajeer qr not served:", permitNo, out.error);
+          return res.status(422).json({ ok: false, error: "تعذّر التحقّق من رمز التصريح", reason: out.error });
+        }
+        png = out.png;
+      }
+    } catch (err) {
+      console.error("ajeer permit view failed:", permitNo, err && err.message);
+      return notFound("تعذّر عرض ملف التصريح");
+    }
+    view.cachePut(tag, png);
+  }
+  res.writeHead(200, { ...headers, "Content-Type": "image/png", "Content-Length": png.length });
   res.end(png);
 }
 
