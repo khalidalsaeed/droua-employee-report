@@ -398,20 +398,61 @@ test("stepLabel: «1 من 3»", () => {
   assert.equal(UpdateTour.stepLabel(2, 3), "3 من 3");
 });
 
-test("الربط: صفحة الدخول تضع علامة الجولة، والرئيسية تحمّل الوحدة وتستدعيها بعد الرسم", () => {
+test("الربط: الرئيسية تحمّل الوحدة وتستدعيها بعد الرسم في كل تحميل، بلا شرط دخول جديد", () => {
   const read = (p) => fs.readFileSync(path.join(__dirname, "..", p), "utf8");
-  const login = read("login.html");
   const shell = read("app-shell.html");
-  assert.ok(login.includes(`sessionStorage.setItem("${UpdateTour.FLAG}", "1")`));
+  const src = read("update-tour.js");
   assert.match(shell, /<script src="\/update-tour\.js\?v=\d+"><\/script>/);
   assert.match(shell, /<link rel="stylesheet" href="\/update-tour\.css\?v=\d+">/);
   const boot = shell.slice(shell.indexOf("(async function boot(){"));
   assert.ok(boot.indexOf("UpdateTour.maybeStart(") > boot.indexOf("MunicipalCards.mount("), "بعد رسم الأقسام");
-  /* لا تُستدعى إلا من boot: لا في initAuthGate ولا في مكان يتكرّر. */
   assert.equal(shell.split("UpdateTour.maybeStart(").length - 1, 1);
+  /* لا اعتماد على حدث الدخول: لا علامة من login.html ولا قراءة لعلامة الترحيب. */
+  assert.ok(!read("login.html").includes("droua:update-tour"), "صفحة الدخول لا تضع علامة للجولة");
+  assert.ok(!src.includes("droua:welcome"), "الجولة لا تقرأ علامة الدخول");
+  const body = src.slice(src.indexOf("async function maybeStart"));
+  assert.ok(body.indexOf("fetch(API)") < body.indexOf("deferred("), "الخادم يُسأل أوّلًا، والتأجيل لا يمنع إلا داخل الزيارة");
   for (const page of ["users-shell.html", "payroll-shell.html", "tickets-shell.html", "reports-shell.html", "expiring-shell.html", "login.html"]) {
     assert.ok(!read(page).includes(`src="/update-tour.js`), `${page} لا تحمّل الجولة`);
   }
+});
+
+test("Esc أثناء الجولة مثل «لاحقًا»: لا يُرسل completed ولا skipped", () => {
+  assert.equal(UpdateTour.ESC_ACTION, "later");
+  const src = fs.readFileSync(path.join(__dirname, "..", "update-tour.js"), "utf8");
+  assert.match(src, /e\.key === "Escape"\) \{ e\.preventDefault\(\); end\(ESC_ACTION\)/);
+  assert.match(src, /if \(outcome === "later"\) \{ defer\(userId, ctx\.version\); return true; \}\s*await finalize\(ctx, outcome\)/,
+    "«later» يعود قبل finalize — فلا POST نهائي");
+  /* skipped لا يأتي إلا من الزرّ الصريح. */
+  assert.equal((src.match(/end\("skipped"\)/g) || []).length, 1);
+  assert.match(src, /b\.dataset\.ut === "skip"\) \{ end\("skipped"\)/);
+});
+
+test("مفتاح «لاحقًا» لكل مستخدم وإصدار", () => {
+  assert.notEqual(UpdateTour.deferKey("u1", "release-2026.10.27"), UpdateTour.deferKey("u2", "release-2026.10.27"));
+  assert.notEqual(UpdateTour.deferKey("u1", "release-2026.10.27"), UpdateTour.deferKey("u1", "release-2026.11.15"));
+});
+
+test("المسار: جلسة قديمة صادرة قبل الإصدار، بلا أي حدث دخول بعده — تُعرض الجولة عند فتح المنصّة", async () => {
+  const sql = appDb([HR]);
+  /* لا login_success ولا أي صفّ في audit_log: الجلسة وحدها. */
+  const realNow = Date.now;
+  let token;
+  try {
+    Date.now = () => realNow() - 20 * 24 * 3600 * 1000;   /* «تذكرني» قبل 20 يومًا */
+    process.env.SESSION_SECRET = TEST_SESSION_SECRET;
+    token = require("../lib/auth/tokens").issueSessionToken(HR, true);
+  } finally { Date.now = realNow; }
+  const out = await withFakeDb(sql, async () => {
+    const handler = require("../api/app");
+    const { res, out } = makeRes();
+    await handler({ method: "GET", query: { kind: "api", apiPath: "auth/update-tour" }, headers: { cookie: `session=${encodeURIComponent(token)}` } }, res);
+    return out;
+  });
+  assert.equal(out.statusCode, 200);
+  assert.equal(out.body.show, true);
+  assert.equal(out.body.version, tour.CURRENT_VERSION);
+  assert.equal(sql.matching(/INSERT INTO audit_log/).length, 0, "الاستعلام لا يكتب شيئًا");
 });
 
 test("لا مكتبة جولات جديدة في الاعتماديات", () => {

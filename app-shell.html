@@ -816,7 +816,7 @@ try{ if(sessionStorage.getItem("droua:welcome")==="1") document.documentElement.
 <script src="/org-chart.js?v=2"></script>
 <script src="/municipal-cards.js?v=3"></script>
 <!-- جولة التحديثات: تُستدعى في آخر boot() بعد رسم الأقسام التي تشرحها. -->
-<script src="/update-tour.js?v=1"></script>
+<script src="/update-tour.js?v=2"></script>
 <script>
 let DATA = [];
 let FIN = {};
@@ -2175,8 +2175,8 @@ function showSkeletons(){
     dept:document.getElementById("municipalDept"), allBtn:document.getElementById("municipalAllBtn"),
     platform:DATA, F, openEmployee:i=>openDrawer(i)});
   /* جولة التحديثات بعد اكتمال الرسم: تحتاج الأقسام التي تُبرزها في
-     مكانها. لا تفعل شيئًا ما لم يكن هذا التحميل ناتجًا عن دخول ناجح،
-     وتنتظر بنفسها انصراف شاشة الترحيب. */
+     مكانها. تسأل الخادم عن الإصدار الحالي في كل تحميل — جلسة قائمة أو
+     دخول جديد سواء — وتنتظر بنفسها انصراف شاشة الترحيب إن ظهرت. */
   UpdateTour.maybeStart(CURRENT_USER);
   /* فتح مباشر من الرابط: /#expiring يعرض القائمة فور اكتمال التحميل،
      فيصلح للحفظ في المفضّلة وللمشاركة. يأتي بعد renderDashboardTop()

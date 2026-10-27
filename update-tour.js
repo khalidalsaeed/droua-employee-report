@@ -1,12 +1,16 @@
-/* جولة التحديثات بعد تسجيل الدخول.
+/* جولة التحديثات عند فتح المنصّة.
    =========================================================================
    نافذة «قمنا بإضافة مزايا جديدة» ثم جولة بإبراز (spotlight) على كل ميزة.
    بلا مكتبة: طبقة ثابتة بظلّ واسع تُبقي المستطيل المُبرز صافيًا، وبطاقة
    شرح بجواره (أو ورقة سفلية على الجوال).
 
-   متى تظهر: صفحة الدخول تضع FLAG في sessionStorage قبل التحويل، وهذه
-   الوحدة تقرؤه وتمحوه فورًا — كما تفعل welcome.js. فلا تظهر في إعادة
-   التحميل ولا بعد التنقّل، ولا يُرسل طلب الحالة إلا مرّة لكل دخول.
+   متى تظهر: في كل تحميل للرئيسية لمستخدم مسجَّل يُسأل الخادم عن حالة
+   الإصدار الحالي — لا يُشترط دخول جديد، فصاحب جلسة قائمة أو «تذكرني»
+   يراها في أوّل فتح للمنصّة بعد النشر. ما أكمله أو تخطّاه لا يعود أبدًا.
+
+   «لاحقًا» لا يُحفظ على الخادم، بل في sessionStorage لهذه الزيارة وحدها
+   (التبويب إلى أن يُغلق): فلا تعود مع كل Refresh أو تنقّل، وتعود في
+   الزيارة التالية.
 
    الحالة على الخادم (/api/auth/update-tour، انظر lib/tour/updateTour.js):
    الإصدار والخطوات يأتيان منه مُرشَّحَين بالصلاحيات، فلا معرّف إصدار
@@ -14,13 +18,16 @@
    الصفحة، والعرض، ولوحة المفاتيح.
 
      ابدأ الجولة → started، ثم completed عند «إنهاء الجولة»
-     تخطي الجولة / Esc أثناء الجولة → skipped
-     لاحقًا / Esc على النافذة → لا شيء يُحفظ؛ تعود في الدخول القادم
+     «تخطي الجولة» (الزرّ وحده) → skipped
+     لاحقًا / Esc — على النافذة أو أثناء الجولة → لا شيء يُحفظ؛ تعود في
+     الزيارة التالية. ضغطة Esc بالخطأ لا تُغلق الإصدار نهائيًا.
 
    localStorage احتياط لا مصدر: يُكتب فقط إن فشل حفظ completed/skipped،
-   فلا تعود الجولة في هذا المتصفّح، ويُعاد إرسال القرار في الدخول القادم. */
+   فلا تعود الجولة في هذا المتصفّح، ويُعاد إرسال القرار في الزيارة القادمة. */
 const UpdateTour = (function () {
-  const FLAG = "droua:update-tour";
+  const DEFER_PREFIX = "droua:update-tour:later:";
+  /* ما يفعله Esc أثناء الجولة: مثل «لاحقًا»، لا «تخطي». */
+  const ESC_ACTION = "later";
   const API = "/api/auth/update-tour";
   const LOCAL_PREFIX = "droua:update-tour:";
   const MOBILE_MAX = 640;
@@ -101,11 +108,14 @@ const UpdateTour = (function () {
 
   /* ───────── الحالة والتخزين ───────── */
 
-  function armed() {
-    try { return sessionStorage.getItem(FLAG) === "1"; } catch (e) { return false; }
+  /* «لاحقًا» لهذه الزيارة: مفتاح لكل مستخدم وإصدار، فإصدار جديد أو حساب
+     آخر في التبويب نفسه لا يرث التأجيل. */
+  function deferKey(userId, version) { return `${DEFER_PREFIX}${userId}:${version}`; }
+  function deferred(userId, version) {
+    try { return sessionStorage.getItem(deferKey(userId, version)) === "1"; } catch (e) { return false; }
   }
-  function disarm() {
-    try { sessionStorage.removeItem(FLAG); } catch (e) { /* وضع خاص */ }
+  function defer(userId, version) {
+    try { sessionStorage.setItem(deferKey(userId, version), "1"); } catch (e) { /* وضع خاص */ }
   }
   function localKey(userId, version) { return `${LOCAL_PREFIX}${userId}:${version}`; }
   function localGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
@@ -411,7 +421,7 @@ const UpdateTour = (function () {
       }
 
       function onKey(e) {
-        if (e.key === "Escape") { e.preventDefault(); end("skipped"); return; }
+        if (e.key === "Escape") { e.preventDefault(); end(ESC_ACTION); return; }
         if (e.key === "Tab") { trapTab(e, pop); return; }
         /* أسهم للتنقّل بين الخطوات، باتجاه الصفحة (RTL: اليسار للأمام).
            لا حقول إدخال داخل البطاقة، فلا سهم يُسرق من مؤشّر كتابة. */
@@ -441,11 +451,10 @@ const UpdateTour = (function () {
 
   let running = false;
 
-  /* تُستدعى من app-shell.html بعد رسم الأقسام. لا ترمي أبدًا: أي تعثّر
-     يعني ببساطة ألّا تظهر الجولة. */
+  /* تُستدعى من app-shell.html بعد رسم الأقسام في كل تحميل. لا ترمي أبدًا:
+     أي تعثّر يعني ببساطة ألّا تظهر الجولة. */
   async function maybeStart(user) {
-    if (running || !armed()) return false;
-    disarm();
+    if (running) return false;
     running = true;
     try {
       const r = await fetch(API);
@@ -462,6 +471,7 @@ const UpdateTour = (function () {
         return false;
       }
       if (!j.show || !j.tour) return false;
+      if (deferred(userId, j.version)) return false;   /* «لاحقًا» في هذه الزيارة */
       const steps = visibleSteps(j.tour.steps, isShown);
       if (!steps.length) return false;
 
@@ -469,9 +479,10 @@ const UpdateTour = (function () {
       await whenWelcomeGone();
       const choice = await showModal(ctx);
       if (choice === "skip") { await finalize(ctx, "skipped"); return true; }
-      if (choice !== "start") return true;    /* لاحقًا */
+      if (choice !== "start") { defer(userId, ctx.version); return true; }   /* لاحقًا / Esc */
       post(ctx.version, "started", steps.length);
       const outcome = await runTour(ctx);
+      if (outcome === "later") { defer(userId, ctx.version); return true; }
       await finalize(ctx, outcome);
       return true;
     } catch (e) {
@@ -481,7 +492,7 @@ const UpdateTour = (function () {
     }
   }
 
-  return { maybeStart, FLAG, PREPARE, visibleSteps, spotRect, placement, scrollTargetY, stepLabel, MOBILE_MAX };
+  return { maybeStart, ESC_ACTION, deferKey, PREPARE, visibleSteps, spotRect, placement, scrollTargetY, stepLabel, MOBILE_MAX };
 })();
 
 if (typeof module !== "undefined" && module.exports) module.exports = UpdateTour;
