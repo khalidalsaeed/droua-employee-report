@@ -56,7 +56,7 @@
 @media(hover:hover) and (pointer:fine){.dx-row[tabindex]:hover{background:#FAF7F1}.dx-row[tabindex]:hover .dx-av{background:var(--slate);color:#fff}}
 .dx-row:focus-visible{outline:2px solid var(--slate);outline-offset:-2px}
 .dx-n{text-align:center;color:var(--ink-soft)}
-.dx-emp{min-width:190px}
+.dx-emp{min-width:160px}
 .dx-emp-in{display:flex;align-items:center;gap:12px;min-width:0}
 .dx-emp b{display:block;font-weight:700;font-size:14px;line-height:1.35;overflow-wrap:anywhere}
 .dx-emp small{display:block;font-size:12px;color:var(--ink-soft);margin-top:1px}
@@ -76,10 +76,20 @@
   background:#F6F3EE;border:1px solid var(--dx-line);color:var(--ink);font-size:12.5px;font-weight:500;white-space:nowrap}
 .dx-tag svg{flex:none;color:var(--ink-soft)}
 /* «حسب الموظف»: مجموعة لكل تاريخ انتهاء، شاراتها ثم مدّتها */
-.dx-set{display:grid;grid-template-columns:max-content max-content;justify-content:start;align-items:center;gap:10px}
+/* تلتفّ المدّة تحت الشارات عند الضيق بدل أن يتمدّد الجدول أفقيًا. */
+.dx-set{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px}
 .dx-set+.dx-set{margin-top:8px}
 .dx-set-rem{font-size:12.5px;font-weight:500;white-space:nowrap}
 .dx-set-rem.expired{color:var(--dx-exp-ink)} .dx-set-rem.d10{color:var(--dx-d10-ink)} .dx-set-rem.d30{color:var(--dx-d30-ink)} .dx-set-rem.d90{color:var(--dx-d90-ink)}
+/* «حسب المدة»: صفّ واحد للموظف، وكل وثيقة شارة مستقلّة بمدّتها، من الأكثر
+   إلحاحًا. الشارات تلتفّ عند الضيق فلا يتمدّد الجدول أفقيًا. */
+.dx-docs{display:flex;flex-wrap:wrap;gap:6px;max-width:440px}
+.dx-doc{display:inline-flex;align-items:center;gap:6px;min-height:30px;max-width:100%;padding:0 10px;border-radius:8px;
+  background:#F6F3EE;border:1px solid var(--dx-line);color:var(--ink);font-size:12.5px;font-weight:500;white-space:nowrap}
+.dx-doc svg{flex:none;color:var(--ink-soft)}
+.dx-doc-r{padding-inline-start:7px;border-inline-start:1px solid var(--dx-line);font-weight:600}
+.dx-doc.expired .dx-doc-r{color:var(--dx-exp-ink)} .dx-doc.d10 .dx-doc-r{color:var(--dx-d10-ink)}
+.dx-doc.d30 .dx-doc-r{color:var(--dx-d30-ink)} .dx-doc.d90 .dx-doc-r{color:var(--dx-d90-ink)}
 .dx-rem{font-weight:500;white-space:nowrap}
 .dx-rem.expired{color:var(--dx-exp-ink)} .dx-rem.d10{color:var(--dx-d10-ink)} .dx-rem.d30{color:var(--dx-d30-ink)} .dx-rem.d90{color:var(--dx-d90-ink)}
 
@@ -116,8 +126,9 @@
   .dx-type-ico{width:28px;height:28px;margin-inline-end:6px}
   .dx-table td.dx-type{min-width:0}
   .dx-tags{max-width:none}
-  .dx-set{grid-template-columns:minmax(0,1fr) auto}
   .dx-tag{min-height:26px;padding:0 8px;font-size:12px}
+  .dx-docs{max-width:none}
+  .dx-doc{min-height:28px;padding:0 8px;font-size:12px;white-space:normal}
   /* «حسب الموظف»: المجموعات بعرض البطاقة، كلٌّ بمدّتها */
   .dx-types{grid-column:1/-1}
 }

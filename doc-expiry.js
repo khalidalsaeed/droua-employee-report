@@ -16,12 +16,14 @@
   const WINDOW = 90;
   const TOP = 5; // صفوف «الأكثر إلحاحًا» قبل «عرض جميع الوثائق»
 
-  /* الفئات الأربع بترتيب الإلحاح. pill نصّ شارة الحالة كما في التصميم. */
+  /* الفئات الأربع بترتيب الإلحاح. label للحلقة وبطاقاتها (مدى الأيام)،
+     و pill نصّ شارة حالة الصفّ: اسم حالة لا رقم — الرقم الحقيقي يُعرض
+     بجانب كل وثيقة، فلا يظهر بجواره رقم ثانٍ («باقي 7 أيام» + «10 أيام»). */
   const BUCKETS = [
     { key: "expired", label: "منتهية", pill: "منتهية" },
-    { key: "d10", label: "0 – 10 أيام", pill: "10 أيام" },
-    { key: "d30", label: "11 – 30 يومًا", pill: "30 يومًا" },
-    { key: "d90", label: "31 – 90 يومًا", pill: "90 يومًا" },
+    { key: "d10", label: "0 – 10 أيام", pill: "عاجل" },
+    { key: "d30", label: "11 – 30 يومًا", pill: "قريب الانتهاء" },
+    { key: "d90", label: "31 – 90 يومًا", pill: "تحت المتابعة" },
   ];
   const BUCKET = Object.fromEntries(BUCKETS.map((b) => [b.key, b]));
 
@@ -120,15 +122,31 @@
     return [...m.values()];
   }
 
-  /* نقيّة: «حسب الموظف» — وثائق كل موظف، مرتّبين بأقرب انتهاء لديه.
-     sets: وثائقه مجموعةً بيوم الانتهاء، مجموعة لكل تاريخ. */
+  /* نقيّة: صفّ واحد لكل موظف — الجدول بعرضَيه. الهدف ألّا يتكرّر الموظف
+     في أكثر من صفّ: كل وثائقه الداخلة في النطاق في صفّه، مهما اختلفت
+     تواريخها (لامين: رخصة عمل باقي 17 يومًا + إقامة باقي 19 يومًا).
+
+       docs   وثائقه من الأكثر إلحاحًا إلى الأقلّ (n تصاعديًا، ثم ترتيب
+              empDocs للتعادل: إقامة، رخصة عمل، الجواز، تصريح أجير)
+       worst  أكثرها إلحاحًا — منها n و bucket و exp للصفّ: ترتيبه وحالته
+       sets   وثائقه مجموعةً باليوم الفعلي (groupSameDay) — لـ«حسب الموظف»
+              حيث تُذكر مدّة اليوم الواحد مرّة واحدة
+
+     الصفوف مرتّبة بأكثر وثيقة إلحاحًا لدى كل موظف. العدّ لا يتغيّر: كل
+     وثيقة في صفّ واحد بالضبط، والحلقة والبطاقات على collect(). */
+  const TYPE_ORDER = { iq: 0, lic: 1, pass: 2, ajeer: 3 };
+  const byUrgency = (a, b) => a.n - b.n || (TYPE_ORDER[a.tk] ?? 9) - (TYPE_ORDER[b.tk] ?? 9);
   function byEmployee(docs) {
     const m = new Map();
     docs.forEach((d) => {
       if (!m.has(d.i)) m.set(d.i, { i: d.i, emp: d.emp, docs: [] });
       m.get(d.i).docs.push(d);
     });
-    return [...m.values()].map((g) => ({ ...g, worst: g.docs[0], sets: groupSameDay(g.docs) })).sort((a, b) => a.worst.n - b.worst.n);
+    return [...m.values()].map((g) => {
+      const sorted = [...g.docs].sort(byUrgency);
+      const worst = sorted[0];
+      return { i: g.i, emp: g.emp, docs: sorted, worst, n: worst.n, bucket: worst.bucket, exp: worst.exp, sets: groupSameDay(sorted) };
+    }).sort((a, b) => a.n - b.n);
   }
 
   /* «منذ 34 يومًا» / «تنتهي اليوم» / «باقي 3 أيام» */
@@ -327,6 +345,12 @@
     drawTable(true);
   }
 
+  /* «حسب المدة»: كل وثيقة شارة مستقلّة بمدّتها: [ رخصة عمل · باقي 17 يومًا ] */
+  function docBadges(docs) {
+    return docs.map((d) => `<span class="dx-doc ${d.bucket}" title="${esc(`${d.type} — ${DocStatus.fmtDate(d.exp)}`)}">`
+      + `${svg(ICON[d.tk] || ICON.doc, 14)}<span class="dx-doc-t">${esc(d.type)}</span><span class="dx-doc-r">${esc(remaining(d.n))}</span></span>`).join("");
+  }
+
   /* أنواع الوثائق شارات صغيرة متجاورة تلتفّ عند الضيق: [ إقامة ] [ رخصة عمل ] */
   function tags(docs) {
     return docs.map((d) => `<span class="dx-tag">${svg(ICON[d.tk] || ICON.doc, 14)}${esc(d.type)}</span>`).join("");
@@ -349,38 +373,37 @@
     const clickable = !!S.opts.onPick;
     let head, rows, count;
     if (S.view === "dur") {
-      const sets = groupSameDay(docs);
-      count = sets.length;
-      const list = S.expanded ? sets : sets.slice(0, TOP);
-      head = "<th>#</th><th>الموظف</th><th>نوع الوثيقة</th><th>المدة المتبقية</th><th>الحالة</th>";
-      rows = list.map((d, k) => `
-        <tr class="dx-row" data-i="${d.i}" style="--i:${Math.min(k, 10)}"${clickable ? ` tabindex="0" aria-label="فتح ملف ${esc(d.emp[F.name])}"` : ""}>
+      const groups = byEmployee(docs);
+      count = groups.length;
+      const list = S.expanded ? groups : groups.slice(0, TOP);
+      head = "<th>#</th><th>الموظف</th><th>الوثائق والمدة المتبقية</th><th>الحالة</th>";
+      rows = list.map((g, k) => `
+        <tr class="dx-row" data-i="${g.i}" style="--i:${Math.min(k, 10)}"${clickable ? ` tabindex="0" aria-label="فتح ملف ${esc(g.emp[F.name])}"` : ""}>
           <td class="dx-n"><span class="num">${k + 1}</span></td>
-          <td class="dx-emp"><div class="dx-emp-in"><span class="dx-av">${esc(initials(d.emp[F.name]))}${photo(d.emp)}</span><span><b>${esc(d.emp[F.name] || "—")}</b>${d.emp[F.job] ? `<small>${esc(d.emp[F.job])}</small>` : ""}</span></div></td>
-          <td class="dx-type"><span class="dx-tags">${tags(d.docs)}</span></td>
-          <td class="dx-rem ${d.bucket}" title="${esc(DocStatus.fmtDate(d.exp))}">${esc(remaining(d.n))}</td>
-          <td class="dx-st">${pill(d.bucket)}</td>
+          <td class="dx-emp"><div class="dx-emp-in"><span class="dx-av">${esc(initials(g.emp[F.name]))}${photo(g.emp)}</span><span><b>${esc(g.emp[F.name] || "—")}</b>${g.emp[F.job] ? `<small>${esc(g.emp[F.job])}</small>` : ""}</span></div></td>
+          <td class="dx-type dx-types"><span class="dx-docs">${docBadges(g.docs)}</span></td>
+          <td class="dx-st">${pill(g.bucket)}</td>
         </tr>`).join("");
     } else {
       const groups = byEmployee(docs);
       count = groups.length;
       const list = S.expanded ? groups : groups.slice(0, TOP);
-      /* كل مجموعة تحمل مدّتها، وأوّلها أقرب انتهاء — فلا عمود مكرّر له */
+      /* كل مجموعة يوم تحمل مدّتها مرّة واحدة، وأوّلها أقرب انتهاء */
       head = "<th>#</th><th>الموظف</th><th>الوثائق</th><th>الحالة</th>";
       rows = list.map((g, k) => `
         <tr class="dx-row" data-i="${g.i}" style="--i:${Math.min(k, 10)}"${clickable ? ` tabindex="0" aria-label="فتح ملف ${esc(g.emp[F.name])}"` : ""}>
           <td class="dx-n"><span class="num">${k + 1}</span></td>
           <td class="dx-emp"><div class="dx-emp-in"><span class="dx-av">${esc(initials(g.emp[F.name]))}${photo(g.emp)}</span><span><b>${esc(g.emp[F.name] || "—")}</b>${g.emp[F.job] ? `<small>${esc(g.emp[F.job])}</small>` : ""}</span></div></td>
           <td class="dx-type dx-types">${g.sets.map((d) => `<span class="dx-set"><span class="dx-tags">${tags(d.docs)}</span><span class="dx-set-rem ${d.bucket}" title="${esc(DocStatus.fmtDate(d.exp))}">${esc(remaining(d.n))}</span></span>`).join("")}</td>
-          <td class="dx-st">${pill(g.worst.bucket)}</td>
+          <td class="dx-st">${pill(g.bucket)}</td>
         </tr>`).join("");
     }
     const empty = `<div class="dx-empty">${S.filter ? `لا توجد وثائق في فئة «${esc(BUCKET[S.filter].label)}»` : `لا توجد وثائق منتهية أو تنتهي خلال ${WINDOW} يومًا`}</div>`;
     const html = count ? `<table class="dx-table"><thead><tr>${head}</tr></thead><tbody>${rows}</tbody></table>` : empty;
 
     const all = S.el.querySelector(".dx-all");
-    /* «عرض جميع الوثائق (N)» يعدّ الوثائق لا الصفوف: صفّ «إقامة + رخصة عمل»
-       وثيقتان. أمّا «حسب الموظف» فيعدّ الموظفين كما كان. */
+    /* «عرض جميع الوثائق (N)» يعدّ الوثائق لا الصفوف: صفّ موظف بإقامة ورخصة
+       عمل وثيقتان. أمّا «حسب الموظف» فيعدّ الموظفين كما كان. */
     const totalShown = S.view === "dur" ? docs.length : count;
     all.hidden = count <= TOP;
     all.querySelector("span").textContent = S.expanded ? "عرض الأكثر إلحاحًا فقط" : (S.view === "dur" ? `عرض جميع الوثائق (${totalShown})` : `عرض جميع الموظفين (${totalShown})`);
