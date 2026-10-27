@@ -28,10 +28,12 @@
     { "source": "/tickets/:id", "destination": "/api/app?kind=page&page=ticket-detail&id=:id" },
     { "source": "/reports.html", "destination": "/api/app?kind=page&page=reports" },
     { "source": "/expiring.html", "destination": "/api/app?kind=page&page=expiring" },
+    { "source": "/sick-leave.html", "destination": "/api/app?kind=page&page=sick-leave" },
     { "source": "/api/auth/:path*", "destination": "/api/app?kind=api&apiPath=auth/:path*" },
     { "source": "/api/data/:path*", "destination": "/api/app?kind=api&apiPath=data/:path*" },
     { "source": "/api/files/:path*", "destination": "/api/app?kind=api&apiPath=files/:path*" },
     { "source": "/api/reports/:path*", "destination": "/api/app?kind=api&apiPath=reports/:path*" },
-    { "source": "/api/push/:path*", "destination": "/api/app?kind=api&apiPath=push/:path*" }
+    { "source": "/api/push/:path*", "destination": "/api/app?kind=api&apiPath=push/:path*" },
+    { "source": "/api/sick-leave/:path*", "destination": "/api/app?kind=api&apiPath=sick-leave/:path*" }
   ]
 }

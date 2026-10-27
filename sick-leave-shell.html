@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>التحقق من الإجازات المرضية — ذروة الصعود</title>
+<meta name="theme-color" content="#16283B">
+<meta name="referrer" content="no-referrer">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/assets/icons/icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="/assets/icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="ذروة الصعود">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="preload" href="/assets/fonts/thmanyah-sans-400.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/assets/fonts/thmanyah-serif-display-700.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/ui.css?v=1">
+<link rel="stylesheet" href="/admin-ui.css?v=2">
+<link rel="stylesheet" href="/sick-leave.css?v=1">
+</head>
+<body>
+<!-- يملؤها app-nav.js — ترويسة وشريط سفلي ودرج موحّدة لكل الصفحات -->
+<header class="u-hdr" data-app-header></header>
+
+<div id="appRoot">
+  <main class="block wrap sl-main">
+    <div class="sl-head">
+      <div>
+        <h1>التحقق من الإجازات المرضية</h1>
+        <p class="sl-lede">لأي إجازة مرضية — موظفو ذروة، موظفو أجير، أو أي شخص آخر. يُقرأ الملف مؤقتًا في الذاكرة ثم يُترك، ولا يُحفظ.</p>
+      </div>
+      <span class="sl-state" id="slState" data-tone="idle" role="status" aria-live="polite">جاهز للتحقق</span>
+    </div>
+
+    <div class="sl-denied" id="slDenied" hidden>لا تملك صلاحية استخدام هذا القسم.</div>
+
+    <div id="slApp" hidden>
+      <!-- ١. الملف -->
+      <section class="sl-card" id="slUploadCard" aria-labelledby="slStep1">
+        <div class="sl-step"><span class="sl-num">١</span><h2 id="slStep1">ملف الإجازة</h2></div>
+        <label class="sl-drop" id="slDrop" for="slFile">
+          <input type="file" id="slFile" accept="application/pdf,image/png,image/jpeg,.pdf,.png,.jpg,.jpeg">
+          <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8Z"/><path d="M14 3v5h5"/><path d="M12 18v-6M9.5 14.5 12 12l2.5 2.5"/></svg>
+          <span class="sl-drop-t">اسحب ملف الإجازة هنا أو <u>اختر ملفًا</u></span>
+          <span class="sl-drop-s">PDF أو صورة PNG/JPEG — حتى 4 ميغابايت</span>
+        </label>
+        <div class="sl-filechip" id="slFileChip" hidden>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8Z"/><path d="M14 3v5h5"/></svg>
+          <span class="sl-fname" id="slFileName"></span>
+          <span class="sl-fsize" id="slFileSize"></span>
+          <span class="sl-fread" id="slFileRead"></span>
+          <button type="button" class="sl-link" id="slChange">تغيير الملف</button>
+        </div>
+        <div class="sl-msg" id="slFileMsg" hidden></div>
+      </section>
+
+      <!-- ٢. بيانات الملف + الاستعلام الرسمي -->
+      <section class="sl-card" id="slDataCard" hidden aria-labelledby="slStep2">
+        <div class="sl-step"><span class="sl-num">٢</span><h2 id="slStep2">بيانات الإجازة من الملف</h2></div>
+        <div class="sl-msg" id="slDataMsg" hidden></div>
+        <dl class="sl-grid" id="slFields"></dl>
+        <div class="sl-manual" id="slManual" hidden>
+          <div class="sl-sub">أكمل ما لم يُقرأ من الملف كما هو مطبوع فيه</div>
+          <div class="sl-form" id="slManualForm"></div>
+        </div>
+        <details class="sl-extra" id="slExtraWrap" hidden>
+          <summary>بيانات إضافية من الملف</summary>
+          <dl class="sl-grid sl-grid-sm" id="slExtra"></dl>
+        </details>
+      </section>
+
+      <section class="sl-card" id="slSehaCard" hidden aria-labelledby="slStep3">
+        <div class="sl-step"><span class="sl-num">٣</span><h2 id="slStep3">الاستعلام في منصة صحة</h2></div>
+        <p class="sl-p">افتح الاستعلام الرسمي، وأدخل فيه <b>رمز الإجازة</b> و<b>رقم الهوية</b> (انسخهما من هنا)، ثم سجّل ما أظهرته صحة.</p>
+        <div class="sl-actions">
+          <a class="admin-btn-primary sl-btn" id="slOpenSeha" href="https://www.seha.sa/ui#/inquiries/slenquiry" target="_blank" rel="noopener noreferrer">
+            فتح استعلام صحة الرسمي
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 4h6v6M20 4l-9 9"/><path d="M19 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h5"/></svg>
+          </a>
+          <button type="button" class="admin-mini-btn sl-btn" data-copy="leaveId">نسخ رمز الإجازة</button>
+          <button type="button" class="admin-mini-btn sl-btn" data-copy="idNumber">نسخ رقم الهوية</button>
+        </div>
+
+        <fieldset class="sl-outcome">
+          <legend>ما الذي أظهرته صحة؟</legend>
+          <div class="sl-seg" role="radiogroup">
+            <label><input type="radio" name="slOutcome" value="found"><span>ظهرت الإجازة</span></label>
+            <label><input type="radio" name="slOutcome" value="not_found"><span>لا توجد نتيجة</span></label>
+            <label><input type="radio" name="slOutcome" value="unavailable"><span>الخدمة غير متاحة</span></label>
+          </div>
+        </fieldset>
+
+        <div class="sl-form" id="slOfficialForm" hidden>
+          <div class="field"><label for="slOffStart">تاريخ البداية في صحة</label><input class="in" type="date" id="slOffStart" required></div>
+          <div class="field"><label for="slOffEnd">تاريخ النهاية في صحة</label><input class="in" type="date" id="slOffEnd" required></div>
+          <div class="field"><label for="slOffDays">عدد الأيام في صحة <i>(اختياري)</i></label><input class="in" type="number" inputmode="numeric" min="1" max="365" id="slOffDays"></div>
+          <div class="field sl-wide"><label for="slOffName">الاسم كما ظهر في صحة <i>(اختياري)</i></label><input class="in" type="text" id="slOffName" maxlength="120" autocomplete="off"></div>
+        </div>
+        <p class="sl-hint">أدخل ما تعرضه صحة كما هو — لا تنسخه من الملف. المنصّة تقارن رقم الإجازة والهوية والتواريخ حرفيًا.</p>
+
+        <div class="sl-actions sl-actions-end">
+          <button type="button" class="admin-btn-primary sl-btn sl-verify" id="slVerify" disabled>
+            <span class="sl-spin" aria-hidden="true"></span><span class="sl-verify-t">تحقق من الإجازة</span>
+          </button>
+        </div>
+        <div class="sl-msg" id="slVerifyMsg" hidden></div>
+      </section>
+
+      <!-- النتيجة -->
+      <section class="sl-result" id="slResult" hidden tabindex="-1" aria-live="polite"></section>
+
+      <section class="sl-history" id="slHistory" hidden>
+        <h2>تحققات هذه الجلسة</h2>
+        <ul id="slHistoryList"></ul>
+        <p class="sl-hint">تبقى في هذه الصفحة فقط وتختفي عند إغلاقها.</p>
+      </section>
+
+      <p class="sl-foot">
+        لا يوجد ربط آلي رسمي مع منصة صحة: الاستعلام يتم في صفحتها الرسمية، والمنصّة تقرأ الملف وتقارن النتيجة.
+        يُحفظ في السجل رقم التحقق والحالة والهوية مقنّعة فقط.
+      </p>
+    </div>
+  </main>
+</div>
+
+<script src="/admin-ui.js?v=2"></script>
+<script src="/app-nav.js?v=1"></script>
+<script src="/sick-leave.js?v=1"></script>
+</body>
+</html>

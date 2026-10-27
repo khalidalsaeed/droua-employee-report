@@ -50,6 +50,7 @@ const PAGE_FILES = {
   "ticket-detail": "ticket-detail-shell.html",
   reports: "reports-shell.html",
   expiring: "expiring-shell.html",
+  "sick-leave": "sick-leave-shell.html",
 };
 /* Which permission each page needs is declared once, in
    lib/auth/permissions.js (PAGE_PERMISSION) — not duplicated here.
@@ -131,7 +132,23 @@ async function handleApi(req, res) {
   if (section === "files") return handleFiles(req, res, rest[0]);
   if (section === "reports") return handleReports(req, res, rest[0]);
   if (section === "push") return handlePush(req, res, rest[0]);
+  if (section === "sick-leave") return handleSickLeave(req, res, rest[0]);
   res.status(404).json({ ok: false, error: "Not found" });
+}
+
+/* ---------------- التحقق من الإجازات المرضية ----------------
+   وحدة مستقلّة في lib/sickLeave/ — تُحمَّل عند الطلب فقط، ولا دالّة خادمة
+   جديدة. الملفّ يُقرأ في الذاكرة ولا يُخزَّن. التفاصيل في
+   docs/sick-leave-verification.md. */
+async function handleSickLeave(req, res, action) {
+  const actor = await requireUser(req);
+  if (!actor) return res.status(401).json({ ok: false, error: "غير مسجّل الدخول" });
+  const { getSql } = require("../lib/db");
+  return require("../lib/sickLeave/http").handle(req, res, actor, action, {
+    hasPermission, logEvent, parseBody, getSql,
+    readBody: readRequestBody,
+    now: () => Date.now(),
+  });
 }
 
 /* ---------------- إشعارات الدفع ----------------
