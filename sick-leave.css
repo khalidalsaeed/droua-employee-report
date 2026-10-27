@@ -194,3 +194,30 @@ main.block { padding-block: 20px 28px; }
 
 .sl-foot { margin: 22px 0 0; font-size: 11.5px; color: var(--ink-soft); line-height: 1.8; }
 [hidden] { display: none !important; }
+
+/* ── تأكيد نتيجة صحة سطرًا سطرًا: قيمة الملف + مطابق/مختلف ── */
+.sl-confirm { margin-top: 4px; }
+.sl-confirm-head { display: grid; gap: 8px; margin-bottom: 10px; font-size: 13px; color: var(--ink-soft); }
+@media (min-width: 560px) { .sl-confirm-head { display: flex; align-items: center; justify-content: space-between; } }
+.sl-cf-row {
+  display: grid; grid-template-columns: 1fr; gap: 6px 14px; align-items: center;
+  padding: 11px 12px; margin-bottom: 8px; border: 1px solid var(--hair); border-radius: 12px; background: #fff;
+  transition: border-color .15s, background .15s;
+}
+@media (min-width: 640px) { .sl-cf-row { grid-template-columns: 120px 1fr auto; } .sl-cf-in { grid-column: 1 / -1; } }
+.sl-cf-row[data-state="same"] { border-color: #BFD8C9; background: #F6FAF7; }
+.sl-cf-row[data-state="diff"] { border-color: #E5C3BC; background: #FDF7F6; }
+.sl-cf-l { font-size: 12.5px; color: var(--ink-soft); }
+.sl-cf-v { font-size: 15px; font-weight: 600; color: var(--ink); overflow-wrap: anywhere; }
+.sl-cf-none { font-size: 13px; font-weight: 500; color: var(--warn); }
+.sl-cf-seg { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 6px; }
+.sl-cf-seg button {
+  min-height: var(--tap); padding: 6px 14px; border: 1px solid var(--hair); border-radius: 999px; background: var(--paper-2);
+  font: inherit; font-size: 13.5px; color: var(--ink); cursor: pointer; white-space: nowrap;
+}
+@media (min-width: 768px) { .sl-cf-seg button { min-height: 34px; } }
+.sl-cf-seg button:disabled { opacity: .4; cursor: not-allowed; }
+.sl-cf-seg button[aria-checked="true"][data-cf="same"] { background: var(--ok); border-color: var(--ok); color: #fff; font-weight: 700; }
+.sl-cf-seg button[aria-checked="true"][data-cf="diff"] { background: var(--bad); border-color: var(--bad); color: #fff; font-weight: 700; }
+.sl-cf-seg button[aria-checked="true"][data-cf="skip"] { background: var(--na-bg); border-color: var(--na-line); color: var(--ink); font-weight: 700; }
+.sl-cf-in { margin-top: 4px; }

@@ -8,7 +8,7 @@ process.env.SESSION_SECRET = process.env.SESSION_SECRET || "test-secret-sick-lea
 const { makeSickLeavePdf, makeScannedPdf, DEFAULT } = require("./helpers/sick-leave-fixtures");
 const { makeFakeSql } = require("./helpers/fake-sql");
 const { validateUpload, displayName } = require("../lib/sickLeave/validate");
-const { extractSickLeave, parseDate } = require("../lib/sickLeave/extract");
+const { extractSickLeave, parseDate, qrSummaryFromText } = require("../lib/sickLeave/extract");
 const { compareWithOfficial, compareNames } = require("../lib/sickLeave/compare");
 const { runLookup, manualProvider } = require("../lib/sickLeave/provider");
 const http = require("../lib/sickLeave/http");
@@ -399,7 +399,7 @@ test("http: سجلّ التدقيق بلا هوية كاملة ولا اسم و�
   const dump = JSON.stringify(h.events);
   for (const secret of ["2456789012", "AHMED", "AHMAD", "GSL25091234567", "Sara"]) assert.ok(!dump.includes(secret), `audit يحمل ${secret}`);
   const v = h.events.find((e) => e.type === http.EV_VERIFY);
-  assert.deepEqual(Object.keys(v.meta).sort(), ["differences", "employeeEid", "fileRef", "fileSource", "leaveRef", "maskedId", "notes", "reason", "source", "status", "verificationId"]);
+  assert.deepEqual(Object.keys(v.meta).sort(), ["differences", "employeeEid", "fileRef", "fileSource", "leaveRef", "maskedId", "notes", "officialEntry", "reason", "source", "status", "verificationId"]);
   assert.equal(v.meta.maskedId, "••••••9012");
   assert.match(v.meta.leaveRef, /^[0-9a-f]{32}$/);
   assert.deepEqual(v.meta.notes, ["name_minor_difference"]);
@@ -481,4 +481,50 @@ test("structure: الصفحة — الحالات الست، والرابط ال�
 test("structure: لا ملفّات إجازات في المستودع", () => {
   const tracked = require("node:child_process").execSync("git ls-files", { cwd: ROOT, encoding: "utf8" }).split("\n");
   assert.ok(!tracked.some((f) => /sick|leave|اجاز|إجاز/i.test(f) && /\.(pdf|png|jpe?g)$/i.test(f)));
+});
+
+/* ─── تقليل الإدخال اليدوي ─── */
+
+test("http: تأكيد «مطابق» يأخذ القيمة من الملف الموقَّع — بلا إعادة كتابة", async () => {
+  const h = harness();
+  const ex = await h.extract(await validPdf());
+  const v = await h.verify({ token: ex.body.token, official: { outcome: "found", same: ["startDate", "endDate", "days", "name"] } });
+  assert.equal(v.body.status, "verified");
+  assert.equal(v.body.officialEntry, "confirmed");
+  assert.equal(h.events.find((e) => e.type === http.EV_VERIFY).meta.officialEntry, "confirmed");
+});
+
+test("http: سطر «مختلف» يُكتب كما في صحة، والباقي مؤكَّد → الفرق باسمه", async () => {
+  const h = harness();
+  const ex = await h.extract(await validPdf());
+  const v = await h.verify({ token: ex.body.token, official: { outcome: "found", same: ["startDate", "name"], endDate: "2026-09-19" } });
+  assert.equal(v.body.status, "mismatch");
+  assert.equal(v.body.officialEntry, "confirmed_and_typed");
+  assert.deepEqual(v.body.differences.map((d) => d.code), ["end_date_mismatch"]);
+});
+
+test("http: «مطابق» لا يقبل حقلًا مكتوبًا معه، ولا حقلًا غائبًا عن الملف", async () => {
+  const h = harness();
+  const ex = await h.extract(await validPdf());
+  const both = await h.verify({ token: ex.body.token, official: { outcome: "found", same: ["startDate", "endDate"], endDate: "2026-09-17" } });
+  assert.equal(both.statusCode, 400);
+  assert.equal(both.body.fields.officialEndDate, "conflict");
+  const scan = await h.extract(makeScannedPdf());
+  const nothing = await h.verify({ token: scan.body.token, official: { outcome: "found", same: ["startDate", "endDate"] } });
+  assert.equal(nothing.statusCode, 400);
+  assert.equal(nothing.body.fields.officialStartDate, "nothing_to_confirm");
+  /* بعد الإدخال اليدوي من الملف يصير التأكيد ممكنًا. */
+  const ok = await h.verify({ token: scan.body.token, file: { ...FILE }, official: { outcome: "found", same: ["startDate", "endDate"] } });
+  assert.equal(ok.body.status, "verified");
+});
+
+test("qr: رابط صحة الرسمي يُفتح، والمواقع المنتحلة تُعلَّم", () => {
+  const off = qrSummaryFromText("https://www.seha.sa/ui#/inquiries/slenquiry?x=GSL1", "GSL1");
+  assert.deepEqual([off.officialHost, off.lookalike, !!off.url, off.mentionsLeaveId], [true, false, true, true]);
+  const fake = qrSummaryFromText("https://seha-sa-ue-inquiris-slenquiry.netlify.app/", "GSL1");
+  assert.deepEqual([fake.officialHost, fake.lookalike, fake.url], [false, true, null]);
+  assert.equal(qrSummaryFromText("https://seha.sa.evil.example/", "").officialHost, false);
+  assert.equal(qrSummaryFromText("http://www.seha.sa/x", "").url, null, "http لا يُفتح");
+  assert.equal(qrSummaryFromText("javascript:alert(1)", "").url, null);
+  assert.deepEqual(qrSummaryFromText(null), { found: false });
 });

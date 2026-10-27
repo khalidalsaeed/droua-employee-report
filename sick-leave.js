@@ -67,6 +67,14 @@
   };
 
   let S = null; // حالة الملف الحالي
+  /* تأكيد كل سطر مقابل صحة: { startDate: "same" | "diff" | "skip" } */
+  let CONFIRM = {};
+  const CONFIRM_FIELDS = [
+    { k: "startDate", label: "تاريخ البداية", type: "date", required: true },
+    { k: "endDate", label: "تاريخ النهاية", type: "date", required: true },
+    { k: "days", label: "عدد الأيام", type: "number" },
+    { k: "name", label: "اسم المستفيد", type: "text" },
+  ];
   const history = [];
 
   /* ---------- تنسيق ---------- */
@@ -155,13 +163,19 @@
     if (j.status === "needs_manual") notes.push(esc(READ_ERRORS[j.reason] || READ_ERRORS.scanned));
     if (j.status === "partial") notes.push("لم تُقرأ كل البيانات الأساسية من الملف — أكمل الناقص يدويًا كما هو مطبوع.");
     (j.warnings || []).forEach((w) => WARNINGS[w] && notes.push(esc(WARNINGS[w])));
-    if (j.qr && j.qr.found) {
-      notes.push(j.qr.officialHost
+    const qr = j.qr || {};
+    if (qr.found && qr.lookalike) {
+      notes.push(`<b>تنبيه:</b> رمز QR في الملف يشير إلى موقع يحمل اسم صحة وليس منصة صحة الرسمية (<span class="sl-mono">${esc(qr.host)}</span>). هذه علامة شائعة في الإجازات المزوّرة — لا تستعلم إلا من seha.sa.`);
+    } else if (qr.found) {
+      notes.push(qr.officialHost
         ? "يحتوي الملف رمز QR يشير إلى منصة صحة. هذا وحده ليس دليل صحة — النتيجة من الاستعلام الرسمي."
         : "رمز QR في الملف لا يشير إلى منصة صحة.");
     }
-    const warn = j.status !== "extracted" || (j.warnings || []).length || (j.qr && j.qr.found && !j.qr.officialHost);
-    msg("slDataMsg", notes.length ? (notes.length === 1 ? notes[0] : `<ul>${notes.map((n) => `<li>${n}</li>`).join("")}</ul>`) : "", warn ? "warn" : "info");
+    const qrBtn = $("slOpenQr");
+    qrBtn.hidden = !qr.url;
+    if (qr.url) qrBtn.href = qr.url; else qrBtn.removeAttribute("href");
+    const tone = qr.lookalike ? "bad" : j.status !== "extracted" || (j.warnings || []).length || (qr.found && !qr.officialHost) ? "warn" : "info";
+    msg("slDataMsg", notes.length ? (notes.length === 1 ? notes[0] : `<ul>${notes.map((n) => `<li>${n}</li>`).join("")}</ul>`) : "", tone);
 
     renderFields();
     $("slDataCard").hidden = false;
@@ -236,12 +250,77 @@
     return el ? el.value : "";
   }
 
+  /* قيمة الملف لسطر التأكيد — المقروءة أو المُدخلة يدويًا. */
+  function fileValue(k) {
+    const v = valueFor(k);
+    return v == null ? "" : String(v);
+  }
+  function displayValue(k, v) {
+    if (!v) return "";
+    if (k === "startDate" || k === "endDate") return esc(fmtDate(v));
+    if (k === "days") return esc(daysLabel(Number(v)));
+    return esc(v);
+  }
+
+  function renderConfirm() {
+    const rows = CONFIRM_FIELDS.filter((f) => f.required || fileValue(f.k));
+    $("slConfirmRows").innerHTML = rows.map((f) => {
+      const fv = fileValue(f.k);
+      const state = CONFIRM[f.k] || "";
+      const opts = [["same", "مطابق"], ["diff", "مختلف"]].concat(f.required ? [] : [["skip", "لم يظهر"]]);
+      const attrs = f.type === "date" ? 'type="date"' : f.type === "number" ? 'type="number" inputmode="numeric" min="1" max="365"' : 'type="text" maxlength="120" autocomplete="off"';
+      return `<div class="sl-cf-row" data-k="${f.k}" data-state="${state}">
+        <div class="sl-cf-l">${esc(f.label)}</div>
+        <div class="sl-cf-v">${fv ? displayValue(f.k, fv) : '<span class="sl-cf-none">غير متوفر في الملف</span>'}</div>
+        <div class="sl-cf-seg" role="radiogroup" aria-label="${esc(f.label)} في صحة">${opts.map(([v, l]) =>
+          `<button type="button" role="radio" aria-checked="${state === v}" data-cf="${v}"${v === "same" && !fv ? " disabled" : ""}>${l}</button>`).join("")}</div>
+        <div class="field sl-cf-in"${state === "diff" ? "" : " hidden"}><label for="slCf_${f.k}">${esc(f.label)} كما في صحة</label><input class="in" id="slCf_${f.k}" ${attrs}></div>
+      </div>`;
+    }).join("");
+  }
+
+  function setConfirm(k, v) {
+    CONFIRM[k] = v;
+    const row = document.querySelector(`.sl-cf-row[data-k="${k}"]`);
+    if (!row) return;
+    row.dataset.state = v;
+    row.querySelectorAll("[data-cf]").forEach((b) => b.setAttribute("aria-checked", String(b.dataset.cf === v)));
+    row.querySelector(".sl-cf-in").hidden = v !== "diff";
+    if (v === "diff") row.querySelector(".sl-cf-in input").focus();
+    updateVerifyButton();
+  }
+
+  function confirmReady() {
+    return CONFIRM_FIELDS.every((f) => {
+      const row = document.querySelector(`.sl-cf-row[data-k="${f.k}"]`);
+      if (!row) return true;
+      const st = CONFIRM[f.k];
+      if (!st) return false;
+      if (st === "diff") return !!row.querySelector(".sl-cf-in input").value.trim();
+      return true;
+    });
+  }
+
   function updateVerifyButton() {
     const o = outcome();
     $("slOfficialForm").hidden = o !== "found";
+    $("slConfirmHint").hidden = o !== "found";
     const manualOk = [...document.querySelectorAll("[data-manual][required]")].every((el) => el.value.trim());
-    const officialOk = o !== "found" || ($("slOffStart").value && $("slOffEnd").value);
+    const officialOk = o !== "found" || confirmReady();
     $("slVerify").disabled = !S || !o || !manualOk || !officialOk;
+  }
+
+  function officialPayload() {
+    const o = outcome();
+    const official = { outcome: o };
+    if (o !== "found") return official;
+    official.same = [];
+    document.querySelectorAll(".sl-cf-row").forEach((row) => {
+      const k = row.dataset.k;
+      if (CONFIRM[k] === "same") official.same.push(k);
+      else if (CONFIRM[k] === "diff") official[k] = row.querySelector(".sl-cf-in input").value.trim();
+    });
+    return official;
   }
 
   async function verify() {
@@ -252,14 +331,7 @@
     $("slVerify").querySelector(".sl-verify-t").textContent = "جاري التحقق…";
     setState("verifying");
     msg("slVerifyMsg", "");
-    const o = outcome();
-    const official = { outcome: o };
-    if (o === "found") {
-      official.startDate = $("slOffStart").value;
-      official.endDate = $("slOffEnd").value;
-      if ($("slOffDays").value) official.days = $("slOffDays").value;
-      if ($("slOffName").value.trim()) official.name = $("slOffName").value.trim();
-    }
+    const official = officialPayload();
     let r, j;
     try {
       r = await fetch("/api/sick-leave/verify", {
@@ -279,7 +351,7 @@
     if (!j.ok) {
       setState("idle");
       document.querySelectorAll(".is-invalid").forEach((el) => el.classList.remove("is-invalid"));
-      const map = { leaveId: "slM_leaveId", idNumber: "slM_idNumber", startDate: "slM_startDate", endDate: "slM_endDate", days: "slM_days", officialStartDate: "slOffStart", officialEndDate: "slOffEnd", officialDays: "slOffDays" };
+      const map = { leaveId: "slM_leaveId", idNumber: "slM_idNumber", startDate: "slM_startDate", endDate: "slM_endDate", days: "slM_days", officialStartDate: "slCf_startDate", officialEndDate: "slCf_endDate", officialDays: "slCf_days" };
       Object.keys(j.fields || {}).forEach((k) => { const el = $(map[k]); if (el) el.classList.add("is-invalid"); });
       msg("slVerifyMsg", esc(j.error || "تعذّر التحقق."), "bad");
       return;
@@ -388,7 +460,9 @@
     $("slResult").hidden = true;
     $("slResult").innerHTML = "";
     document.querySelectorAll('input[name="slOutcome"]').forEach((el) => (el.checked = false));
-    ["slOffStart", "slOffEnd", "slOffDays", "slOffName"].forEach((id) => { $(id).value = ""; $(id).classList.remove("is-invalid"); });
+    CONFIRM = {};
+    $("slConfirmRows").innerHTML = "";
+    $("slOpenQr").hidden = true;
     $("slOfficialForm").hidden = true;
     $("slVerify").disabled = true;
     setState("idle");
@@ -405,7 +479,25 @@
     $("slChange").addEventListener("click", () => { reset({ keepHistory: true }); $("slFile").click(); });
     document.addEventListener("click", (e) => { const b = e.target.closest("[data-copy]"); if (b) copy(b.dataset.copy); });
     document.addEventListener("input", (e) => { if (e.target.closest("#slSehaCard, #slManual")) { e.target.classList.remove("is-invalid"); updateVerifyButton(); } });
-    document.addEventListener("change", (e) => { if (e.target.name === "slOutcome") updateVerifyButton(); });
+    document.addEventListener("change", (e) => {
+      if (e.target.name === "slOutcome") { if (e.target.value === "found") renderConfirm(); updateVerifyButton(); }
+      if (e.target.closest("#slManual") && outcome() === "found") { renderConfirm(); updateVerifyButton(); }
+    });
+    document.addEventListener("click", (e) => {
+      const b = e.target.closest("[data-cf]");
+      if (b && !b.disabled) setConfirm(b.closest(".sl-cf-row").dataset.k, b.dataset.cf);
+    });
+    $("slAllSame").addEventListener("click", () => {
+      document.querySelectorAll(".sl-cf-row").forEach((row) => {
+        const k = row.dataset.k;
+        if (fileValue(k)) setConfirm(k, "same");
+      });
+    });
+    /* فتح صحة ينسخ رمز الإجازة أولًا — أوّل حقل في نموذج الاستعلام. */
+    $("slOpenSeha").addEventListener("click", () => {
+      const v = valueFor("leaveId");
+      if (v && navigator.clipboard) navigator.clipboard.writeText(String(v)).then(() => AdminUI.toastOk("نُسخ رمز الإجازة — الصقه في صحة"), () => {});
+    });
     $("slVerify").addEventListener("click", verify);
   }
 

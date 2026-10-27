@@ -16,7 +16,7 @@
 <link rel="preload" href="/assets/fonts/thmanyah-serif-display-700.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="/ui.css?v=1">
 <link rel="stylesheet" href="/admin-ui.css?v=2">
-<link rel="stylesheet" href="/sick-leave.css?v=1">
+<link rel="stylesheet" href="/sick-leave.css?v=2">
 </head>
 <body>
 <!-- يملؤها app-nav.js — ترويسة وشريط سفلي ودرج موحّدة لكل الصفحات -->
@@ -71,12 +71,13 @@
 
       <section class="sl-card" id="slSehaCard" hidden aria-labelledby="slStep3">
         <div class="sl-step"><span class="sl-num">٣</span><h2 id="slStep3">الاستعلام في منصة صحة</h2></div>
-        <p class="sl-p">افتح الاستعلام الرسمي، وأدخل فيه <b>رمز الإجازة</b> و<b>رقم الهوية</b> (انسخهما من هنا)، ثم سجّل ما أظهرته صحة.</p>
+        <p class="sl-p">افتح الاستعلام الرسمي — يُنسخ <b>رمز الإجازة</b> تلقائيًا عند الفتح — ثم الصق <b>رقم الهوية</b> بالزرّ الثاني، وارجع هنا لتأكيد ما أظهرته صحة.</p>
         <div class="sl-actions">
           <a class="admin-btn-primary sl-btn" id="slOpenSeha" href="https://www.seha.sa/ui#/inquiries/slenquiry" target="_blank" rel="noopener noreferrer">
             فتح استعلام صحة الرسمي
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 4h6v6M20 4l-9 9"/><path d="M19 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h5"/></svg>
           </a>
+          <a class="admin-mini-btn sl-btn" id="slOpenQr" hidden target="_blank" rel="noopener noreferrer">فتح رابط صحة من رمز QR في الملف</a>
           <button type="button" class="admin-mini-btn sl-btn" data-copy="leaveId">نسخ رمز الإجازة</button>
           <button type="button" class="admin-mini-btn sl-btn" data-copy="idNumber">نسخ رقم الهوية</button>
         </div>
@@ -90,13 +91,14 @@
           </div>
         </fieldset>
 
-        <div class="sl-form" id="slOfficialForm" hidden>
-          <div class="field"><label for="slOffStart">تاريخ البداية في صحة</label><input class="in" type="date" id="slOffStart" required></div>
-          <div class="field"><label for="slOffEnd">تاريخ النهاية في صحة</label><input class="in" type="date" id="slOffEnd" required></div>
-          <div class="field"><label for="slOffDays">عدد الأيام في صحة <i>(اختياري)</i></label><input class="in" type="number" inputmode="numeric" min="1" max="365" id="slOffDays"></div>
-          <div class="field sl-wide"><label for="slOffName">الاسم كما ظهر في صحة <i>(اختياري)</i></label><input class="in" type="text" id="slOffName" maxlength="120" autocomplete="off"></div>
+        <div class="sl-confirm" id="slOfficialForm" hidden>
+          <div class="sl-confirm-head">
+            <span>قارن كل سطر بما تعرضه صحة. لا تُعِد كتابة شيء إلا إذا اختلف.</span>
+            <button type="button" class="admin-mini-btn sl-btn" id="slAllSame">كل البيانات مطابقة لما في صحة</button>
+          </div>
+          <div id="slConfirmRows"></div>
         </div>
-        <p class="sl-hint">أدخل ما تعرضه صحة كما هو — لا تنسخه من الملف. المنصّة تقارن رقم الإجازة والهوية والتواريخ حرفيًا.</p>
+        <p class="sl-hint" id="slConfirmHint" hidden>المنصّة تقارن رقم الإجازة والهوية والتواريخ حرفيًا. «مطابق» يعني أنك رأيت القيمة نفسها في صحة.</p>
 
         <div class="sl-actions sl-actions-end">
           <button type="button" class="admin-btn-primary sl-btn sl-verify" id="slVerify" disabled>
@@ -125,6 +127,6 @@
 
 <script src="/admin-ui.js?v=2"></script>
 <script src="/app-nav.js?v=1"></script>
-<script src="/sick-leave.js?v=1"></script>
+<script src="/sick-leave.js?v=2"></script>
 </body>
 </html>
