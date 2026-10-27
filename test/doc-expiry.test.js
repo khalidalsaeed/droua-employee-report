@@ -151,3 +151,84 @@ test("الدمج: العرضان يرسمان الصفوف المدموجة، و
   assert.match(src, /const totalShown = S\.view === "dur" \? docs\.length : count;/);
   assert.match(src, /<span class="dx-tag">/);
 });
+
+/* ── الدمج بيوم الانتهاء الفعلي لا بالنصّ الخام ─────────────────────────
+   المصادر تكتب التاريخ بصيغ مختلفة: الاستيراد M/D/YYYY، والاستخراج من ملفّ
+   الإقامة/الرخصة YYYY-MM-DD، وقد يصل طابع زمني. اليوم الواحد يُدمج مهما
+   اختلفت كتابته، وفرق يوم فعلي لا يُدمج. ⛔ بيانات مصنوعة. */
+const { execFileSync } = require("node:child_process");
+const isoDay = (n) => { const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() + n); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
+
+test("dayKey: الصيغ المختلفة لليوم نفسه تعطي مفتاحًا واحدًا", () => {
+  const same = ["11/13/2026", "2026-11-13", "2026-11-13T00:00:00", "2026-11-13T15:45:10.250", "2026-11-13 10:00",
+    "11/13/2026 4:00 PM", "2026-11-12T21:00:00.000Z", "2026-11-13T23:30:00+03:00", "2026-11-13T09:00:00+0300", new Date("2026-11-13T05:00:00Z")];
+  for (const v of same) assert.equal(DocExpiry.dayKey(v), "2026-11-13", String(v));
+});
+
+test("dayKey: لحظة UTC تُقرأ بتوقيت المنصّة (الرياض)، والمنطقة قابلة للتمرير", () => {
+  assert.equal(DocExpiry.dayKey("2026-11-12T20:59:59Z"), "2026-11-12", "قبل منتصف الليل في الرياض");
+  assert.equal(DocExpiry.dayKey("2026-11-12T21:00:00Z"), "2026-11-13", "منتصف الليل في الرياض");
+  assert.equal(DocExpiry.dayKey("2026-11-12T21:00:00Z", "UTC"), "2026-11-12");
+});
+
+test("dayKey: التاريخ بلا وقت لا ينزلق يومًا مهما كانت منطقة الجهاز", () => {
+  const script = `const X=require(${JSON.stringify(path.join(__dirname, "..", "doc-expiry.js"))});
+    process.stdout.write([X.dayKey("2026-11-13"),X.dayKey("11/13/2026"),X.dayKey("2026-11-13T00:00:00"),X.dayKey("2026-11-12T21:00:00Z")].join(","));`;
+  for (const tz of ["UTC", "America/Los_Angeles", "Asia/Riyadh", "Pacific/Kiritimati"]) {
+    const out = execFileSync(process.execPath, ["-e", script], { env: { ...process.env, TZ: tz } }).toString();
+    assert.equal(out, "2026-11-13,2026-11-13,2026-11-13,2026-11-13", tz);
+  }
+});
+
+test("dayKey: غير المفهوم null، والتاريخ المستحيل مرفوض", () => {
+  for (const v of [null, "", "—", "لايوجد", "2/31/2026", "2026-13-01", "13/45/2026", 46000]) assert.equal(DocExpiry.dayKey(v), null, String(v));
+});
+
+test("الدمج: اليوم نفسه بصيغتين مختلفتين (إقامة YYYY-MM-DD + رخصة M/D/YYYY) = صفّ واحد", () => {
+  const r = rows([emp("لامين", isoDay(17), inDays(17))]);
+  assert.equal(r.length, 1);
+  assert.deepEqual(types(r[0]), ["إقامة", "رخصة عمل"]);
+  assert.equal(r[0].n, 17);
+});
+
+test("الدمج: اليوم نفسه بطوابع زمنية مختلفة = صفّ واحد", () => {
+  const r = rows([emp("شكيب", `${isoDay(19)}T08:15:00`, `${isoDay(19)}T22:40:00`)]);
+  assert.equal(r.length, 1);
+  assert.deepEqual(types(r[0]), ["إقامة", "رخصة عمل"]);
+});
+
+test("الدمج: لحظة UTC تقع في اليوم نفسه بتوقيت الرياض = صفّ واحد", () => {
+  /* منتصف ليل يوم 20 في الرياض = 21:00Z من اليوم 19. */
+  const [y, m, d] = isoDay(19).split("-");
+  const utcEve = `${y}-${m}-${d}T21:00:00.000Z`;
+  const docs = collect([emp("ساجر", utcEve, isoDay(20))]).docs;
+  assert.deepEqual(docs.map((x) => x.day), [isoDay(20), isoDay(20)]);
+  const r = DocExpiry.groupSameDay(docs);
+  assert.equal(r.length, 1, "اليوم الفعلي نفسه في الرياض");
+});
+
+test("الدمج: فرق يوم فعلي لا يُدمج مهما تشابهت الصيغة أو الوقت", () => {
+  assert.equal(rows([emp("أ", isoDay(17), inDays(18))]).length, 2, "صيغتان ويومان");
+  assert.equal(rows([emp("أ", `${isoDay(17)}T23:59:59`, `${isoDay(18)}T00:00:00`)]).length, 2, "ثانية واحدة عبر منتصف الليل");
+  assert.equal(rows([emp("أ", inDays(17), inDays(19))]).length, 2, "17 و 19 يومًا");
+});
+
+test("الدمج بالصيغ المختلطة: الحلقة والإحصائيات وعدد الوثائق لا تتغيّر، الصفوف وحدها تقلّ", () => {
+  const plain = [emp("أ", inDays(7), inDays(7)), emp("ب", inDays(17), inDays(17), { [F.passExp]: inDays(45) }), emp("ج", inDays(-3), inDays(20))];
+  const mixed = [emp("أ", isoDay(7), `${isoDay(7)}T14:00:00`), emp("ب", isoDay(17), inDays(17), { [F.passExp]: isoDay(45) }), emp("ج", isoDay(-3), inDays(20))];
+  const a = collect(plain), b = collect(mixed);
+  assert.deepEqual(b.counts, a.counts, "الفئات");
+  assert.equal(b.total, a.total, "إجمالي الوثائق");
+  assert.equal(b.total, 7);
+  const ra = DocExpiry.groupSameDay(a.docs), rb = DocExpiry.groupSameDay(b.docs);
+  assert.deepEqual(rb.map((x) => [x.emp[F.name], types(x), x.n]), ra.map((x) => [x.emp[F.name], types(x), x.n]), "الصفوف نفسها بالصيغتين");
+  assert.equal(rb.length, 5, "7 وثائق في 5 صفوف");
+  assert.equal(rb.reduce((s, x) => s + x.docs.length, 0), b.total, "كل وثيقة في صفّ واحد بالضبط");
+});
+
+test("الدمج بالصيغ المختلطة: «حسب الموظف» يجمع اليوم نفسه في مجموعة واحدة", () => {
+  const g = DocExpiry.byEmployee(collect([emp("ب", isoDay(17), inDays(17), { [F.passExp]: isoDay(45) }), emp("ج", isoDay(-3), inDays(20))]).docs);
+  assert.deepEqual(g.map((x) => x.emp[F.name]), ["ج", "ب"]);
+  assert.deepEqual(g[1].sets.map((s) => [types(s), s.n]), [[["إقامة", "رخصة عمل"], 17], [["الجواز"], 45]]);
+  assert.deepEqual(g[0].sets.map((s) => [types(s), s.n]), [[["إقامة"], -3], [["رخصة عمل"], 20]]);
+});

@@ -34,6 +34,52 @@
     return null;
   }
 
+  /* نقيّة: يوم الانتهاء الفعلي بصيغة موحّدة YYYY-MM-DD — مفتاح «اليوم
+     نفسه» في الدمج. لا مقارنة للقيمة الخام: المصادر تكتب التاريخ بأكثر من
+     صيغة (الاستيراد M/D/YYYY، والاستخراج من الملفات YYYY-MM-DD، وقد يصل
+     طابع زمني كامل)، والقيمتان قد تختلفان نصًّا وتدلّان على اليوم نفسه.
+
+       • تاريخ بلا وقت (YYYY-MM-DD أو M/D/YYYY) يوم تقويمي كما كُتب — لا
+         يمرّ بأي منطقة زمنية، فلا ينزلق يومًا في متصفّح خارج المملكة.
+       • وقت بلا منطقة (2026-11-13T15:00) يُؤخذ يومه المكتوب ويُهمل الوقت.
+       • لحظة مطلقة (Z أو ‎+03:00 أو كائن Date) تُقرأ بتوقيت المنصّة،
+         فـ 2026-11-12T21:00:00Z هي 13 نوفمبر في الرياض لا 12.
+     ما لا يُفهم يُعاد null. الدمج وحده يستعمل هذا: الحالات والعدّ والحلقة
+     تبقى على DocStatus كما هي (doc-status.js لم يُمسّ). */
+  const PLATFORM_TZ = "Asia/Riyadh";
+  const pad2 = (n) => String(n).padStart(2, "0");
+  function ymd(y, m, d) {
+    if (!(y >= 1900 && y <= 2200 && m >= 1 && m <= 12 && d >= 1 && d <= 31)) return null;
+    const t = new Date(Date.UTC(y, m - 1, d));
+    if (t.getUTCMonth() !== m - 1 || t.getUTCDate() !== d) return null; // 2/31 مرفوض
+    return `${y}-${pad2(m)}-${pad2(d)}`;
+  }
+  function zonedYmd(date, tz) {
+    if (!(date instanceof Date) || isNaN(date)) return null;
+    try {
+      const p = {};
+      new Intl.DateTimeFormat("en-CA", { timeZone: tz || PLATFORM_TZ, year: "numeric", month: "2-digit", day: "2-digit" })
+        .formatToParts(date).forEach((x) => { p[x.type] = x.value; });
+      return ymd(Number(p.year), Number(p.month), Number(p.day));
+    } catch (e) {
+      /* بلا مناطق زمنية في Intl: الرياض +03:00 ثابتة بلا توقيت صيفي. */
+      const t = new Date(date.getTime() + 3 * 3600000);
+      return ymd(t.getUTCFullYear(), t.getUTCMonth() + 1, t.getUTCDate());
+    }
+  }
+  const RE_ISO = /^(\d{4})-(\d{1,2})-(\d{1,2})(?:[T ]\d{1,2}:\d{2}(?::\d{2}(?:\.\d+)?)?\s*(Z|[+-]\d{2}:?\d{2})?)?$/i;
+  const RE_MDY = /^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+\d{1,2}:\d{2}(?::\d{2})?(?:\s*[AP]M)?)?$/i;
+  function dayKey(s, tz) {
+    if (s == null || s === "") return null;
+    if (s instanceof Date) return zonedYmd(s, tz);
+    const v = String(s).trim();
+    let m = RE_ISO.exec(v);
+    if (m) return m[4] ? zonedYmd(new Date(v.replace(" ", "T")), tz) : ymd(Number(m[1]), Number(m[2]), Number(m[3]));
+    m = RE_MDY.exec(v);
+    if (m) return ymd(Number(m[3]), Number(m[1]), Number(m[2])); // M/D/YYYY كما يقرؤها parseDate
+    return null;
+  }
+
   /* نقيّة: كل وثيقة لها تاريخ، موزّعة على الفئات.
      رخصة «جاري السداد» تُعدّ وتُستبعد من الفئات — إجراؤها جارٍ، وهي خارج
      قائمة المتابعة في المنصّة كلها (DocStatus.needsFollowUp). */
@@ -47,7 +93,7 @@
       if (dc.st.key === "pending") { pending++; return; }
       const bucket = bucketOf(dc.st.n);
       if (!bucket) { beyond++; return; }
-      docs.push({ i, emp: e, type: dc.type, tk: dc.tk, exp: dc.exp, n: dc.st.n, bucket });
+      docs.push({ i, emp: e, type: dc.type, tk: dc.tk, exp: dc.exp, day: dayKey(dc.exp), n: dc.st.n, bucket });
     }));
     docs.sort((a, b) => a.n - b.n);
     const counts = { expired: 0, d10: 0, d30: 0, d90: 0 };
@@ -57,15 +103,17 @@
 
   /* نقيّة: وثائق الموظف الواحد التي تنتهي في اليوم نفسه بالضبط تُجمع في
      صفّ واحد (إقامة + رخصة عمل — باقي 7 أيام). القاعدة محافظة: الموظف نفسه
-     ويوم الانتهاء نفسه (n يُحسب من تاريخ الانتهاء بدقّة اليوم)، بلا تقريب —
-     فرق يوم واحد يبقى صفًّا مستقلًّا. لا تمسّ الوثائق نفسها ولا عدّها: كل
+     ويوم الانتهاء الفعلي نفسه — d.day من dayKey أعلاه، يوم تقويمي
+     موحّد YYYY-MM-DD لا النصّ الخام، فـ «11/13/2026» و«2026-11-13» وطابع
+     زمني لليوم نفسه سواء. بلا تقريب: فرق يوم فعلي يبقى صفًّا مستقلًّا.
+     وثيقة بلا day مفهوم (صيغة غير معروفة) تُجمع بعدّاد أيّامها n كما كان. لا تمسّ الوثائق نفسها ولا عدّها: كل
      صفّ يحمل وثائقه في docs، والحلقة والبطاقات تبقى على collect().
      الترتيب يتبع ترتيب docs (الأكثر إلحاحًا أوّلًا)، والأنواع داخل الصفّ
      بترتيب empDocs (إقامة، رخصة عمل، الجواز، تصريح أجير). */
   function groupSameDay(docs) {
     const m = new Map();
     docs.forEach((d) => {
-      const k = `${d.i}|${d.n}`;
+      const k = `${d.i}|${d.day || `n${d.n}`}`;
       if (!m.has(k)) m.set(k, { i: d.i, emp: d.emp, n: d.n, exp: d.exp, bucket: d.bucket, docs: [] });
       m.get(k).docs.push(d);
     });
@@ -356,7 +404,7 @@
       });
   }
 
-  const DocExpiry = { WINDOW, TOP, BUCKETS, bucketOf, collect, groupSameDay, byEmployee, remaining, docsPhrase, render };
+  const DocExpiry = { WINDOW, TOP, BUCKETS, bucketOf, dayKey, collect, groupSameDay, byEmployee, remaining, docsPhrase, render };
   if (typeof module !== "undefined" && module.exports) module.exports = DocExpiry;
   else root.DocExpiry = DocExpiry;
 })(typeof window !== "undefined" ? window : globalThis);
