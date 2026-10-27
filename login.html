@@ -248,6 +248,9 @@ form.addEventListener("submit", async (e) => {
          واحدة لكل دخول ناجح، لا في كل إعادة تحميل داخل الجلسة. المفتاح
          نفسه في welcome.js و app-shell.html. */
       try { sessionStorage.setItem("droua:welcome", "1"); } catch (e) { /* وضع خاص */ }
+      /* والعلامة نفسها لجولة التحديثات (update-tour.js): تُقرأ وتُمحى مرّة
+         لكل دخول، والخادم يقرّر هل بقي للمستخدم إصدار لم يشاهده. */
+      try { sessionStorage.setItem("droua:update-tour", "1"); } catch (e) { /* وضع خاص */ }
       window.location.href = "/";
       return;
     }
