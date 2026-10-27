@@ -502,8 +502,9 @@ test("الهيكل: الصورة في العقدة واللوحة وقائمة �
 
 test("أكثر الوثائق إلحاحًا: الصورة فوق الأحرف الأولى في العرضين، من المُضيف", () => {
   const js = read("doc-expiry.js");
-  assert.match(js, /<span class="dx-av">\$\{esc\(initials\(d\.emp\[F\.name\]\)\)\}\$\{photo\(d\.emp\)\}<\/span>/, "حسب المدة");
-  assert.match(js, /<span class="dx-av">\$\{esc\(initials\(g\.emp\[F\.name\]\)\)\}\$\{photo\(g\.emp\)\}<\/span>/, "حسب الموظف");
+  /* العرضان صفّ لكل موظف (g) — الصورة في كليهما. */
+  const av = js.match(/<span class="dx-av">\$\{esc\(initials\(g\.emp\[F\.name\]\)\)\}\$\{photo\(g\.emp\)\}<\/span>/g) || [];
+  assert.equal(av.length, 2, "حسب المدة و حسب الموظف");
   assert.match(read("app-shell.html"), /photoImg:e=>EmployeePhotos\.img\(photoRef\(e\)\)\}\);/);
 });
 
