@@ -45,7 +45,6 @@
 
 /* الجدول */
 .dx-table-wrap{overflow-x:auto;margin-inline:-4px;padding-inline:4px}
-.dx-types~.dx-rem,.dx-table td.dx-rem{white-space:normal}
 .dx-table{width:100%;border-collapse:separate;border-spacing:0;font-size:13.5px}
 .dx-table thead th{background:#F6F3EE;color:var(--ink-soft);font-weight:500;font-size:12.5px;text-align:start;padding:12px 12px;white-space:nowrap}
 .dx-table thead th:first-child{border-start-start-radius:10px;border-end-start-radius:10px;width:38px;text-align:center}
@@ -67,8 +66,20 @@
 .dx-type{white-space:nowrap}
 .dx-type-ico{display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;border-radius:9px;
   background:#F6F3EE;border:1px solid var(--dx-line);color:var(--ink-soft);margin-inline-end:10px;vertical-align:middle}
-.dx-types .dx-type-ico{width:30px;height:30px;margin-inline-end:4px}
-.dx-types-n{font-size:12px;color:var(--ink-soft);margin-inline-start:4px}
+/* أنواع الوثائق شارات: وثائق الموظف المنتهية في اليوم نفسه تُجمع في صفّ
+   واحد، فتتجاور شاراتها وتلتفّ عند الضيق بدل تمدّد الجدول. */
+.dx-table td.dx-type{white-space:normal}
+.dx-tags{display:flex;flex-wrap:wrap;gap:6px;max-width:220px}
+.dx-table td.dx-rem{white-space:nowrap}
+.dx-n{white-space:nowrap}
+.dx-tag{display:inline-flex;align-items:center;gap:6px;min-height:28px;padding:0 10px;border-radius:8px;
+  background:#F6F3EE;border:1px solid var(--dx-line);color:var(--ink);font-size:12.5px;font-weight:500;white-space:nowrap}
+.dx-tag svg{flex:none;color:var(--ink-soft)}
+/* «حسب الموظف»: مجموعة لكل تاريخ انتهاء، شاراتها ثم مدّتها */
+.dx-set{display:grid;grid-template-columns:max-content max-content;justify-content:start;align-items:center;gap:10px}
+.dx-set+.dx-set{margin-top:8px}
+.dx-set-rem{font-size:12.5px;font-weight:500;white-space:nowrap}
+.dx-set-rem.expired{color:var(--dx-exp-ink)} .dx-set-rem.d10{color:var(--dx-d10-ink)} .dx-set-rem.d30{color:var(--dx-d30-ink)} .dx-set-rem.d90{color:var(--dx-d90-ink)}
 .dx-rem{font-weight:500;white-space:nowrap}
 .dx-rem.expired{color:var(--dx-exp-ink)} .dx-rem.d10{color:var(--dx-d10-ink)} .dx-rem.d30{color:var(--dx-d30-ink)} .dx-rem.d90{color:var(--dx-d90-ink)}
 
@@ -103,6 +114,12 @@
   .dx-emp{grid-area:emp;min-width:0} .dx-st{grid-area:st;align-self:center}
   .dx-type{grid-area:type;font-size:12.5px;color:var(--ink-soft)} .dx-rem{grid-area:rem;font-size:12.5px;align-self:center}
   .dx-type-ico{width:28px;height:28px;margin-inline-end:6px}
+  .dx-table td.dx-type{min-width:0}
+  .dx-tags{max-width:none}
+  .dx-set{grid-template-columns:minmax(0,1fr) auto}
+  .dx-tag{min-height:26px;padding:0 8px;font-size:12px}
+  /* «حسب الموظف»: المجموعات بعرض البطاقة، كلٌّ بمدّتها */
+  .dx-types{grid-column:1/-1}
 }
 
 /* ── الحلقة والبطاقات ── */

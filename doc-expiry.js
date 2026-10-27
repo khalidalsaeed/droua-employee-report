@@ -55,14 +55,32 @@
     return { docs, counts, total: docs.length, beyond, pending };
   }
 
-  /* نقيّة: «حسب الموظف» — وثائق كل موظف، مرتّبين بأقرب انتهاء لديه. */
+  /* نقيّة: وثائق الموظف الواحد التي تنتهي في اليوم نفسه بالضبط تُجمع في
+     صفّ واحد (إقامة + رخصة عمل — باقي 7 أيام). القاعدة محافظة: الموظف نفسه
+     ويوم الانتهاء نفسه (n يُحسب من تاريخ الانتهاء بدقّة اليوم)، بلا تقريب —
+     فرق يوم واحد يبقى صفًّا مستقلًّا. لا تمسّ الوثائق نفسها ولا عدّها: كل
+     صفّ يحمل وثائقه في docs، والحلقة والبطاقات تبقى على collect().
+     الترتيب يتبع ترتيب docs (الأكثر إلحاحًا أوّلًا)، والأنواع داخل الصفّ
+     بترتيب empDocs (إقامة، رخصة عمل، الجواز، تصريح أجير). */
+  function groupSameDay(docs) {
+    const m = new Map();
+    docs.forEach((d) => {
+      const k = `${d.i}|${d.n}`;
+      if (!m.has(k)) m.set(k, { i: d.i, emp: d.emp, n: d.n, exp: d.exp, bucket: d.bucket, docs: [] });
+      m.get(k).docs.push(d);
+    });
+    return [...m.values()];
+  }
+
+  /* نقيّة: «حسب الموظف» — وثائق كل موظف، مرتّبين بأقرب انتهاء لديه.
+     sets: وثائقه مجموعةً بيوم الانتهاء، مجموعة لكل تاريخ. */
   function byEmployee(docs) {
     const m = new Map();
     docs.forEach((d) => {
       if (!m.has(d.i)) m.set(d.i, { i: d.i, emp: d.emp, docs: [] });
       m.get(d.i).docs.push(d);
     });
-    return [...m.values()].map((g) => ({ ...g, worst: g.docs[0] })).sort((a, b) => a.worst.n - b.worst.n);
+    return [...m.values()].map((g) => ({ ...g, worst: g.docs[0], sets: groupSameDay(g.docs) })).sort((a, b) => a.worst.n - b.worst.n);
   }
 
   /* «منذ 34 يومًا» / «تنتهي اليوم» / «باقي 3 أيام» */
@@ -261,6 +279,11 @@
     drawTable(true);
   }
 
+  /* أنواع الوثائق شارات صغيرة متجاورة تلتفّ عند الضيق: [ إقامة ] [ رخصة عمل ] */
+  function tags(docs) {
+    return docs.map((d) => `<span class="dx-tag">${svg(ICON[d.tk] || ICON.doc, 14)}${esc(d.type)}</span>`).join("");
+  }
+
   function pill(bucket) {
     return `<span class="dx-pill ${bucket}"><i></i>${esc(BUCKET[bucket].pill)}</span>`;
   }
@@ -278,14 +301,15 @@
     const clickable = !!S.opts.onPick;
     let head, rows, count;
     if (S.view === "dur") {
-      count = docs.length;
-      const list = S.expanded ? docs : docs.slice(0, TOP);
+      const sets = groupSameDay(docs);
+      count = sets.length;
+      const list = S.expanded ? sets : sets.slice(0, TOP);
       head = "<th>#</th><th>الموظف</th><th>نوع الوثيقة</th><th>المدة المتبقية</th><th>الحالة</th>";
       rows = list.map((d, k) => `
         <tr class="dx-row" data-i="${d.i}" style="--i:${Math.min(k, 10)}"${clickable ? ` tabindex="0" aria-label="فتح ملف ${esc(d.emp[F.name])}"` : ""}>
           <td class="dx-n"><span class="num">${k + 1}</span></td>
           <td class="dx-emp"><div class="dx-emp-in"><span class="dx-av">${esc(initials(d.emp[F.name]))}${photo(d.emp)}</span><span><b>${esc(d.emp[F.name] || "—")}</b>${d.emp[F.job] ? `<small>${esc(d.emp[F.job])}</small>` : ""}</span></div></td>
-          <td class="dx-type"><span class="dx-type-ico">${svg(ICON[d.tk] || ICON.doc, 17)}</span>${esc(d.type)}</td>
+          <td class="dx-type"><span class="dx-tags">${tags(d.docs)}</span></td>
           <td class="dx-rem ${d.bucket}" title="${esc(DocStatus.fmtDate(d.exp))}">${esc(remaining(d.n))}</td>
           <td class="dx-st">${pill(d.bucket)}</td>
         </tr>`).join("");
@@ -293,13 +317,13 @@
       const groups = byEmployee(docs);
       count = groups.length;
       const list = S.expanded ? groups : groups.slice(0, TOP);
-      head = "<th>#</th><th>الموظف</th><th>الوثائق</th><th>أقرب انتهاء</th><th>الحالة</th>";
+      /* كل مجموعة تحمل مدّتها، وأوّلها أقرب انتهاء — فلا عمود مكرّر له */
+      head = "<th>#</th><th>الموظف</th><th>الوثائق</th><th>الحالة</th>";
       rows = list.map((g, k) => `
         <tr class="dx-row" data-i="${g.i}" style="--i:${Math.min(k, 10)}"${clickable ? ` tabindex="0" aria-label="فتح ملف ${esc(g.emp[F.name])}"` : ""}>
           <td class="dx-n"><span class="num">${k + 1}</span></td>
           <td class="dx-emp"><div class="dx-emp-in"><span class="dx-av">${esc(initials(g.emp[F.name]))}${photo(g.emp)}</span><span><b>${esc(g.emp[F.name] || "—")}</b>${g.emp[F.job] ? `<small>${esc(g.emp[F.job])}</small>` : ""}</span></div></td>
-          <td class="dx-type dx-types">${g.docs.map((d) => `<span class="dx-type-ico" title="${esc(d.type)} — ${esc(remaining(d.n))}">${svg(ICON[d.tk] || ICON.doc, 16)}</span>`).join("")}<span class="dx-types-n">${esc(docsPhrase(g.docs.length))}</span></td>
-          <td class="dx-rem ${g.worst.bucket}">${esc(g.worst.type)} · ${esc(remaining(g.worst.n))}</td>
+          <td class="dx-type dx-types">${g.sets.map((d) => `<span class="dx-set"><span class="dx-tags">${tags(d.docs)}</span><span class="dx-set-rem ${d.bucket}" title="${esc(DocStatus.fmtDate(d.exp))}">${esc(remaining(d.n))}</span></span>`).join("")}</td>
           <td class="dx-st">${pill(g.worst.bucket)}</td>
         </tr>`).join("");
     }
@@ -307,7 +331,9 @@
     const html = count ? `<table class="dx-table"><thead><tr>${head}</tr></thead><tbody>${rows}</tbody></table>` : empty;
 
     const all = S.el.querySelector(".dx-all");
-    const totalShown = S.filter ? count : (S.view === "dur" ? S.data.total : count);
+    /* «عرض جميع الوثائق (N)» يعدّ الوثائق لا الصفوف: صفّ «إقامة + رخصة عمل»
+       وثيقتان. أمّا «حسب الموظف» فيعدّ الموظفين كما كان. */
+    const totalShown = S.view === "dur" ? docs.length : count;
     all.hidden = count <= TOP;
     all.querySelector("span").textContent = S.expanded ? "عرض الأكثر إلحاحًا فقط" : (S.view === "dur" ? `عرض جميع الوثائق (${totalShown})` : `عرض جميع الموظفين (${totalShown})`);
     all.classList.toggle("open", S.expanded);
@@ -330,7 +356,7 @@
       });
   }
 
-  const DocExpiry = { WINDOW, TOP, BUCKETS, bucketOf, collect, byEmployee, remaining, docsPhrase, render };
+  const DocExpiry = { WINDOW, TOP, BUCKETS, bucketOf, collect, groupSameDay, byEmployee, remaining, docsPhrase, render };
   if (typeof module !== "undefined" && module.exports) module.exports = DocExpiry;
   else root.DocExpiry = DocExpiry;
 })(typeof window !== "undefined" ? window : globalThis);
