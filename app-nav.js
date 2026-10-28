@@ -34,6 +34,7 @@ const AppNav = (function () {
     menu: '<path d="M4 7h16M4 12h16M4 17h16"/>',
     logout: '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/>',
     close: '<path d="M18 6 6 18M6 6l12 12"/>',
+    travel: '<rect x="3" y="4.5" width="18" height="16" rx="2.5"/><path d="M3 9.5h18M8 2.5v4M16 2.5v4"/><path d="M8 14h3M8 17h6"/>',
   };
   function svg(paths, size) {
     const s = size || 20;
@@ -43,10 +44,13 @@ const AppNav = (function () {
   /* ---------- الوجهات ----------
      perm: الصلاحية المطلوبة بصيغة "section:action" (فارغة = متاحة للجميع).
      tab:  ترتيب ظهورها في الشريط السفلي (غير المرقّمة تظهر في الدرج فقط).
-     page: مفتاح الصفحة لتحديد الحالة النشطة. */
+     page: مفتاح الصفحة لتحديد الحالة النشطة.
+     group: "sections" تضع صفحةً مستقلّة ضمن «أقسام هذه الصفحة» في الدرج
+            (متابعة موظفي ذروة — بالتصميم المعتمد) بدل «الصفحات». */
   const DEST = [
     { key: "home",      href: "/",              label: "الرئيسية",        icon: I.home,     perm: "kpi:view",       tab: 1, page: "home" },
     { key: "employees", href: "/#peopleSec",    label: "الموظفون",        icon: I.people,   perm: "employees:view", tab: 2, page: "home" },
+    { key: "staffTravel", href: "/staff-travel.html", label: "متابعة موظفي ذروة", icon: I.travel, perm: "staff_travel:view", page: "staff-travel", group: "sections" },
     { key: "tickets",   href: "/tickets.html",  label: "التذاكر",         icon: I.tickets,  perm: "tickets:view",   tab: 3, page: "tickets" },
     { key: "reports",   href: "/reports.html",  label: "التقارير",        icon: I.reports,  perm: "reports:view",   tab: 4, page: "reports" },
     { key: "payroll",   href: "/payroll.html",  label: "مسير الرواتب",    icon: I.payroll,  perm: "payroll:view",           page: "payroll" },
@@ -63,6 +67,7 @@ const AppNav = (function () {
     payroll: "مسير الرواتب",
     tickets: "التذاكر والمتابعات",
     reports: "التقارير الشهرية",
+    "staff-travel": "متابعة موظفي ذروة",
   };
 
   /* الصفحة الحالية من المسار — vercel.json يعيد كتابة /tickets/:id و
@@ -74,6 +79,7 @@ const AppNav = (function () {
     if (p.startsWith("/payroll")) return "payroll";
     if (p.startsWith("/tickets")) return "tickets";
     if (p.startsWith("/reports")) return "reports";
+    if (p.startsWith("/staff-travel")) return "staff-travel";
     return "";
   }
 
@@ -167,8 +173,9 @@ const AppNav = (function () {
     const u = (typeof AdminUI !== "undefined" && AdminUI.getUser) ? AdminUI.getUser() : null;
     /* الفصل بين الوجهات المستقلة ومراسي الصفحة الرئيسية: المرساة بلا معنى
        حين تكون في صفحة أخرى، فتُعرض عندئذ تحت عنوان مختلف. */
-    const pages = DEST.filter((d) => allowed(d) && !d.href.includes("#"));
-    const anchors = DEST.filter((d) => allowed(d) && d.href.includes("#"));
+    const inSections = (d) => d.href.includes("#") || d.group === "sections";
+    const pages = DEST.filter((d) => allowed(d) && !inSections(d));
+    const anchors = DEST.filter((d) => allowed(d) && inSections(d));
     const link = (d) => {
       const active = d.page === page && !d.href.includes("#");
       return `<a class="u-navlink" href="${d.href}"${active ? ' aria-current="page"' : ""}>${svg(d.icon)}${esc(d.label)}</a>`;
@@ -180,7 +187,7 @@ const AppNav = (function () {
       </div>
       <div class="u-drawer-sec">الصفحات</div>
       ${pages.map(link).join("")}
-      ${anchors.length ? `<div class="u-drawer-sec">${page === "home" ? "أقسام هذه الصفحة" : "أقسام الصفحة الرئيسية"}</div>${anchors.map(link).join("")}` : ""}
+      ${anchors.length ? `<div class="u-drawer-sec">${page === "home" || page === "staff-travel" ? "أقسام هذه الصفحة" : "أقسام الصفحة الرئيسية"}</div>${anchors.map(link).join("")}` : ""}
       <div class="u-drawer-foot">
         <!-- إعداد خاصّ بهذا الجهاز، فموضعه الطبيعي بجوار بطاقة صاحبه.
              الدرج متاح من كل صفحة، وهو أقرب ما يصل إليه المستخدم على

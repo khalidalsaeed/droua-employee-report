@@ -50,6 +50,7 @@ const PAGE_FILES = {
   "ticket-detail": "ticket-detail-shell.html",
   reports: "reports-shell.html",
   expiring: "expiring-shell.html",
+  "staff-travel": "staff-travel-shell.html",
 };
 /* Which permission each page needs is declared once, in
    lib/auth/permissions.js (PAGE_PERMISSION) — not duplicated here.
@@ -425,6 +426,7 @@ async function handleData(req, res, resource) {
   if (resource === "users") return handleUsers(req, res, actor);
   if (resource === "tickets") return handleTickets(req, res, actor);
   if (resource === "municipal-cards") return handleMunicipalCards(req, res, actor);
+  if (resource === "staff-travel") return handleStaffTravel(req, res, actor);
 
   const mod = getResource(resource);
   if (!mod || !mod.section) return res.status(404).json({ ok: false, error: "قسم بيانات غير معروف" });
@@ -474,6 +476,47 @@ async function handleData(req, res, resource) {
       return res.status(200).json({ ok: true });
     }
     res.status(405).json({ ok: false, error: "Method not allowed" });
+  } catch (err) {
+    res.status(400).json({ ok: false, error: (err && err.message) || "تعذّر تنفيذ العملية" });
+  }
+}
+
+/* ---------------- متابعة سفر موظفي ذروة ----------------
+   يشبه CRUD العام (GET/POST/PUT/DELETE → view/create/edit/delete على القسم
+   staff_travel) مع فرقين: GET يعيد كل ما تحتاجه الصفحة في طلب واحد (الرحلات
+   ودليل الموظفين المختصر والعتبات)، و«تأكيد العودة» إجراءٌ على رحلة قائمة
+   فيُحرس بـedit. سجلّ التدقيق يحمل المعرّف ورقم الموظف فقط — لا رقم تأشيرة. */
+async function handleStaffTravel(req, res, actor) {
+  const mod = getResource("staff-travel");
+  const action = METHOD_ACTION[req.method];
+  if (!action) return res.status(405).json({ ok: false, error: "Method not allowed" });
+  const body = req.method === "GET" ? {} : parseBody(req) || {};
+  const confirming = req.method === "POST" && body.action === "confirm_return";
+  if (!hasPermission(actor, mod.section, confirming ? "edit" : action)) return res.status(403).json(FORBIDDEN);
+  const rawId = body.id || (req.query || {}).id;
+  if (rawId !== undefined && !/^\d{1,18}$/.test(String(rawId))) return res.status(400).json({ ok: false, error: "معرّف غير صالح" });
+  try {
+    if (req.method === "GET") return res.status(200).json({ ok: true, ...(await mod.overview()) });
+    if (confirming) {
+      const item = await mod.confirmReturn(String(rawId), actor);
+      logEvent({ type: "staff_travel_return_confirmed", actorEmail: actor.email, actorId: actor.id, targetId: item.id, meta: { employeeEid: item.employeeEid } });
+      return res.status(200).json({ ok: true, item });
+    }
+    if (req.method === "POST") {
+      const item = await mod.create(body, actor);
+      logEvent({ type: "staff_travel_created", actorEmail: actor.email, actorId: actor.id, targetId: item.id, meta: { employeeEid: item.employeeEid } });
+      return res.status(200).json({ ok: true, item });
+    }
+    if (!rawId) return res.status(400).json({ ok: false, error: "المعرّف مطلوب" });
+    if (req.method === "PUT") {
+      const { id: _ignored, ...patch } = body;
+      const item = await mod.update(String(rawId), patch, actor);
+      logEvent({ type: "staff_travel_updated", actorEmail: actor.email, actorId: actor.id, targetId: item.id, meta: { employeeEid: item.employeeEid } });
+      return res.status(200).json({ ok: true, item });
+    }
+    const gone = await mod.remove(String(rawId), actor);
+    logEvent({ type: "staff_travel_deleted", actorEmail: actor.email, actorId: actor.id, targetId: gone.id, meta: { employeeEid: gone.employeeEid } });
+    return res.status(200).json({ ok: true });
   } catch (err) {
     res.status(400).json({ ok: false, error: (err && err.message) || "تعذّر تنفيذ العملية" });
   }
