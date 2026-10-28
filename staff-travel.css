@@ -6,6 +6,7 @@
   --tv-soon:var(--warn-line); --tv-soon-ink:var(--warn); --tv-soon-bg:var(--warn-bg); /* قريب السفر */
   --tv-back:var(--pend-line); --tv-back-ink:var(--pend); --tv-back-bg:var(--pend-bg); /* عاد */
   --tv-sch:#8CA0B3; --tv-sch-ink:#4F6477; --tv-sch-bg:#EAEFF4;                        /* مجدولة */
+  --tv-late:var(--bad-line); --tv-late-ink:var(--bad); --tv-late-bg:var(--bad-bg);    /* بانتظار تأكيد العودة */
   --tv-rail:#D9D4C9;
 }
 main.block{padding-block:18px 28px}
@@ -97,6 +98,7 @@ main.block{padding-block:18px 28px}
 .tv-chip.soon{background:var(--tv-soon-bg);color:var(--tv-soon-ink);border-color:#EBDDB8}
 .tv-chip.returned{background:var(--tv-back-bg);color:var(--tv-back-ink);border-color:#CCDCE8}
 .tv-chip.scheduled{background:var(--tv-sch-bg);color:var(--tv-sch-ink);border-color:#D8E0E8}
+.tv-chip.overdue{background:var(--tv-late-bg);color:var(--tv-late-ink);border-color:#EACCC5}
 
 /* خطّ الرحلة: البداية في اليمين (RTL) والنهاية في اليسار. */
 .tv-line{margin:12px 2px 4px}
@@ -120,6 +122,9 @@ main.block{padding-block:18px 28px}
 .tv-card.soon,.tv-track.soon{--c:var(--tv-soon)}
 .tv-card.returned,.tv-track.returned{--c:var(--tv-back)}
 .tv-card.scheduled,.tv-track.scheduled{--c:var(--tv-sch)}
+.tv-card.overdue,.tv-track.overdue{--c:var(--tv-late)}
+.tv-card.overdue{border-color:#EACCC5}
+.tv-track.overdue .tv-end.e{background:var(--c);box-shadow:0 0 0 1px var(--c)}
 
 .tv-visa{display:flex;align-items:center;gap:10px;margin-top:10px;padding-top:10px;border-top:1px solid var(--hair-2)}
 .tv-visa svg{flex:none;color:var(--ink-soft)}
@@ -136,6 +141,7 @@ main.block{padding-block:18px 28px}
   background:var(--bad-bg);color:var(--bad);font-size:12.5px;font-weight:600;line-height:1.55}
 .tv-warn svg{flex:none;margin-top:2px}
 .tv-warn .act{margin-inline-start:auto}
+.tv-warn.info{background:var(--tv-back-bg);color:var(--tv-back-ink)}
 .tv-more{margin-top:8px;font-size:11.5px;color:var(--ink-soft)}
 
 .tv-empty{padding:44px 18px;text-align:center;color:var(--ink-soft);background:var(--paper-2);

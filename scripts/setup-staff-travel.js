@@ -28,9 +28,11 @@ const STATEMENTS = [
     sql: `
       CREATE TABLE IF NOT EXISTS employee_travel (
         id                  bigserial PRIMARY KEY,
-        -- employees.eid («الرقم الوظيفي»). CASCADE: حذف الموظف من السجلّ
-        -- يحذف رحلاته معه فلا تبقى رحلات يتيمة بلا صاحب.
-        employee_eid        text NOT NULL REFERENCES employees(eid) ON UPDATE CASCADE ON DELETE CASCADE,
+        -- employees.eid («الرقم الوظيفي»): text NOT NULL وعليه UNIQUE
+        -- (employees_eid_key) — تحقّق منه على القاعدة قبل الهجرة.
+        -- RESTRICT: سجلّ السفر تاريخيّ؛ حذف موظف له رحلات يُرفض ولا يمحوها
+        -- ضمنًا. ON UPDATE CASCADE يُبقي الربط إن تغيّر الرقم الوظيفي.
+        employee_eid        text NOT NULL REFERENCES employees(eid) ON UPDATE CASCADE ON DELETE RESTRICT,
         start_date          date NOT NULL,
         end_date            date NOT NULL,
         visa_expiry_date    date NOT NULL,
@@ -38,8 +40,8 @@ const STATEMENTS = [
         visa_type           text,
         destination         text,
         notes               text,
-        -- تأكيد العودة الفعلية: يُسكت تنبيه «تجاوز تاريخ العودة ولم يُحدَّث».
-        -- لا يغيّر الحالة — الحالة من التواريخ وحدها.
+        -- تأكيد العودة الفعلية. بعد تاريخ النهاية: بلا تأكيد = «بانتظار
+        -- تأكيد العودة»، ومعه = «عاد».
         return_confirmed_at timestamptz,
         return_confirmed_by text,
         -- نصّ بلا مفتاح أجنبي: حسابا الاحتياط في متغيّرات البيئة بلا صفّ في users.

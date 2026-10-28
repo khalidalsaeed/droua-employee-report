@@ -477,6 +477,11 @@ async function handleData(req, res, resource) {
     }
     res.status(405).json({ ok: false, error: "Method not allowed" });
   } catch (err) {
+    /* 23503 عند حذف موظف: employee_travel يمنعه (ON DELETE RESTRICT) — سجلّ
+       السفر تاريخيّ ولا يُمحى ضمنًا مع الموظف. */
+    if (err && err.code === "23503" && resource === "employees" && req.method === "DELETE") {
+      return res.status(409).json({ ok: false, error: "لا يمكن حذف الموظف: لديه رحلات مسجّلة في متابعة السفر. احذف رحلاته أولًا إن كان ذلك مقصودًا." });
+    }
     res.status(400).json({ ok: false, error: (err && err.message) || "تعذّر تنفيذ العملية" });
   }
 }

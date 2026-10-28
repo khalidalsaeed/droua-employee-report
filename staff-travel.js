@@ -27,7 +27,7 @@
     plus: '<path d="M12 5v14M5 12h14"/>',
     travel: '<rect x="3" y="4.5" width="18" height="16" rx="2.5"/><path d="M3 9.5h18M8 2.5v4M16 2.5v4"/><path d="M8 14h3M8 17h6"/>',
   };
-  const CHIP_ICON = { traveling: IC.plane, soon: IC.clock, returned: IC.back, scheduled: IC.cal };
+  const CHIP_ICON = { traveling: IC.plane, soon: IC.clock, overdue: IC.alert, returned: IC.back, scheduled: IC.cal };
 
   const state = {
     trips: [], employees: [], th: T.thresholds(), setupRequired: false, demo: false,
@@ -96,7 +96,7 @@
       const t = state.trips.find((x) => x.id === body.id);
       const next = { ...t, ...body };
       if (state.trips.some((x) => x.id !== t.id && T.overlaps(x, next))) throw new Error("للموظف رحلة أخرى مسجّلة تتداخل مع هذه التواريخ");
-      if (next.endDate >= T.todayIso()) next.returnConfirmedAt = null;
+      if (next.endDate > T.todayIso()) next.returnConfirmedAt = null;
       Object.assign(t, next);
     } else if (method === "DELETE") {
       state.trips = state.trips.filter((x) => x.id !== body.id);
@@ -157,7 +157,7 @@
 
   const TABS = [
     { key: "all", label: "الكل" }, { key: "traveling", label: "مسافر" }, { key: "soon", label: "قريب السفر" },
-    { key: "returned", label: "عاد" }, { key: "scheduled", label: "مجدولة" },
+    { key: "overdue", label: "بانتظار تأكيد العودة" }, { key: "returned", label: "عاد" }, { key: "scheduled", label: "مجدولة" },
   ];
   function renderTabs() {
     const count = (k) => (k === "all" ? state.groups.length : state.groups.filter((g) => g.status.key === k).length);
@@ -170,6 +170,7 @@
     if (st.key === "traveling") { pos = 0.1 + st.progress * 0.8; fill = pos; lbl = "في السفر"; }
     else if (st.key === "soon") { pos = 0.18; fill = 0.18; dashed = true; hollow = true; lbl = st.daysToStart === 0 ? "يبدأ اليوم" : `بعد ${T.days(st.daysToStart)}`; }
     else if (st.key === "scheduled") { pos = 0.12; fill = 0.12; dashed = true; hollow = true; lbl = `بعد ${T.days(st.daysToStart)}`; }
+    else if (st.key === "overdue") { pos = 0.9; fill = 1; lbl = `تجاوز بـ${T.days(st.daysSinceEnd)}`; }
     else { pos = 0.5; fill = 1; lbl = "تم العودة"; }
     const pct = (x) => `${(x * 100).toFixed(1)}%`;
     return `<div class="tv-line">
@@ -198,9 +199,11 @@
     if (st.key !== "returned" && T.visaBeforeReturn(trip)) {
       out += `<div class="tv-warn">${svg(IC.alert, 15)}<span>تنبيه: التأشيرة تنتهي قبل موعد العودة</span></div>`;
     }
-    if (st.key === "returned" && g.trips[0] && g.trips[0].id === trip.id && !trip.returnConfirmedAt) {
-      out += `<div class="tv-warn">${svg(IC.alert, 15)}<span>تجاوز تاريخ العودة بـ${esc(T.days(st.daysSinceEnd))} ولم يُؤكَّد رجوعه</span>
-        ${canDo("edit") ? `<button type="button" class="admin-mini-btn act" style="white-space:nowrap" data-confirm-return="${esc(trip.id)}">تأكيد العودة</button>` : ""}</div>`;
+    const btn = canDo("edit") ? `<button type="button" class="admin-mini-btn act" style="white-space:nowrap" data-confirm-return="${esc(trip.id)}">تأكيد العودة</button>` : "";
+    if (st.key === "overdue") {
+      out += `<div class="tv-warn">${svg(IC.alert, 15)}<span>تجاوز تاريخ العودة بـ${esc(T.days(st.daysSinceEnd))} ولم يُؤكَّد رجوعه</span>${btn}</div>`;
+    } else if (st.key === "traveling" && st.daysToEnd === 0 && btn) {
+      out += `<div class="tv-warn info">${svg(IC.back, 15)}<span>اليوم موعد العودة — أكِّدها عند وصوله</span>${btn}</div>`;
     }
     return out;
   }
@@ -266,7 +269,7 @@
               ${field("نوع التأشيرة", esc(sel.visaType))}
               ${field("رقم التأشيرة", sel.visaNumber ? `<span class="num">${esc(sel.visaNumber)}</span>` : "")}
               ${field("حالة التأشيرة", esc(vs.label))}
-              ${field("تأكيد العودة", sel.returnConfirmedAt ? "مؤكَّدة" : st.key === "returned" ? "غير مؤكَّدة" : "—")}
+              ${field("تأكيد العودة", sel.returnConfirmedAt ? `مؤكَّدة${sel.returnConfirmedBy ? ` — ${esc(sel.returnConfirmedBy)}` : ""}` : sel.implicitReturn && st.key === "returned" ? "ضمنيًا — بدأت بعدها رحلة أخرى" : st.key === "overdue" ? "غير مؤكَّدة" : "—")}
               ${field("أُضيفت بواسطة", esc(sel.createdByName))}
             </div>
             ${sel.notes ? `<div class="tv-d-grid" style="grid-template-columns:1fr;margin:0">${field("ملاحظات", esc(sel.notes).replace(/\n/g, "<br>"))}</div>` : ""}

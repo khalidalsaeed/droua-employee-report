@@ -6,7 +6,14 @@
      مجدولة      الرحلة مستقبلية وبدايتها أبعد من SOON_DAYS
      قريب السفر  بقي على البداية SOON_DAYS يومًا أو أقلّ
      مسافر       اليوم بين البداية والنهاية (شاملًا الطرفين)
-     عاد         مضى تاريخ النهاية
+     بانتظار تأكيد العودة  مضى تاريخ النهاية ولم تُؤكَّد العودة
+     عاد         أُكِّدت العودة (من يوم النهاية فصاعدًا)
+
+   قاعدة «عاد»: مرور تاريخ النهاية وحده لا يكفي. تصير الرحلة «عاد» بأحد ثلاثة:
+     1. ضغط «تأكيد العودة» (return_confirmed_at)؛
+     2. رحلة تُسجَّل بعد انتهائها — سجلّ تاريخي، يؤكّدها الخادم عند الإضافة؛
+     3. بدأت للموظف رحلة لاحقة فعلًا — لا يسافر من جديد من لم يعد (ضمنيّ،
+        يُحسب في groupByEmployee ولا يُكتب في القاعدة).
 
    العتبات في DEFAULTS أدناه، ويمكن تجاوزها من الإعدادات (المفتاح
    staff_travel_thresholds في جدول settings) — الخادم يمرّرها مع البيانات.
@@ -25,6 +32,7 @@ const StaffTravel = (function () {
     scheduled: { key: "scheduled", label: "مجدولة" },
     soon:      { key: "soon",      label: "قريب السفر" },
     traveling: { key: "traveling", label: "مسافر" },
+    overdue:   { key: "overdue",   label: "بانتظار تأكيد العودة" },
     returned:  { key: "returned",  label: "عاد" },
   };
 
@@ -69,7 +77,8 @@ const StaffTravel = (function () {
     return `${n} يوم`;
   }
 
-  /* حالة رحلة واحدة في يوم معيّن. */
+  /* حالة رحلة واحدة في يوم معيّن. returnConfirmedAt من القاعدة، و
+     implicitReturn من groupByEmployee (رحلة لاحقة بدأت). */
   function tripStatus(trip, today, th) {
     const t = thresholds(th);
     const now = dayNum(today || todayIso());
@@ -80,10 +89,12 @@ const StaffTravel = (function () {
       const n = s - now;
       return { ...(n <= t.SOON_DAYS ? STATUS.soon : STATUS.scheduled), daysToStart: n, progress: 0, valid: true };
     }
-    if (now <= e) {
+    const confirmed = !!(trip.returnConfirmedAt || trip.implicitReturn);
+    if (now < e || (now === e && !confirmed)) {
       return { ...STATUS.traveling, daysToEnd: e - now, daysSinceStart: now - s, progress: Math.min(1, (now - s) / span), valid: true };
     }
-    return { ...STATUS.returned, daysSinceEnd: now - e, progress: 1, valid: true };
+    if (!confirmed) return { ...STATUS.overdue, daysSinceEnd: now - e, progress: 1, valid: true };
+    return { ...STATUS.returned, daysSinceEnd: now - e, progress: 1, valid: true, implicit: !trip.returnConfirmedAt };
   }
 
   /* شارة التأشيرة: ok · soon · urgent · today · expired · na */
@@ -107,12 +118,14 @@ const StaffTravel = (function () {
 
   const isActive = (st) => st.key !== "returned";
 
-  /* الرحلة التي تمثّل الموظف في بطاقته: الجارية، وإلا الأقرب قدومًا،
-     وإلا آخر رحلة انتهت. */
+  /* الرحلة التي تمثّل الموظف في بطاقته: الجارية، وإلا المنتظرة تأكيد
+     العودة، وإلا الأقرب قدومًا، وإلا آخر رحلة انتهت. */
   function primaryTrip(trips, today, th) {
     const list = (trips || []).map((trip) => ({ trip, st: tripStatus(trip, today, th) }));
     const cur = list.filter((x) => x.st.key === "traveling").sort((a, b) => cmp(b.trip.startDate, a.trip.startDate))[0];
     if (cur) return cur;
+    const late = list.filter((x) => x.st.key === "overdue").sort((a, b) => cmp(b.trip.endDate, a.trip.endDate))[0];
+    if (late) return late;
     const next = list.filter((x) => x.st.key === "soon" || x.st.key === "scheduled").sort((a, b) => cmp(a.trip.startDate, b.trip.startDate))[0];
     if (next) return next;
     return list.sort((a, b) => cmp(b.trip.endDate, a.trip.endDate))[0] || null;
@@ -135,27 +148,32 @@ const StaffTravel = (function () {
       groups.get(k).trips.push(trip);
     }
     const out = [];
+    const now = today || todayIso();
     for (const g of groups.values()) {
-      g.trips = sortHistory(g.trips);
+      /* نُسخ لا الأصل: implicitReturn حسبةُ عرض لا تُكتب في البيانات. */
+      g.trips = sortHistory(g.trips).map((t) => ({ ...t }));
+      for (const t of g.trips) {
+        t.implicitReturn = !t.returnConfirmedAt && g.trips.some((o) => o !== t && o.startDate > t.endDate && o.startDate <= now);
+      }
       const p = primaryTrip(g.trips, today, th);
       g.primary = p ? p.trip : null;
       g.status = p ? p.st : null;
       out.push(g);
     }
-    /* المسافرون أولًا، ثم القريب، ثم المجدول، ثم العائدون — وداخل كل فئة
-       الأقرب تاريخًا. */
-    const RANK = { traveling: 0, soon: 1, scheduled: 2, returned: 3 };
+    /* ما يحتاج إجراءً أولًا (بانتظار تأكيد العودة)، ثم المسافرون، ثم
+       القريب، ثم المجدول، ثم العائدون — وداخل كل فئة الأقرب تاريخًا. */
+    const RANK = { overdue: 0, traveling: 1, soon: 2, scheduled: 3, returned: 4 };
     return out.sort((a, b) => {
       const r = RANK[a.status.key] - RANK[b.status.key];
       if (r) return r;
-      if (a.status.key === "returned") return cmp(b.primary.endDate, a.primary.endDate);
+      if (a.status.key === "returned" || a.status.key === "overdue") return cmp(b.primary.endDate, a.primary.endDate);
       return cmp(a.primary.startDate, b.primary.startDate);
     });
   }
 
-  /* التنبيهات الآلية. لكل رحلة نشطة (غير عائدة): قرب السفر، قرب العودة،
-     التأشيرة المنتهية أو القريبة، والتأشيرة التي تنتهي قبل العودة. ولآخر
-     رحلة لكل موظف إن انتهت دون تأكيد العودة: «تجاوز تاريخ العودة». */
+  /* التنبيهات الآلية لكل رحلة لم تُؤكَّد عودتها: قرب السفر، قرب العودة،
+     التأشيرة المنتهية أو القريبة، والتأشيرة التي تنتهي قبل العودة،
+     و«تجاوز تاريخ العودة» لما انتهت ولم تُؤكَّد. */
   function alerts(groups, today, th) {
     const t = thresholds(th);
     const out = [];
@@ -177,13 +195,9 @@ const StaffTravel = (function () {
         if (vs.key === "expired") out.push({ ...base, kind: "visa_expired", level: "bad", text: `التأشيرة ${vs.label}` });
         else if (vs.n !== null && vs.n <= t.VISA_SOON_DAYS) out.push({ ...base, kind: "visa_soon", level: vs.n <= t.VISA_URGENT_DAYS ? "bad" : "warn", text: `التأشيرة ${vs.label}` });
         if (visaBeforeReturn(trip)) out.push({ ...base, kind: "visa_before_return", level: "bad", text: "التأشيرة تنتهي قبل موعد العودة" });
-      }
-      /* آخر رحلة فقط: رحلة لاحقة مسجّلة تعني أن السابقة انتهت فعلًا. */
-      const latest = g.trips[0];
-      const lst = latest && tripStatus(latest, today, t);
-      if (lst && lst.key === "returned" && !latest.returnConfirmedAt) {
-        out.push({ eid: g.eid, tripId: latest.id, name, kind: "overdue_return", level: "bad",
-          text: `تجاوز تاريخ العودة بـ${days(lst.daysSinceEnd)} ولم يُؤكَّد رجوعه` });
+        if (st.key === "overdue") {
+          out.push({ ...base, kind: "overdue_return", level: "bad", text: `تجاوز تاريخ العودة بـ${days(st.daysSinceEnd)} ولم يُؤكَّد رجوعه` });
+        }
       }
     }
     const ORDER = { bad: 0, warn: 1, info: 2 };
@@ -193,20 +207,21 @@ const StaffTravel = (function () {
   /* بطاقات الملخص: كل رقم يعدّ الموظفين/الرحلات من التواريخ نفسها. */
   function summary(groups, today, th) {
     const t = thresholds(th);
-    let traveling = 0, soon = 0, scheduled = 0, visaSoon = 0;
+    let traveling = 0, soon = 0, scheduled = 0, visaSoon = 0, overdue = 0;
     for (const g of groups || []) {
       for (const trip of g.trips) {
         const st = tripStatus(trip, today, t);
         if (st.key === "traveling") traveling++;
         else if (st.key === "soon") soon++;
         else if (st.key === "scheduled") scheduled++;
+        else if (st.key === "overdue") overdue++;
         if (isActive(st)) {
           const vs = visaStatus(trip.visaExpiryDate, today, t);
           if (vs.n !== null && vs.n <= t.VISA_SOON_DAYS) visaSoon++;
         }
       }
     }
-    return { traveling, soon, scheduled, visaSoon };
+    return { traveling, soon, scheduled, visaSoon, overdue };
   }
 
   /* بحث مُطبَّع: الأرقام الهندية، وصور الألف والهاء/التاء المربوطة والياء. */

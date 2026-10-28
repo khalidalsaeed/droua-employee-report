@@ -35,16 +35,38 @@ test("رحلة مستقبلية بعيدة = مجدولة، وضمن 7 أيام 
   assert.equal(T.tripStatus(trip("1", 1, 30, 60), TODAY).key, "soon");
 });
 
-test("مسافر من يوم البداية حتى يوم النهاية شاملًا، ثم عاد", () => {
+test("مسافر من يوم البداية حتى يوم النهاية شاملًا", () => {
   assert.equal(T.tripStatus(trip("1", 0, 10, 60), TODAY).key, "traveling");
   const mid = T.tripStatus(trip("1", -5, 5, 60), TODAY);
   assert.equal(mid.key, "traveling");
   assert.equal(mid.progress, 0.5);
   assert.equal(T.tripStatus(trip("1", -10, 0, 60), TODAY).key, "traveling");
-  const back = T.tripStatus(trip("1", -10, -1, 60), TODAY);
+});
+
+test("«عاد» يتطلّب تأكيد العودة — مرور تاريخ النهاية وحده = بانتظار تأكيد العودة", () => {
+  const late = T.tripStatus(trip("1", -10, -1, 60), TODAY);
+  assert.equal(late.key, "overdue");
+  assert.equal(late.label, "بانتظار تأكيد العودة");
+  assert.equal(late.daysSinceEnd, 1);
+  const back = T.tripStatus(trip("1", -10, -1, 60, { returnConfirmedAt: "2026-10-27T10:00:00Z" }), TODAY);
   assert.equal(back.key, "returned");
-  assert.equal(back.daysSinceEnd, 1);
   assert.equal(back.label, "عاد");
+  /* يوم النهاية: مسافر حتى يُؤكَّد، وعاد إن أُكِّد. */
+  assert.equal(T.tripStatus(trip("1", -10, 0, 60), TODAY).key, "traveling");
+  assert.equal(T.tripStatus(trip("1", -10, 0, 60, { returnConfirmedAt: "x" }), TODAY).key, "returned");
+});
+
+test("عودة ضمنية: بدء رحلة لاحقة فعلًا يعني أن السابقة عادت — المجدولة لا تكفي", () => {
+  let [g] = T.groupByEmployee([trip("e", -60, -40, 0), trip("e", -10, 10, 90)], [], TODAY);
+  const older = g.trips.find((t) => t.endDate === d(-40));
+  assert.equal(T.tripStatus(older, TODAY).key, "returned");
+  assert.equal(T.tripStatus(older, TODAY).implicit, true);
+  [g] = T.groupByEmployee([trip("e", -60, -40, 0), trip("e", 30, 40, 90)], [], TODAY);
+  assert.equal(g.status.key, "overdue");
+  /* الحسبة على نُسخ — لا تُكتب في بيانات الصفحة. */
+  const raw = [trip("e", -60, -40, 0), trip("e", -10, 10, 90)];
+  T.groupByEmployee(raw, [], TODAY);
+  assert.ok(raw.every((t) => !("implicitReturn" in t)));
 });
 
 test("العتبة قابلة للتعديل من الإعدادات، والقيم الفاسدة تُتجاهل", () => {
@@ -77,24 +99,27 @@ test("البطاقة تعرض الجارية، وإلا الأقرب قدومً�
   const recent = trip("1001", -60, -30, 0);
   const next = trip("1001", 40, 60, 90);
   const later = trip("1001", 100, 120, 150);
-  let [g] = T.groupByEmployee([old, later, recent, next], EMP, TODAY);
+  let [g] = T.groupByEmployee([old, later, { ...recent, returnConfirmedAt: "x" }, next], EMP, TODAY);
   assert.equal(g.primary.id, next.id);
   assert.equal(g.status.key, "scheduled");
   assert.deepEqual(g.trips.map((t) => t.id), [later.id, next.id, recent.id, old.id]);
   const cur = trip("1001", -2, 5, 30);
   [g] = T.groupByEmployee([old, cur, next], EMP, TODAY);
   assert.equal(g.primary.id, cur.id);
-  [g] = T.groupByEmployee([old, recent], EMP, TODAY);
+  /* رحلة منتهية بلا تأكيد تتقدّم على المجدولة: تحتاج إجراءً. */
+  [g] = T.groupByEmployee([old, recent, next], EMP, TODAY);
   assert.equal(g.primary.id, recent.id);
+  assert.equal(g.status.key, "overdue");
+  [g] = T.groupByEmployee([old, { ...recent, returnConfirmedAt: "x" }], EMP, TODAY);
   assert.equal(g.status.key, "returned");
   assert.equal(g.employee.name, "أحمد محمد علي");
 });
 
-test("ترتيب البطاقات: مسافر ثم قريب ثم مجدولة ثم عاد", () => {
+test("ترتيب البطاقات: بانتظار التأكيد ثم مسافر ثم قريب ثم مجدولة ثم عاد", () => {
   const gs = T.groupByEmployee([
-    trip("a", -40, -30, 0), trip("b", 30, 40, 90), trip("c", 3, 9, 90), trip("d", -1, 9, 90),
+    trip("a", -40, -30, 0, { returnConfirmedAt: "x" }), trip("b", 30, 40, 90), trip("c", 3, 9, 90), trip("d", -1, 9, 90), trip("o", -9, -2, 90),
   ], [], TODAY);
-  assert.deepEqual(gs.map((g) => g.status.key), ["traveling", "soon", "scheduled", "returned"]);
+  assert.deepEqual(gs.map((g) => g.status.key), ["overdue", "traveling", "soon", "scheduled", "returned"]);
 });
 
 /* ─── التنبيهات ─── */
@@ -104,7 +129,7 @@ test("التنبيهات: سفر خلال 7 أيام، عودة قريبة، ت�
     trip("r", -10, 4, 90),                // return_soon
     trip("v", -10, 20, 15),               // visa_soon + visa_before_return
     trip("x", -10, 20, -2),               // visa_expired + visa_before_return
-    trip("o", -20, -3, 30),               // overdue_return
+    trip("o", -20, -3, 90),               // overdue_return
     trip("c", -20, -3, 30, { returnConfirmedAt: "2026-10-26T10:00:00Z" }), // مؤكَّدة: لا تنبيه
   ], [], TODAY);
   const kinds = (eid) => T.alerts(gs, TODAY).filter((a) => a.eid === eid).map((a) => a.kind).sort();
@@ -117,8 +142,8 @@ test("التنبيهات: سفر خلال 7 أيام، عودة قريبة، ت�
   assert.equal(T.alerts(gs, TODAY)[0].level, "bad");
 });
 
-test("تجاوز العودة لآخر رحلة فقط — رحلة لاحقة تعني أن السابقة انتهت", () => {
-  const gs = T.groupByEmployee([trip("o", -60, -40, 0), trip("o", 30, 40, 90)], [], TODAY);
+test("لا تنبيه تجاوز لرحلة عادت ضمنيًا ببدء رحلة لاحقة", () => {
+  const gs = T.groupByEmployee([trip("o", -60, -40, 0), trip("o", -5, 30, 90)], [], TODAY);
   assert.deepEqual(T.alerts(gs, TODAY).map((a) => a.kind), []);
 });
 
@@ -131,8 +156,10 @@ test("الرحلات العائدة لا تُنذر بتأشيرتها", () => {
 test("الملخّص: مسافرون، قريبة، تأشيرات قريبة، مجدولة", () => {
   const gs = T.groupByEmployee([
     trip("a", -1, 5, 60), trip("b", -3, 3, 10), trip("c", 2, 9, 90), trip("d", 30, 40, 90), trip("e", -20, -10, 1),
+    trip("f", -20, -10, 1, { returnConfirmedAt: "x" }),
   ], [], TODAY);
-  assert.deepEqual(T.summary(gs, TODAY), { traveling: 2, soon: 1, scheduled: 1, visaSoon: 1 });
+  /* e لم تُؤكَّد عودته: تأشيرته ما زالت تهمّ. f عاد: لا تُحسب. */
+  assert.deepEqual(T.summary(gs, TODAY), { traveling: 2, soon: 1, scheduled: 1, visaSoon: 2, overdue: 1 });
 });
 
 /* ─── البحث ─── */
@@ -218,7 +245,11 @@ async function call(method, { body, query = {}, role = "hr", permissions } = {})
   return res;
 }
 
-const NEW = { employeeEid: "1001", startDate: d(3), endDate: d(30), visaExpiryDate: d(20), visaNumber: "VN-123456789", visaType: "خروج وعودة", destination: "القاهرة" };
+/* الموجّه يحسب «اليوم» بتوقيت الرياض من الساعة الحقيقية، فتواريخه هنا
+   نسبية لذلك اليوم لا لـTODAY الثابت. */
+const RIYADH_TODAY = require("../lib/data/staffTravel.js").today();
+const rd = (n) => { const [y, m, dd] = RIYADH_TODAY.split("-").map(Number); return new Date(Date.UTC(y, m - 1, dd + n)).toISOString().slice(0, 10); };
+const NEW = { employeeEid: "1001", startDate: rd(3), endDate: rd(30), visaExpiryDate: rd(20), visaNumber: "VN-123456789", visaType: "خروج وعودة", destination: "القاهرة" };
 
 test("الموجّه: إضافة ثم قراءة — الرحلة مرتبطة بالموظف، والدليل بلا رواتب", async () => {
   const m = memoryDb(); harness.sql = m.sql;
@@ -238,25 +269,32 @@ test("الموجّه: موظف غير موجود، وتداخل التواريخ
   const m = memoryDb(); harness.sql = m.sql;
   assert.equal((await call("POST", { body: NEW })).code, 200);
   assert.match((await call("POST", { body: { ...NEW, employeeEid: "7777" } })).json.error, /غير موجود/);
-  assert.match((await call("POST", { body: { ...NEW, startDate: d(10), endDate: d(40) } })).json.error, /تتداخل/);
-  assert.match((await call("POST", { body: { ...NEW, endDate: d(1) } })).json.error, /النهاية/);
+  assert.match((await call("POST", { body: { ...NEW, startDate: rd(10), endDate: rd(40) } })).json.error, /تتداخل/);
+  assert.match((await call("POST", { body: { ...NEW, endDate: rd(1) } })).json.error, /النهاية/);
   /* رحلة ثانية للموظف نفسه بلا تداخل: مسموحة (Employee → Many). */
-  assert.equal((await call("POST", { body: { ...NEW, startDate: d(60), endDate: d(80), visaExpiryDate: d(90) } })).code, 200);
+  assert.equal((await call("POST", { body: { ...NEW, startDate: rd(60), endDate: rd(80), visaExpiryDate: rd(90) } })).code, 200);
   assert.equal(m.db.trips.filter((t) => t.employee_eid === "1001").length, 2);
 });
 
 test("الموجّه: تعديل رحلة وحذفها وتأكيد العودة", async () => {
   const m = memoryDb(); harness.sql = m.sql;
   const id = (await call("POST", { body: NEW })).json.item.id;
-  const u = await call("PUT", { body: { id, endDate: d(45), destination: "عمّان" } });
+  const u = await call("PUT", { body: { id, endDate: rd(45), destination: "عمّان" } });
   assert.equal(u.code, 200, JSON.stringify(u.json));
-  assert.equal(u.json.item.endDate, d(45));
+  assert.equal(u.json.item.endDate, rd(45));
   assert.equal(u.json.item.destination, "عمّان");
   assert.equal(u.json.item.visaNumber, "VN-123456789");
   /* رحلة لم تنتهِ: تأكيد العودة مرفوض. */
   assert.match((await call("POST", { body: { action: "confirm_return", id } })).json.error, /لم يحِن/);
-  const past = (await call("POST", { body: { ...NEW, startDate: "2026-01-01", endDate: "2026-01-20", visaExpiryDate: "2026-02-01" } })).json.item;
-  assert.ok(past.returnConfirmedAt, "رحلة تُسجَّل بعد انتهائها: عودتها مؤكَّدة ضمنًا");
+  const past = (await call("POST", { body: { ...NEW, startDate: rd(-200), endDate: rd(-180), visaExpiryDate: rd(-170) } })).json.item;
+  assert.ok(past.returnConfirmedAt, "رحلة تُسجَّل بعد انتهائها: يؤكّد مُدخِلها عودتها");
+  /* رحلة انتهت اليوم أو قبله ولم تُؤكَّد: التأكيد مقبول. */
+  const ending = (await call("POST", { body: { ...NEW, startDate: rd(-10), endDate: rd(0), visaExpiryDate: rd(20) } })).json.item;
+  assert.equal(ending.returnConfirmedAt, null);
+  const c = await call("POST", { body: { action: "confirm_return", id: ending.id } });
+  assert.equal(c.code, 200, JSON.stringify(c.json));
+  assert.ok(c.json.item.returnConfirmedAt);
+  assert.equal((await call("DELETE", { body: { id: ending.id } })).code, 200);
   assert.equal((await call("DELETE", { body: { id } })).code, 200);
   assert.equal(m.db.trips.length, 1);
   assert.match((await call("DELETE", { body: { id } })).json.error, /غير موجودة/);
@@ -354,11 +392,25 @@ test("الهجرة: جدول مستقلّ بقيود وفهارس وتراجع �
   const { STATEMENTS, ROLLBACK } = require("../scripts/setup-staff-travel.js");
   const all = STATEMENTS.map((s) => s.sql).join("\n");
   assert.match(all, /CREATE TABLE IF NOT EXISTS employee_travel/);
-  assert.match(all, /REFERENCES employees\(eid\)/);
+  assert.match(all, /REFERENCES employees\(eid\) ON UPDATE CASCADE ON DELETE RESTRICT/);
+  assert.doesNotMatch(all, /ON DELETE CASCADE|ON DELETE SET NULL/);
   assert.match(all, /CHECK \(end_date >= start_date\)/);
   for (const ix of ["idx_employee_travel_employee", "idx_employee_travel_end", "idx_employee_travel_visa"]) assert.match(all, new RegExp(ix));
   assert.doesNotMatch(all, /audit_log|DROP |DELETE FROM|ALTER TABLE employees/);
   assert.ok(STATEMENTS.every((s) => /IF NOT EXISTS/.test(s.sql)));
   assert.deepEqual(ROLLBACK.map((s) => s.sql), ["DROP TABLE IF EXISTS employee_travel"]);
   assert.doesNotMatch(read("lib/data/staffTravel.js"), /(INSERT INTO|FROM|UPDATE) audit_log/);
+});
+
+test("حذف موظف له رحلات يُرفض برسالة عربية واضحة (RESTRICT)", async () => {
+  harness.sql = makeFakeSql((call) => {
+    if (/DELETE FROM employees/.test(call.text)) { const e = new Error('update or delete on table "employees" violates foreign key constraint'); e.code = "23503"; throw e; }
+    return [];
+  });
+  harness.user = { id: "u1", role: "admin" };
+  harness.user.permissions = resolvePermissions(harness.user);
+  const res = { code: 0, json: null, setHeader() {}, status(c) { this.code = c; return this; }, json(o) { this.json = o; return this; } };
+  await handler({ method: "DELETE", query: { kind: "api", apiPath: "data/employees", id: "1001" }, headers: {}, body: {} }, res);
+  assert.equal(res.code, 409);
+  assert.match(res.json.error, /لديه رحلات مسجّلة/);
 });
