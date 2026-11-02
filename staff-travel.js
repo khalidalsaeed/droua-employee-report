@@ -8,9 +8,8 @@
    الموظفين المختصر، والعتبات. الكتابة POST/PUT/DELETE على المسار نفسه،
    والخادم يعيد فحص staff_travel:* في كل طلب — إخفاء الأزرار هنا راحة لا أمان.
 
-   «وضع العرض التجريبي» (?demo=1، أو الزرّ حين لم يُنشأ الجدول بعد): بيانات
-   مُختلَقة بأسماء وهمية تعيش في الذاكرة وحدها، ليُراجَع التصميم والتدفّق
-   كاملًا قبل اعتماد الهجرة. لا يصل منه طلب كتابة واحد إلى الخادم. */
+   لا بيانات وهمية في الصفحة: كل ما يُعرض من الخادم.
+   الدليل موحَّد (ذروة + أجير) — lib/data/staffDirectory.js. */
 (function () {
   const T = StaffTravel;
   const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -30,104 +29,54 @@
   const CHIP_ICON = { traveling: IC.plane, soon: IC.clock, overdue: IC.alert, returned: IC.back, scheduled: IC.cal };
 
   const state = {
-    trips: [], employees: [], th: T.thresholds(), setupRequired: false, demo: false,
-    filter: "all", q: "", groups: [], showAllAlerts: false,
+    trips: [], people: [], th: T.thresholds(), setupRequired: false,
+    filter: "all", src: "all", q: "", groups: [], showAllAlerts: false,
   };
-  const canDo = (a) => state.demo || AdminUI.can("staff_travel", a);
+  const canDo = (a) => AdminUI.can("staff_travel", a);
 
   /* ---------------- البيانات ---------------- */
   async function load() {
-    if (state.demo) return render();
     const j = await AdminUI.api("GET", "/api/data/staff-travel");
     state.trips = j.items || [];
-    state.employees = j.employees || [];
+    state.people = j.people || [];
     state.th = T.thresholds(j.thresholds);
     state.setupRequired = !!j.setupRequired;
     render();
   }
 
   async function save(method, body) {
-    if (state.demo) return demoWrite(method, body);
     const j = await AdminUI.api(method, "/api/data/staff-travel", body);
     await load();
     return j;
   }
 
-  /* ---------------- العرض التجريبي (ذاكرة فقط) ---------------- */
-  function shift(n) {
-    const d = new Date(); d.setHours(12, 0, 0, 0); d.setDate(d.getDate() + n);
-    return T.todayIso(d);
-  }
-  function enterDemo() {
-    state.demo = true;
-    const E = (eid, name, job) => ({ eid, name, job, iqama: "", passport: "" });
-    state.employees = [
-      E("1001", "أحمد محمد علي", "عامل"), E("1002", "سعود عبدالله محمد", "سائق"),
-      E("1003", "محمد إبراهيم حسن", "عامل"), E("1004", "خالد علي أحمد", "فني"),
-      E("1005", "عمر فيصل عبدالله", "عامل"), E("1006", "ياسر سالم ناصر", "محاسب"),
-      E("1007", "فهد ماجد صالح", "مشرف"),
-    ];
-    let id = 0;
-    const R = (eid, s, e, v, extra) => ({ id: String(++id), employeeEid: eid, startDate: shift(s), endDate: shift(e), visaExpiryDate: shift(v),
-      visaNumber: "", visaType: "خروج وعودة", destination: "", notes: "", returnConfirmedAt: null, createdByName: "عرض تجريبي", ...extra });
-    state.trips = [
-      R("1001", -20, 25, 46, { destination: "القاهرة", visaNumber: "DEMO-0001" }),
-      R("1002", 5, 30, 61, { destination: "إسلام آباد" }),
-      R("1003", -60, -12, 5, { returnConfirmedAt: new Date().toISOString(), destination: "عمّان" }),
-      R("1003", -400, -370, -340, { returnConfirmedAt: new Date().toISOString(), destination: "عمّان" }),
-      R("1004", -10, 40, 30, { destination: "مانيلا" }),
-      R("1005", -50, -3, -1, { destination: "دكا" }),
-      R("1006", 45, 75, 120, { destination: "بيروت" }),
-      R("1007", -15, 4, -2, { destination: "الخرطوم" }),
-    ];
-    state.setupRequired = false;
-    render();
-  }
-  function demoWrite(method, body) {
-    const err = method !== "DELETE" && body.action !== "confirm_return" ? T.validateTrip(method === "PUT" ? { ...state.trips.find((t) => t.id === body.id), ...body } : body) : null;
-    if (err) throw new Error(err);
-    if (method === "POST" && body.action === "confirm_return") {
-      const t = state.trips.find((x) => x.id === body.id); if (t) t.returnConfirmedAt = new Date().toISOString();
-    } else if (method === "POST") {
-      if (state.trips.some((t) => T.overlaps(t, body))) throw new Error("للموظف رحلة أخرى مسجّلة تتداخل مع هذه التواريخ");
-      const id = String(Date.now());
-      state.trips.push({ ...body, id, returnConfirmedAt: body.endDate < T.todayIso() ? new Date().toISOString() : null, createdByName: "عرض تجريبي" });
-    } else if (method === "PUT") {
-      const t = state.trips.find((x) => x.id === body.id);
-      const next = { ...t, ...body };
-      if (state.trips.some((x) => x.id !== t.id && T.overlaps(x, next))) throw new Error("للموظف رحلة أخرى مسجّلة تتداخل مع هذه التواريخ");
-      if (next.endDate > T.todayIso()) next.returnConfirmedAt = null;
-      Object.assign(t, next);
-    } else if (method === "DELETE") {
-      state.trips = state.trips.filter((x) => x.id !== body.id);
-    }
-    render();
-    return { ok: true };
-  }
-
   /* ---------------- الرسم ---------------- */
   function render() {
     const today = T.todayIso();
-    state.groups = T.groupByEmployee(state.trips, state.employees, today, state.th);
+    state.groups = T.groupByEmployee(state.trips, state.people, today, state.th);
     renderHead();
     renderSummary(today);
     renderAlerts(today);
     renderTabs();
+    renderSrc();
     renderList(today);
+  }
+
+  /* فلتر المصدر — يعمل مع فلتر الحالة والبحث معًا. */
+  function renderSrc() {
+    const n = (k) => state.groups.filter((g) => T.sourceMatches(g.employee, k)).length;
+    document.getElementById("tvSrc").innerHTML = [["all", "الكل"], ["droua", "ذروة"], ["ajeer", "أجير"]].map(([k, l]) =>
+      `<button type="button" role="tab" data-src-filter="${k}" aria-selected="${state.src === k}">${l} <span class="num">${n(k)}</span></button>`).join("");
   }
 
   function renderHead() {
     const add = document.getElementById("tvAdd");
     add.hidden = !canDo("create");
-    add.disabled = state.setupRequired && !state.demo;
+    add.disabled = state.setupRequired;
     const note = document.getElementById("tvNote");
-    if (state.demo) {
-      note.innerHTML = `<div class="tv-demo"><span><b>عرض تجريبي</b> — أسماء وبيانات وهمية في المتصفّح فقط، لا يُحفظ منها شيء.</span>
-        <button class="tv-link" type="button" data-exit-demo>الخروج من العرض التجريبي</button></div>`;
-    } else if (state.setupRequired) {
-      note.innerHTML = `<div class="tv-setup"><b>القسم جاهز، وجدول الرحلات لم يُنشأ بعد.</b><br>
-        إنشاء الجدول (employee_travel) بانتظار اعتماد تصميم قاعدة البيانات — لا تُحفظ أي رحلة قبله.<br>
-        <button class="tv-link" type="button" data-demo>عرض بيانات تجريبية لمراجعة التصميم</button></div>`;
+    if (state.setupRequired) {
+      note.innerHTML = `<div class="tv-setup"><b>القسم جاهز، وبنية قاعدة البيانات لم تكتمل بعد.</b><br>
+        هجرة الدليل الموحَّد (staff_directory) بانتظار التطبيق — لا تُحفظ أي رحلة قبلها.</div>`;
     } else note.innerHTML = "";
   }
 
@@ -149,7 +98,7 @@
     const shown = state.showAllAlerts ? list : list.slice(0, LIMIT);
     host.innerHTML = `<section class="tv-alerts" aria-label="التنبيهات">
       <div class="tv-alerts-h"><span>التنبيهات</span><span class="cnt num">${list.length}</span></div>
-      ${shown.map((a) => `<button type="button" class="tv-alert ${a.level}" data-open="${esc(a.eid)}" data-trip="${esc(a.tripId)}">
+      ${shown.map((a) => `<button type="button" class="tv-alert ${a.level}" data-open="${esc(a.gid)}" data-trip="${esc(a.tripId)}">
         <span class="b"></span><span><span class="who">${esc(a.name)}</span> — <span class="what">${esc(a.text)}</span></span></button>`).join("")}
       ${list.length > LIMIT ? `<div class="tv-alerts-more"><button class="tv-link" type="button" data-alerts-toggle>${state.showAllAlerts ? "عرض أقل" : `عرض كل التنبيهات (${list.length})`}</button></div>` : ""}
     </section>`;
@@ -212,15 +161,22 @@
     return `<span class="tv-chip ${st.key}">${svg(CHIP_ICON[st.key], 14)}${esc(st.label)}</span>`;
   }
   function metaLine(e) {
-    return `رقم الموظف: <span class="num">${esc(e.eid)}</span>${e.job ? ` | ${esc(e.job)}` : ""}`;
+    return [e.number ? `رقم الموظف: <span class="num">${esc(e.number)}</span>` : "", esc(e.job), esc(e.department)]
+      .filter(Boolean).join(" | ");
+  }
+  /* شارة المصدر: ذروة · أجير. */
+  function srcBadge(p) {
+    const k = p && p.source;
+    return T.SOURCES[k] ? `<span class="tv-src ${k}">${T.SOURCES[k]}</span>` : "";
   }
 
   function renderList(today) {
     const host = document.getElementById("tvList");
-    const rows = state.groups.filter((g) => (state.filter === "all" || g.status.key === state.filter) && T.matches(g, state.q));
+    const rows = state.groups.filter((g) => (state.filter === "all" || g.status.key === state.filter)
+      && T.sourceMatches(g.employee, state.src) && T.matches(g, state.q));
     if (!state.groups.length) {
       host.innerHTML = `<div class="tv-empty"><span class="big">لا توجد رحلات مسجّلة</span>
-        ${canDo("create") && !(state.setupRequired && !state.demo) ? "ابدأ بزرّ «إضافة رحلة» واختر الموظف من سجلّ الموظفين." : "ستظهر هنا رحلات موظفي ذروة فور تسجيلها."}</div>`;
+        ${canDo("create") && !state.setupRequired ? "ابدأ بزرّ «إضافة رحلة» واختر الموظف من الدليل الموحَّد (ذروة وأجير)." : "ستظهر هنا رحلات موظفي ذروة فور تسجيلها."}</div>`;
       return;
     }
     if (!rows.length) {
@@ -230,9 +186,9 @@
     host.innerHTML = rows.map((g) => {
       const trip = g.primary, st = g.status;
       const others = g.trips.length - 1;
-      return `<article class="tv-card ${st.key}" tabindex="0" role="button" data-open="${esc(g.eid)}" aria-label="تفاصيل ${esc(g.employee.name)}">
+      return `<article class="tv-card ${st.key}" tabindex="0" role="button" data-open="${esc(g.id)}" aria-label="تفاصيل ${esc(g.employee.name)}">
         <div class="tv-top">
-          <div class="tv-who"><div class="tv-name">${esc(g.employee.name)}</div><div class="tv-meta">${metaLine(g.employee)}</div></div>
+          <div class="tv-who"><div class="tv-name">${esc(g.employee.name)} ${srcBadge(g.employee)}</div><div class="tv-meta">${metaLine(g.employee)}</div></div>
           ${chip(st)}<span class="tv-chev">${svg(IC.chev, 18)}</span>
         </div>
         ${timeline(trip, st)}
@@ -245,7 +201,7 @@
 
   /* ---------------- التفاصيل ---------------- */
   function openDetails(eid, tripId) {
-    const g = state.groups.find((x) => x.eid === String(eid));
+    const g = state.groups.find((x) => x.id === String(eid));
     if (!g) return;
     let sel = (tripId && g.trips.find((t) => t.id === String(tripId))) || g.primary;
     const today = T.todayIso();
@@ -255,7 +211,7 @@
       const field = (k, v) => `<div><div class="k">${k}</div><div class="v">${v || "—"}</div></div>`;
       const html = `
         <div class="admin-mhead"><button class="admin-mclose" data-admin-close aria-label="إغلاق">✕</button>
-          <h3>${esc(g.employee.name)}</h3></div>
+          <h3>${esc(g.employee.name)} ${srcBadge(g.employee)}</h3></div>
         <div class="admin-mbody">
           <div class="admin-error-msg" data-admin-error></div>
           <div class="tv-meta" style="margin-bottom:10px">${metaLine(g.employee)}</div>
@@ -298,8 +254,8 @@
       m.querySelectorAll("[data-pick]").forEach((b) => b.addEventListener("click", () => { sel = g.trips.find((t) => t.id === b.dataset.pick); draw(); }));
       const ed = m.querySelector("[data-edit]"); if (ed) ed.addEventListener("click", () => afterClose(() => openForm(sel)));
       const del = m.querySelector("[data-del]"); if (del) del.addEventListener("click", () => afterClose(() => removeTrip(sel, g)));
-      const add = m.querySelector("[data-add-for]"); if (add) add.addEventListener("click", () => afterClose(() => openForm(null, g.eid)));
-      const cr = m.querySelector("[data-confirm-return]"); if (cr) cr.addEventListener("click", () => afterClose(() => confirmReturn(sel.id, () => openDetails(g.eid, sel.id))));
+      const add = m.querySelector("[data-add-for]"); if (add) add.addEventListener("click", () => afterClose(() => openForm(null, g.employee.key)));
+      const cr = m.querySelector("[data-confirm-return]"); if (cr) cr.addEventListener("click", () => afterClose(() => confirmReturn(sel.id, () => openDetails(g.id, sel.id))));
     };
     let m = null;
     draw();
@@ -326,7 +282,7 @@
       `حذف رحلة ${g.employee.name} (${T.fmt(trip.startDate)} ← ${T.fmt(trip.endDate)}) نهائيًا؟ لا يمكن التراجع عن الحذف.`,
       { confirmLabel: "حذف الرحلة", cancelLabel: "إلغاء" });
     /* الإلغاء يعيد المستخدم إلى التفاصيل حيث كان. */
-    if (!ok) return setTimeout(() => openDetails(g.eid, trip.id), 350);
+    if (!ok) return setTimeout(() => openDetails(g.id, trip.id), 350);
     try {
       await save("DELETE", { id: trip.id });
       AdminUI.toastOk("حُذفت الرحلة");
@@ -344,21 +300,52 @@
   /* ---------------- النموذج ---------------- */
   const VISA_TYPES = ["خروج وعودة", "خروج نهائي", "زيارة", "سياحة", "عمل", "عمرة"];
 
-  function openForm(trip, presetEid) {
+  /* مفتاح الشخص في الدليل الموحَّد → شخصه، ورحلة قائمة → مفتاح صاحبها. */
+  const personOf = (key) => state.people.find((p) => p.key === key) || null;
+  const keyOfStaff = (staffId) => {
+    const p = state.people.find((x) => x.staffId && String(x.staffId) === String(staffId));
+    return p ? p.key : `staff:${staffId}`;
+  };
+  const staffIdOf = (key) => { const p = personOf(key); return p && p.staffId ? String(p.staffId) : null; };
+
+  /* منتقي الموظف: [ذروة] / [أجير] + فلتر المصدر + بحث بالاسم أو الرقم أو
+     الهوية (الهوية تصل من الخادم لمن يملك employees:view فقط). */
+  function pickerOptions(selectedKey, src, q) {
+    const list = state.people
+      .filter((p) => (p.active && !p.missing) || p.key === selectedKey)
+      .filter((p) => T.sourceMatches(p, src))
+      .filter((p) => T.matches({ employee: p }, q))
+      .sort((a, b) => String(a.name).localeCompare(String(b.name), "ar"));
+    if (!list.length) return `<div class="tv-pick-empty">لا يوجد موظف يطابق البحث.</div>`;
+    return list.map((p) => `<button type="button" class="tv-pick-opt" role="option" data-key="${esc(p.key)}" aria-selected="${p.key === selectedKey}">
+        ${srcBadge(p)}<span class="nm">${esc(p.name)}${p.job ? ` — ${esc(p.job)}` : ""}</span>${p.number ? `<span class="no num">${esc(p.number)}</span>` : ""}</button>`).join("");
+  }
+
+  function openForm(trip, presetKey) {
     const editing = !!trip;
-    const t = trip || { employeeEid: presetEid || "", startDate: "", endDate: "", visaExpiryDate: "", visaNumber: "", visaType: "", destination: "", notes: "" };
-    const emps = [...state.employees].sort((a, b) => String(a.name).localeCompare(String(b.name), "ar"));
-    const opt = (e) => `<option value="${esc(e.eid)}"${String(e.eid) === String(t.employeeEid) ? " selected" : ""}>${esc(e.name)} — ${esc(e.eid)}${e.job ? ` (${esc(e.job)})` : ""}</option>`;
+    const t = trip || { startDate: "", endDate: "", visaExpiryDate: "", visaNumber: "", visaType: "", destination: "", notes: "" };
+    let selected = trip ? keyOfStaff(trip.staffId) : presetKey || "";
+    let src = "all";
+    const counts = { all: state.people.filter((p) => p.active && !p.missing).length,
+      droua: state.people.filter((p) => p.active && !p.missing && p.source === "droua").length,
+      ajeer: state.people.filter((p) => p.active && !p.missing && p.source === "ajeer").length };
     const m = AdminUI.openModal(`
       <div class="admin-mhead"><button class="admin-mclose" data-admin-close aria-label="إغلاق">✕</button>
         <h3>${editing ? "تعديل رحلة" : "إضافة رحلة"}</h3></div>
       <form class="admin-mbody" id="tvForm" novalidate>
         <div class="admin-error-msg" data-admin-error></div>
         <div class="admin-field">
-          <label for="fEmp">الموظف</label>
-          ${emps.length > 8 ? `<input class="in tv-emp-filter" id="fEmpQ" type="search" placeholder="ابحث بالاسم أو الرقم الوظيفي…" autocomplete="off">` : ""}
-          <select class="in" id="fEmp" required><option value="">— اختر الموظف —</option>${emps.map(opt).join("")}</select>
-          <div class="hint">من سجلّ الموظفين في المنصّة — لا تُكتب بيانات الموظف يدويًا.</div>
+          <label for="fEmpQ">الموظف</label>
+          <div class="tv-pick">
+            <div class="tv-seg" role="tablist" aria-label="مصدر الموظف">
+              ${[["all", "الكل"], ["droua", "ذروة"], ["ajeer", "أجير"]].map(([k, l]) =>
+                `<button type="button" role="tab" data-src="${k}" aria-selected="${k === "all"}">${l} <span class="num">${counts[k]}</span></button>`).join("")}
+            </div>
+            <input class="in" id="fEmpQ" type="search" placeholder="ابحث بالاسم أو الرقم الوظيفي${state.people.some((p) => p.identity) ? " أو الهوية/الإقامة" : ""}…" autocomplete="off">
+            <div class="tv-pick-list" id="fEmpList" role="listbox" aria-label="الموظفون"></div>
+            <div class="tv-pick-sel" id="fEmpSel"></div>
+          </div>
+          <div class="hint">من الدليل الموحَّد: موظفو ذروة وموظفو أجير — لا تُكتب بيانات الموظف يدويًا.</div>
         </div>
         <div class="admin-field-row">
           <div class="admin-field"><label for="fStart">تاريخ بداية الرحلة</label><input class="in" id="fStart" type="date" required value="${esc(t.startDate)}"></div>
@@ -381,7 +368,7 @@
       </div>`);
     const $ = (id) => m.querySelector("#" + id);
     const read = () => ({
-      employeeEid: $("fEmp").value, startDate: $("fStart").value, endDate: $("fEnd").value, visaExpiryDate: $("fVisa").value,
+      person: selected, staffId: staffIdOf(selected), startDate: $("fStart").value, endDate: $("fEnd").value, visaExpiryDate: $("fVisa").value,
       visaNumber: $("fVisaNo").value.trim(), visaType: $("fVisaType").value.trim(), destination: $("fDest").value.trim(), notes: $("fNotes").value.trim(),
     });
     /* معاينة حيّة: الحالة التي ستُشتقّ، وتحذير التأشيرة قبل العودة، والتداخل. */
@@ -392,18 +379,30 @@
       if (T.isIso(v.startDate) && T.isIso(v.endDate) && v.endDate >= v.startDate) {
         msgs.push(`الحالة ستُحسب تلقائيًا: <b>${esc(T.tripStatus(v, T.todayIso(), state.th).label)}</b>`);
         if (T.isIso(v.visaExpiryDate) && T.visaBeforeReturn(v)) { msgs.push("تنبيه: التأشيرة تنتهي قبل موعد العودة"); bad = true; }
-        if (v.employeeEid && state.trips.some((x) => (!editing || x.id !== trip.id) && T.overlaps(x, v))) { msgs.push("للموظف رحلة أخرى تتداخل مع هذه التواريخ"); bad = true; }
+        if (v.staffId && state.trips.some((x) => (!editing || x.id !== trip.id) && T.overlaps(x, v))) { msgs.push("للموظف رحلة أخرى تتداخل مع هذه التواريخ"); bad = true; }
       } else if (T.isIso(v.startDate) && T.isIso(v.endDate)) { msgs.push("تاريخ النهاية قبل تاريخ البداية"); bad = true; }
       el.className = "tv-form-note" + (msgs.length ? " show " + (bad ? "bad" : "info") : "");
       el.innerHTML = msgs.join("<br>");
     };
     m.querySelectorAll("input,select,textarea").forEach((x) => x.addEventListener("input", preview));
     preview();
-    const q = $("fEmpQ");
-    if (q) q.addEventListener("input", () => {
-      const n = T.norm(q.value);
-      $("fEmp").querySelectorAll("option[value]").forEach((o) => { if (o.value) o.hidden = !!n && !T.norm(o.textContent).includes(n); });
+    const drawPicker = () => {
+      $("fEmpList").innerHTML = pickerOptions(selected, src, $("fEmpQ").value);
+      const p = personOf(selected);
+      $("fEmpSel").innerHTML = p ? `المختار: ${srcBadge(p)} <b>${esc(p.name)}</b>${p.job ? ` — ${esc(p.job)}` : ""}` : "لم يُختر موظف بعد";
+    };
+    $("fEmpQ").addEventListener("input", drawPicker);
+    m.querySelectorAll("[data-src]").forEach((b) => b.addEventListener("click", () => {
+      src = b.dataset.src;
+      m.querySelectorAll("[data-src]").forEach((x) => x.setAttribute("aria-selected", String(x === b)));
+      drawPicker();
+    }));
+    $("fEmpList").addEventListener("click", (e) => {
+      const o = e.target.closest("[data-key]"); if (!o) return;
+      selected = o.dataset.key;
+      drawPicker(); preview();
     });
+    drawPicker();
     $("fSave").addEventListener("click", async () => {
       const v = read();
       const err = T.validateTrip(v);
@@ -412,7 +411,8 @@
       try {
         await save(editing ? "PUT" : "POST", editing ? { id: trip.id, ...v } : v);
         AdminUI.toastOk(editing ? "حُفظت التعديلات" : "أُضيفت الرحلة");
-        afterClose(() => openDetails(v.employeeEid));
+        /* موظف أجير يُجسَّد صفّه في الدليل عند أوّل رحلة: معرّفه بعد التحميل. */
+        afterClose(() => { const id = staffIdOf(v.person); if (id) openDetails(id); });
       } catch (e) {
         AdminUI.showError(m, e.message || "تعذّر الحفظ");
         btn.disabled = false;
@@ -427,10 +427,12 @@
       const b = e.target.closest("[data-filter]"); if (!b) return;
       state.filter = b.dataset.filter; renderTabs(); renderList(T.todayIso());
     });
+    document.getElementById("tvSrc").addEventListener("click", (e) => {
+      const b = e.target.closest("[data-src-filter]"); if (!b) return;
+      state.src = b.dataset.srcFilter; renderSrc(); renderList(T.todayIso());
+    });
     document.getElementById("tvQ").addEventListener("input", (e) => { state.q = e.target.value; renderList(T.todayIso()); });
     document.addEventListener("click", (e) => {
-      if (e.target.closest("[data-demo]")) return enterDemo();
-      if (e.target.closest("[data-exit-demo]")) { state.demo = false; return load().catch(fail); }
       if (e.target.closest("[data-alerts-toggle]")) { state.showAllAlerts = !state.showAllAlerts; return renderAlerts(T.todayIso()); }
       const cr = e.target.closest("#tvList [data-confirm-return]");
       if (cr) { e.stopPropagation(); return confirmReturn(cr.dataset.confirmReturn); }
@@ -460,11 +462,10 @@
       return;
     }
     wire();
-    if (new URLSearchParams(location.search).get("demo") === "1") return enterDemo();
     load().catch(fail);
   }
 
   /* للاختبارات في المتصفّح فقط. */
-  window.StaffTravelPage = { state, render, enterDemo };
+  window.StaffTravelPage = { state, render };
   boot();
 })();

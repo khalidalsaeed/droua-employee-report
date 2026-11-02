@@ -477,11 +477,6 @@ async function handleData(req, res, resource) {
     }
     res.status(405).json({ ok: false, error: "Method not allowed" });
   } catch (err) {
-    /* 23503 عند حذف موظف: employee_travel يمنعه (ON DELETE RESTRICT) — سجلّ
-       السفر تاريخيّ ولا يُمحى ضمنًا مع الموظف. */
-    if (err && err.code === "23503" && resource === "employees" && req.method === "DELETE") {
-      return res.status(409).json({ ok: false, error: "لا يمكن حذف الموظف: لديه رحلات مسجّلة في متابعة السفر. احذف رحلاته أولًا إن كان ذلك مقصودًا." });
-    }
     res.status(400).json({ ok: false, error: (err && err.message) || "تعذّر تنفيذ العملية" });
   }
 }
@@ -501,26 +496,27 @@ async function handleStaffTravel(req, res, actor) {
   const rawId = body.id || (req.query || {}).id;
   if (rawId !== undefined && !/^\d{1,18}$/.test(String(rawId))) return res.status(400).json({ ok: false, error: "معرّف غير صالح" });
   try {
-    if (req.method === "GET") return res.status(200).json({ ok: true, ...(await mod.overview()) });
+    /* الهوية والجواز في الدليل لمن يرى سجلّ الموظفين فقط. */
+    if (req.method === "GET") return res.status(200).json({ ok: true, ...(await mod.overview(null, { includeIdentity: hasPermission(actor, "employees", "view") })) });
     if (confirming) {
       const item = await mod.confirmReturn(String(rawId), actor);
-      logEvent({ type: "staff_travel_return_confirmed", actorEmail: actor.email, actorId: actor.id, targetId: item.id, meta: { employeeEid: item.employeeEid } });
+      logEvent({ type: "staff_travel_return_confirmed", actorEmail: actor.email, actorId: actor.id, targetId: item.id, meta: { staffId: item.staffId } });
       return res.status(200).json({ ok: true, item });
     }
     if (req.method === "POST") {
       const item = await mod.create(body, actor);
-      logEvent({ type: "staff_travel_created", actorEmail: actor.email, actorId: actor.id, targetId: item.id, meta: { employeeEid: item.employeeEid } });
+      logEvent({ type: "staff_travel_created", actorEmail: actor.email, actorId: actor.id, targetId: item.id, meta: { staffId: item.staffId } });
       return res.status(200).json({ ok: true, item });
     }
     if (!rawId) return res.status(400).json({ ok: false, error: "المعرّف مطلوب" });
     if (req.method === "PUT") {
       const { id: _ignored, ...patch } = body;
       const item = await mod.update(String(rawId), patch, actor);
-      logEvent({ type: "staff_travel_updated", actorEmail: actor.email, actorId: actor.id, targetId: item.id, meta: { employeeEid: item.employeeEid } });
+      logEvent({ type: "staff_travel_updated", actorEmail: actor.email, actorId: actor.id, targetId: item.id, meta: { staffId: item.staffId } });
       return res.status(200).json({ ok: true, item });
     }
     const gone = await mod.remove(String(rawId), actor);
-    logEvent({ type: "staff_travel_deleted", actorEmail: actor.email, actorId: actor.id, targetId: gone.id, meta: { employeeEid: gone.employeeEid } });
+    logEvent({ type: "staff_travel_deleted", actorEmail: actor.email, actorId: actor.id, targetId: gone.id, meta: { staffId: gone.staffId } });
     return res.status(200).json({ ok: true });
   } catch (err) {
     res.status(400).json({ ok: false, error: (err && err.message) || "تعذّر تنفيذ العملية" });

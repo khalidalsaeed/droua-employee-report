@@ -18,10 +18,11 @@ const d = (n) => {
   return x.toISOString().slice(0, 10);
 };
 let seq = 0;
-const trip = (eid, s, e, v, extra) => ({ id: String(++seq), employeeEid: eid, startDate: d(s), endDate: d(e), visaExpiryDate: d(v), returnConfirmedAt: null, ...extra });
-const EMP = [
-  { eid: "1001", name: "أحمد محمد علي", job: "عامل", iqama: "2400000001", passport: "P1000001" },
-  { eid: "1002", name: "سعود عبدالله", job: "سائق", iqama: "2400000002", passport: "" },
+const trip = (staffId, s, e, v, extra) => ({ id: String(++seq), staffId, startDate: d(s), endDate: d(e), visaExpiryDate: d(v), returnConfirmedAt: null, ...extra });
+/* الدليل الموحَّد كما يصل إلى الواجهة. أسماء وأرقام مُختلَقة. */
+const PEOPLE = [
+  { staffId: "1001", key: "ajeer:1001", source: "ajeer", number: "1001", name: "أحمد محمد علي", job: "عامل", department: "", identity: "2400000001", passport: "P1000001" },
+  { staffId: "1002", key: "staff:1002", source: "droua", number: "D-2", name: "سعود عبدالله", job: "سائق", department: "النقل", identity: "2400000002", passport: "" },
 ];
 
 /* ─── الحالات التلقائية ─── */
@@ -99,18 +100,18 @@ test("البطاقة تعرض الجارية، وإلا الأقرب قدومً�
   const recent = trip("1001", -60, -30, 0);
   const next = trip("1001", 40, 60, 90);
   const later = trip("1001", 100, 120, 150);
-  let [g] = T.groupByEmployee([old, later, { ...recent, returnConfirmedAt: "x" }, next], EMP, TODAY);
+  let [g] = T.groupByEmployee([old, later, { ...recent, returnConfirmedAt: "x" }, next], PEOPLE, TODAY);
   assert.equal(g.primary.id, next.id);
   assert.equal(g.status.key, "scheduled");
   assert.deepEqual(g.trips.map((t) => t.id), [later.id, next.id, recent.id, old.id]);
   const cur = trip("1001", -2, 5, 30);
-  [g] = T.groupByEmployee([old, cur, next], EMP, TODAY);
+  [g] = T.groupByEmployee([old, cur, next], PEOPLE, TODAY);
   assert.equal(g.primary.id, cur.id);
   /* رحلة منتهية بلا تأكيد تتقدّم على المجدولة: تحتاج إجراءً. */
-  [g] = T.groupByEmployee([old, recent, next], EMP, TODAY);
+  [g] = T.groupByEmployee([old, recent, next], PEOPLE, TODAY);
   assert.equal(g.primary.id, recent.id);
   assert.equal(g.status.key, "overdue");
-  [g] = T.groupByEmployee([old, { ...recent, returnConfirmedAt: "x" }], EMP, TODAY);
+  [g] = T.groupByEmployee([old, { ...recent, returnConfirmedAt: "x" }], PEOPLE, TODAY);
   assert.equal(g.status.key, "returned");
   assert.equal(g.employee.name, "أحمد محمد علي");
 });
@@ -132,7 +133,7 @@ test("التنبيهات: سفر خلال 7 أيام، عودة قريبة، ت�
     trip("o", -20, -3, 90),               // overdue_return
     trip("c", -20, -3, 30, { returnConfirmedAt: "2026-10-26T10:00:00Z" }), // مؤكَّدة: لا تنبيه
   ], [], TODAY);
-  const kinds = (eid) => T.alerts(gs, TODAY).filter((a) => a.eid === eid).map((a) => a.kind).sort();
+  const kinds = (id) => T.alerts(gs, TODAY).filter((a) => a.gid === id).map((a) => a.kind).sort();
   assert.deepEqual(kinds("s"), ["departure_soon"]);
   assert.deepEqual(kinds("r"), ["return_soon"]);
   assert.deepEqual(kinds("v"), ["visa_before_return", "visa_soon"]);
@@ -164,47 +165,79 @@ test("الملخّص: مسافرون، قريبة، تأشيرات قريبة، 
 
 /* ─── البحث ─── */
 test("البحث بالاسم والرقم الوظيفي والإقامة والجواز، مع تطبيع العربية والأرقام", () => {
-  const [g] = T.groupByEmployee([trip("1001", 1, 2, 3)], EMP, TODAY);
+  const [g] = T.groupByEmployee([trip("1001", 1, 2, 3)], PEOPLE, TODAY);
   for (const q of ["أحمد", "احمد", "محمد علي", "1001", "١٠٠١", "2400000001", "p1000001", ""]) assert.ok(T.matches(g, q), q);
-  for (const q of ["سعود", "1002", "9999"]) assert.ok(!T.matches(g, q), q);
+  for (const q of ["سعود", "D-2", "9999"]) assert.ok(!T.matches(g, q), q);
+});
+
+test("المصدر: ذروة وأجير في مجموعة واحدة لكل شخص، وفلتر المصدر", () => {
+  const gs = T.groupByEmployee([trip("1001", 1, 2, 3), trip("1002", 10, 12, 30), trip("1002", 40, 50, 60)], PEOPLE, TODAY);
+  assert.equal(gs.length, 2);
+  const droua = gs.find((g) => g.employee.source === "droua");
+  assert.equal(droua.trips.length, 2);
+  assert.equal(droua.employee.name, "سعود عبدالله");
+  assert.deepEqual(gs.filter((g) => T.sourceMatches(g.employee, "ajeer")).map((g) => g.id), ["1001"]);
+  assert.equal(gs.filter((g) => T.sourceMatches(g.employee, "all")).length, 2);
+  assert.deepEqual(T.SOURCES, { droua: "ذروة", ajeer: "أجير" });
+  /* شخص غير موجود في الدليل (لا يُفترض): مجموعة باسم بديل، لا انهيار. */
+  assert.match(T.groupByEmployee([trip("77", 1, 2, 3)], PEOPLE, TODAY)[0].employee.name, /77/);
 });
 
 /* ─── التحقّق ─── */
 test("التحقّق: الموظف والتواريخ إلزامية، والنهاية لا تسبق البداية، والاختيارية بحدود", () => {
-  const ok = { employeeEid: "1", startDate: "2026-11-05", endDate: "2026-12-05", visaExpiryDate: "2026-12-30" };
+  const ok = { person: "ajeer:1", startDate: "2026-11-05", endDate: "2026-12-05", visaExpiryDate: "2026-12-30" };
   assert.equal(T.validateTrip(ok), null);
-  assert.match(T.validateTrip({ ...ok, employeeEid: "" }), /الموظف/);
+  assert.match(T.validateTrip({ ...ok, person: "" }), /الموظف/);
+  assert.equal(T.validateTrip({ ...ok, person: "", staffId: "5" }), null);
   assert.match(T.validateTrip({ ...ok, startDate: "2026-02-30" }), /بداية/);
   assert.match(T.validateTrip({ ...ok, endDate: "2026-11-01" }), /النهاية/);
   assert.match(T.validateTrip({ ...ok, visaExpiryDate: "" }), /التأشيرة/);
   assert.match(T.validateTrip({ ...ok, notes: "x".repeat(1001) }), /الملاحظات/);
   assert.equal(T.validateTrip({ ...ok, endDate: ok.startDate }), null);
-  assert.equal(T.overlaps({ employeeEid: "1", startDate: "2026-01-01", endDate: "2026-01-10" }, { employeeEid: "1", startDate: "2026-01-10", endDate: "2026-01-20" }), true);
-  assert.equal(T.overlaps({ employeeEid: "1", startDate: "2026-01-01", endDate: "2026-01-10" }, { employeeEid: "2", startDate: "2026-01-05", endDate: "2026-01-20" }), false);
+  assert.equal(T.overlaps({ staffId: "1", startDate: "2026-01-01", endDate: "2026-01-10" }, { staffId: "1", startDate: "2026-01-10", endDate: "2026-01-20" }), true);
+  assert.equal(T.overlaps({ staffId: "1", startDate: "2026-01-01", endDate: "2026-01-10" }, { staffId: "2", startDate: "2026-01-05", endDate: "2026-01-20" }), false);
+  /* موظف أجير بلا صفّ دليل بعد (لا رحلات): لا تداخل ممكن. */
+  assert.equal(T.overlaps({ staffId: null, startDate: "2026-01-01", endDate: "2026-01-10" }, { staffId: null, startDate: "2026-01-01", endDate: "2026-01-10" }), false);
 });
 
 /* ─── الخادم: وحدة البيانات والموجّه على قاعدة مُزيَّفة في الذاكرة ─── */
+/* موظفو أجير في employees، وموظف ذروة في الدليل. مُختلَقون. */
+const AJEER = [
+  { eid: "1001", name: "أحمد محمد علي", job: "عامل", iqama: "2400000001", passport: "P1000001" },
+  { eid: "1003", name: "لامين مولا", job: "عامل تحميل وتنزيل", iqama: "2400000003", passport: "" },
+];
 function memoryDb({ missing = false } = {}) {
-  const db = { trips: [], audit: [], nextId: 1 };
+  const db = { trips: [], audit: [], nextId: 1, nextDir: 51,
+    dir: [{ id: 50, source_type: "droua", source_employee_eid: null, employee_number: "D-1", name: "خالد السعيد", job_title: "مدير الموارد البشرية", department: "الموارد البشرية", identity_number: "1000000001", active: true }] };
   const row = (t) => ({ ...t, id: String(t.id) });
+  const empRow = (e) => ({ eid: e.eid, name: e.name, data: { "اسم العامل": e.name, "المهنة": e.job, "رقم الإقامة": e.iqama, "رقم الجواز": e.passport, "الراتب الأساسي": 9999 } });
   const sql = makeFakeSql((call) => {
     const { text, values: v } = call;
     if (/INSERT INTO audit_log/.test(text)) { db.audit.push(v); return []; }
     if (/FROM settings/.test(text)) return [];
-    if (/SELECT eid, data FROM employees/.test(text)) return EMP.map((e) => ({ eid: e.eid, data: { "اسم العامل": e.name, "المهنة": e.job, "رقم الإقامة": e.iqama, "رقم الجواز": e.passport, "الراتب الأساسي": 9999 } }));
-    if (/SELECT eid FROM employees WHERE eid/.test(text)) return EMP.filter((e) => e.eid === v[0]).map((e) => ({ eid: e.eid }));
-    if (/employee_travel/.test(text) && missing) { const e = new Error('relation "employee_travel" does not exist'); e.code = "42P01"; throw e; }
-    if (/SELECT id FROM employee_travel WHERE employee_eid/.test(text)) {
-      const [eid, end, start, ex1] = v;
-      return db.trips.filter((t) => t.employee_eid === eid && t.start_date <= end && t.end_date >= start && (ex1 == null || String(t.id) !== String(ex1))).map((t) => ({ id: t.id }));
+    if (missing && /staff_directory|employee_travel/.test(text)) { const e = new Error('relation "staff_directory" does not exist'); e.code = "42P01"; throw e; }
+    if (/^SELECT e\.eid, e\.data FROM employees e ORDER BY e\.id/.test(text)) return AJEER.map(empRow);
+    if (/^SELECT eid, data FROM employees ORDER BY id/.test(text)) return AJEER.map(empRow);
+    if (/FROM staff_directory ORDER BY id/.test(text)) return db.dir.map((d) => ({ ...d }));
+    if (/^SELECT id, active FROM staff_directory WHERE id = \?/.test(text)) return db.dir.filter((d) => String(d.id) === String(v[0]));
+    if (/^SELECT eid, name, data FROM employees WHERE eid = \?/.test(text)) return AJEER.filter((e) => e.eid === v[0]).map(empRow);
+    if (/^INSERT INTO staff_directory/.test(text)) {
+      let d = db.dir.find((x) => x.source_employee_eid === v[0]);
+      if (d) Object.assign(d, { name: v[1], job_title: v[2] });
+      else db.dir.push(d = { id: db.nextDir++, source_type: "ajeer", source_employee_eid: v[0], employee_number: null, name: v[1], job_title: v[2], department: null, identity_number: null, active: true });
+      return [{ id: d.id }];
+    }
+    if (/^SELECT id FROM employee_travel WHERE staff_id = \?::bigint/.test(text)) {
+      const [sid, end, start, ex1] = v;
+      return db.trips.filter((t) => String(t.staff_id) === String(sid) && t.start_date <= end && t.end_date >= start && (ex1 == null || String(t.id) !== String(ex1))).map((t) => ({ id: t.id }));
     }
     if (/^INSERT INTO employee_travel/.test(text)) {
-      const t = { id: db.nextId++, employee_eid: v[0], start_date: v[1], end_date: v[2], visa_expiry_date: v[3], visa_number: v[4], visa_type: v[5], destination: v[6], notes: v[7], return_confirmed_at: v[8], created_by: v[10], created_by_name: v[11] };
+      const t = { id: db.nextId++, staff_id: v[0], start_date: v[1], end_date: v[2], visa_expiry_date: v[3], visa_number: v[4], visa_type: v[5], destination: v[6], notes: v[7], return_confirmed_at: v[8], created_by: v[10], created_by_name: v[11] };
       db.trips.push(t); return [row(t)];
     }
-    if (/^UPDATE employee_travel SET employee_eid/.test(text)) {
+    if (/^UPDATE employee_travel SET staff_id/.test(text)) {
       const t = db.trips.find((x) => String(x.id) === String(v[v.length - 1])); if (!t) return [];
-      Object.assign(t, { employee_eid: v[0], start_date: v[1], end_date: v[2], visa_expiry_date: v[3], visa_number: v[4], visa_type: v[5], destination: v[6], notes: v[7] });
+      Object.assign(t, { staff_id: v[0], start_date: v[1], end_date: v[2], visa_expiry_date: v[3], visa_number: v[4], visa_type: v[5], destination: v[6], notes: v[7] });
       if (v[8]) t.return_confirmed_at = null;
       return [row(t)];
     }
@@ -213,7 +246,7 @@ function memoryDb({ missing = false } = {}) {
     }
     if (/^DELETE FROM employee_travel/.test(text)) {
       const i = db.trips.findIndex((x) => String(x.id) === String(v[0])); if (i < 0) return [];
-      const [t] = db.trips.splice(i, 1); return [{ id: t.id, employee_eid: t.employee_eid }];
+      const [t] = db.trips.splice(i, 1); return [{ id: t.id, staff_id: t.staff_id }];
     }
     if (/FROM employee_travel WHERE id/.test(text)) return db.trips.filter((x) => String(x.id) === String(v[0])).map(row);
     if (/FROM employee_travel ORDER BY/.test(text)) return db.trips.map(row);
@@ -249,31 +282,72 @@ async function call(method, { body, query = {}, role = "hr", permissions } = {})
    نسبية لذلك اليوم لا لـTODAY الثابت. */
 const RIYADH_TODAY = require("../lib/data/staffTravel.js").today();
 const rd = (n) => { const [y, m, dd] = RIYADH_TODAY.split("-").map(Number); return new Date(Date.UTC(y, m - 1, dd + n)).toISOString().slice(0, 10); };
-const NEW = { employeeEid: "1001", startDate: rd(3), endDate: rd(30), visaExpiryDate: rd(20), visaNumber: "VN-123456789", visaType: "خروج وعودة", destination: "القاهرة" };
+const NEW = { person: "ajeer:1001", startDate: rd(3), endDate: rd(30), visaExpiryDate: rd(20), visaNumber: "VN-123456789", visaType: "خروج وعودة", destination: "القاهرة" };
 
-test("الموجّه: إضافة ثم قراءة — الرحلة مرتبطة بالموظف، والدليل بلا رواتب", async () => {
+test("الموجّه: رحلة لموظف أجير تُجسِّد صفّه في الدليل، والدليل موحَّد بلا تكرار ولا رواتب", async () => {
   const m = memoryDb(); harness.sql = m.sql;
   const r = await call("POST", { body: NEW });
   assert.equal(r.code, 200, JSON.stringify(r.json));
-  assert.equal(r.json.item.employeeEid, "1001");
+  const ajeerRow = m.db.dir.find((d) => d.source_employee_eid === "1001");
+  assert.ok(ajeerRow, "صفّ أجير يُنشأ عند أوّل رحلة");
+  assert.equal(r.json.item.staffId, String(ajeerRow.id));
+  assert.equal(ajeerRow.name, "أحمد محمد علي");
+  /* رحلة ثانية للشخص نفسه لا تُنشئ صفًّا ثانيًا. */
+  assert.equal((await call("POST", { body: { ...NEW, startDate: rd(60), endDate: rd(80), visaExpiryDate: rd(90) } })).code, 200);
+  assert.equal(m.db.dir.filter((d) => d.source_employee_eid === "1001").length, 1);
+
   const g = await call("GET");
   assert.equal(g.code, 200);
-  assert.equal(g.json.items.length, 1);
+  assert.equal(g.json.items.length, 2);
   assert.equal(g.json.setupRequired, false);
   assert.equal(g.json.thresholds.SOON_DAYS, 7);
-  assert.deepEqual(Object.keys(g.json.employees[0]).sort(), ["eid", "iqama", "job", "name", "passport"]);
-  assert.ok(!JSON.stringify(g.json.employees).includes("9999"));
+  const people = g.json.people;
+  assert.deepEqual(Object.keys(people[0]).sort(), ["active", "department", "identity", "job", "key", "missing", "name", "number", "passport", "source", "staffId"]);
+  /* اثنان من أجير + واحد من ذروة — صاحب الرحلات يظهر مرّة واحدة. */
+  assert.equal(people.length, 3);
+  assert.equal(people.filter((p) => p.number === "1001").length, 1);
+  assert.equal(people.find((p) => p.number === "1001").staffId, String(ajeerRow.id));
+  assert.equal(people.find((p) => p.number === "1003").staffId, null);
+  const droua = people.find((p) => p.source === "droua");
+  assert.deepEqual([droua.key, droua.name, droua.job], ["staff:50", "خالد السعيد", "مدير الموارد البشرية"]);
+  assert.ok(!JSON.stringify(people).includes("9999"));
+});
+
+test("الموجّه: رحلة لموظف ذروة، وتعديل الشخص، ومفاتيح فاسدة", async () => {
+  const m = memoryDb(); harness.sql = m.sql;
+  const r = await call("POST", { body: { ...NEW, person: "staff:50" } });
+  assert.equal(r.code, 200, JSON.stringify(r.json));
+  assert.equal(r.json.item.staffId, "50");
+  assert.equal(m.db.dir.length, 1, "ذروة: لا صفّ جديد");
+  const u = await call("PUT", { body: { id: r.json.item.id, person: "ajeer:1003" } });
+  assert.equal(u.code, 200, JSON.stringify(u.json));
+  assert.equal(u.json.item.staffId, String(m.db.dir.find((d) => d.source_employee_eid === "1003").id));
+  /* تعديل بلا person يُبقي صاحب الرحلة. */
+  const u2 = await call("PUT", { body: { id: r.json.item.id, notes: "ملاحظة" } });
+  assert.equal(u2.json.item.staffId, u.json.item.staffId);
+  for (const [person, re] of [["ajeer:7777", /غير موجود/], ["staff:999", /غير موجود/], ["bogus", /اختر الموظف/], ["staff:1;x", /اختر الموظف/]]) {
+    assert.match((await call("POST", { body: { ...NEW, person, startDate: rd(200), endDate: rd(210) } })).json.error, re, person);
+  }
+});
+
+test("الموجّه: الهوية والجواز في الدليل لمن يملك employees:view فقط", async () => {
+  harness.sql = memoryDb().sql;
+  const hr = await call("GET");
+  assert.equal(hr.json.people.find((p) => p.number === "1001").identity, "2400000001");
+  const viewOnly = await call("GET", { role: "viewer", permissions: ["staff_travel:view"] });
+  assert.equal(viewOnly.code, 200);
+  assert.ok(viewOnly.json.people.every((p) => p.identity === "" && p.passport === ""));
 });
 
 test("الموجّه: موظف غير موجود، وتداخل التواريخ، وتواريخ فاسدة — كلها تُرفض", async () => {
   const m = memoryDb(); harness.sql = m.sql;
   assert.equal((await call("POST", { body: NEW })).code, 200);
-  assert.match((await call("POST", { body: { ...NEW, employeeEid: "7777" } })).json.error, /غير موجود/);
+  assert.match((await call("POST", { body: { ...NEW, person: "ajeer:7777" } })).json.error, /غير موجود/);
   assert.match((await call("POST", { body: { ...NEW, startDate: rd(10), endDate: rd(40) } })).json.error, /تتداخل/);
   assert.match((await call("POST", { body: { ...NEW, endDate: rd(1) } })).json.error, /النهاية/);
   /* رحلة ثانية للموظف نفسه بلا تداخل: مسموحة (Employee → Many). */
   assert.equal((await call("POST", { body: { ...NEW, startDate: rd(60), endDate: rd(80), visaExpiryDate: rd(90) } })).code, 200);
-  assert.equal(m.db.trips.filter((t) => t.employee_eid === "1001").length, 2);
+  assert.equal(m.db.trips.length, 2);
 });
 
 test("الموجّه: تعديل رحلة وحذفها وتأكيد العودة", async () => {
@@ -311,16 +385,19 @@ test("سجلّ التدقيق لا يحمل رقم التأشيرة", async () =
   assert.ok(m.db.audit.some((v) => v[0] === "staff_travel_created"));
 });
 
-test("قبل إنشاء الجدول: القراءة فارغة مع setupRequired والكتابة برسالة واضحة", async () => {
+test("قبل هجرة الدليل: القراءة فارغة مع setupRequired وموظفو أجير وحدهم، والكتابة برسالة واضحة", async () => {
   const m = memoryDb({ missing: true }); harness.sql = m.sql;
   const g = await call("GET");
   assert.equal(g.code, 200);
   assert.equal(g.json.setupRequired, true);
   assert.deepEqual(g.json.items, []);
-  assert.equal(g.json.employees.length, 2);
+  assert.deepEqual(g.json.people.map((p) => p.key), ["ajeer:1001", "ajeer:1003"]);
   const p = await call("POST", { body: NEW });
   assert.equal(p.code, 400);
-  assert.match(p.json.error, /غير مُنشأ/);
+  assert.match(p.json.error, /غير مكتملة/);
+  /* عمود staff_id غائب (42703) يُعامَل مثل الجدول الغائب. */
+  const { isMissingTable } = require("../lib/data/staffTravel.js");
+  assert.ok(isMissingTable({ code: "42703", message: 'column "staff_id" does not exist' }));
 });
 
 /* ─── الصلاحيات ─── */
@@ -402,15 +479,9 @@ test("الهجرة: جدول مستقلّ بقيود وفهارس وتراجع �
   assert.doesNotMatch(read("lib/data/staffTravel.js"), /(INSERT INTO|FROM|UPDATE) audit_log/);
 });
 
-test("حذف موظف له رحلات يُرفض برسالة عربية واضحة (RESTRICT)", async () => {
-  harness.sql = makeFakeSql((call) => {
-    if (/DELETE FROM employees/.test(call.text)) { const e = new Error('update or delete on table "employees" violates foreign key constraint'); e.code = "23503"; throw e; }
-    return [];
-  });
-  harness.user = { id: "u1", role: "admin" };
-  harness.user.permissions = resolvePermissions(harness.user);
-  const res = { code: 0, json: null, setHeader() {}, status(c) { this.code = c; return this; }, json(o) { this.json = o; return this; } };
-  await handler({ method: "DELETE", query: { kind: "api", apiPath: "data/employees", id: "1001" }, headers: {}, body: {} }, res);
-  assert.equal(res.code, 409);
-  assert.match(res.json.error, /لديه رحلات مسجّلة/);
+test("لا بيانات وهمية في الصفحة: لا وضع عرض تجريبي ولا أسماء مضمَّنة", () => {
+  const js = read("staff-travel.js");
+  assert.doesNotMatch(js, /demo|enterDemo|عرض تجريبي/i);
+  assert.doesNotMatch(js, /state\.people = \[/);
+  assert.match(js, /state\.people = j\.people/);
 });

@@ -142,4 +142,4 @@ function main() {
 
 if (require.main === module) main();
 
-module.exports = { extract, render, unzip, COLUMNS };
+module.exports = { extract, render, unzip, readFirstSheet, COLUMNS };

@@ -9,41 +9,94 @@
 | الملفّ | الدور |
 |---|---|
 | `staff-travel-status.js` | المصدر الوحيد للحالات والشارات والتنبيهات والملخّص والتحقّق (متصفّح + خادم + اختبارات) |
-| `staff-travel-shell.html` · `staff-travel.js` · `staff-travel.css` | الصفحة |
-| `lib/data/staffTravel.js` | القراءة والكتابة على الجدول، ورفض التداخل، والموظف من السجلّ |
+| `staff-travel-shell.html` · `staff-travel.js` · `staff-travel.css` | الصفحة: بطاقات بشارة المصدر، فلتر الحالة، فلتر المصدر، منتقي الموظف |
+| `lib/data/staffTravel.js` | الرحلات: القراءة والكتابة ورفض التداخل |
+| `lib/data/staffDirectory.js` | الدليل الموحَّد: القائمة الموحَّدة، تحويل مفتاح الشخص إلى `staff_id`، منطق منع التكرار للاستيراد |
 | `api/app.js` → `handleStaffTravel` | `GET/POST/PUT/DELETE /api/data/staff-travel` |
-| `scripts/setup-staff-travel.js` | الهجرة — **طُبّقت 2026-11-02** بعد الاعتماد |
-| `test/staff-travel.test.js` | 26 اختبارًا |
+| `scripts/setup-staff-travel.js` | الهجرة 1 — `employee_travel` (طُبّقت 2026-11-02) |
+| `scripts/migrate-staff-directory.js` | الهجرة 2 — `staff_directory` وربط الرحلات به |
+| `scripts/import-staff-directory.js` | استيراد موظفي ذروة من التقرير — مرّة واحدة (**لم يُشغَّل: بانتظار التقرير**) |
+| `test/staff-travel.test.js` · `test/staff-directory.test.js` | 29 + 12 اختبارًا |
 
 لا دالّة خادمة جديدة (يبقى العدد 2)، ولا اعتماديات جديدة.
 
-## قاعدة البيانات — `employee_travel` (مُطبَّقة 2026-11-02)
+> ⚠️ Preview وProduction يتشاركان قاعدة Neon نفسها (`DATABASE_URL` واحد للبيئات الثلاث). الجداول إذن في قاعدة الإنتاج، لكن لا شيء يقرؤها هناك قبل دمج الفرع.
 
-> ⚠️ Preview وProduction يتشاركان قاعدة Neon نفسها (`DATABASE_URL` واحد للبيئات الثلاث). الجدول إذن موجود في قاعدة الإنتاج، لكن لا شيء يقرؤه هناك قبل دمج الفرع.
+## الدليل الموحَّد — `staff_directory`
+
+كل شخص يظهر مرّة واحدة، ومصدره معروف:
+
+- **أجير** — من `employees` القائم، **استعلام موحَّد حيّ** لا مزامنة: لا مهمّة تتقادم ولا إدخال يدوي. صفّ `staff_directory` لموظف أجير يُنشأ تلقائيًا **عند أوّل رحلة له فقط** (`ON CONFLICT` على `source_employee_eid`)، وتُحفظ فيه لقطة اسمه ومهنته؛ العرض يقرأ الاسم حيًّا من `employees`.
+- **ذروة** — صفوف `source_type = 'droua'`، تُستورد مرّة واحدة من تقرير قائمة الموظفين ثم تبقى في النظام.
 
 | العمود | النوع | ملاحظة |
 |---|---|---|
-| `id` | bigserial PK | |
-| `employee_eid` | text NOT NULL | FK → `employees(eid)` (text NOT NULL + UNIQUE `employees_eid_key` — مُتحقَّق منه على القاعدة) ON UPDATE CASCADE **ON DELETE RESTRICT** |
-| `start_date` · `end_date` · `visa_expiry_date` | date NOT NULL | CHECK `end_date >= start_date` |
-| `visa_number` · `visa_type` · `destination` · `notes` | text NULL | حدود طول 40 / 60 / 120 / 1000 |
-| `return_confirmed_at` · `return_confirmed_by` | timestamptz · text NULL | تأكيد العودة الفعلية — شرط حالة «عاد» |
-| `created_by` · `created_by_name` · `updated_by` | text | بلا FK (حسابات البيئة لا صفّ لها في users) |
-| `created_at` · `updated_at` | timestamptz DEFAULT now() | |
+| `id` | bigserial PK | ما تشير إليه الرحلة |
+| `source_type` | text NOT NULL | `droua` · `ajeer` (CHECK) |
+| `source_employee_eid` | text NULL | أجير فقط → `employees(eid)` ON UPDATE CASCADE **ON DELETE SET NULL**؛ فريد |
+| `employee_number` | text NULL | رقم موظف ذروة؛ فريد بين صفوف ذروة |
+| `name` | text NOT NULL | ذروة: من التقرير. أجير: لقطة تحفظ السجلّ إن حُذف الموظف |
+| `job_title` · `department` | text NULL | |
+| `identity_number` | text NULL | أرقام فقط (CHECK `^[0-9]{6,15}$`)؛ فريد بين صفوف ذروة — مفتاح منع التكرار |
+| `active` | boolean DEFAULT true | المعطَّل لا يظهر في المنتقي، وتبقى رحلاته |
+| `import_batch` | text NULL | دفعة الاستيراد — للتتبّع والتراجع |
+| `created_at` · `updated_at` | timestamptz | |
 
-فهارس: `(employee_eid, start_date DESC)` · `(end_date)` · `(visa_expiry_date)`.
+`CHECK (source_type <> 'droua' OR source_employee_eid IS NULL)`. لماذا `SET NULL` هنا: حذف موظف أجير من السجلّ لا يُمنع، ورحلاته تبقى بلقطة اسمه (يظهر «غير موجود في السجلّ»).
 
-العلاقة: Employee → Many Travel Records. التداخل بين رحلتين للموظف نفسه يُرفض في التطبيق.
+### `employee_travel` بعد الهجرة 2
 
-**RESTRICT لا CASCADE:** سجلّ السفر تاريخيّ. حذف موظف له رحلات يُرفض (409 برسالة عربية) بدل أن يمحو رحلاته ضمنًا؛ ولا حاجة لـSET NULL ولقطة اسم لأن صفّ الموظف يبقى دائمًا.
+`employee_eid` (→ `employees`) يُستبدل بـ **`staff_id bigint NOT NULL` → `staff_directory(id)` ON DELETE RESTRICT**: شخص له رحلات لا يُحذف من الدليل — يُعطَّل. فهرس `(staff_id, start_date DESC)`. بقية الأعمدة والقيود كما هي.
+
+### خطة الهجرة 2 (`migrate-staff-directory.js`) — معاملة واحدة
+
+1. فحص الحالة (قراءة) واختيار العبارات وفقها — إعادة التشغيل بعد النجاح لا تفعل شيئًا.
+2. إنشاء `staff_directory` وفهارسه الفريدة، وإضافة `staff_id` (فارغ مؤقتًا).
+3. لكل رحلة قائمة: تجسيد صفّ أجير لصاحبها، وملء `staff_id`.
+4. `staff_id` إلزامي — لو بقيت رحلة بلا ربط فشلت المعاملة كلّها ولم يتغيّر شيء.
+5. حذف العمود القديم `employee_eid` (ومعه قيده وفهرسه) — بعد نقل محتواه فقط.
 
 ```bash
-node scripts/setup-staff-travel.js --dry-run     # معاينة بلا اتّصال
-node scripts/setup-staff-travel.js               # التطبيق (بعد الاعتماد فقط)
-node scripts/setup-staff-travel.js --rollback --yes   # التراجع: DROP TABLE employee_travel
+node scripts/migrate-staff-directory.js --dry-run
+node scripts/migrate-staff-directory.js --apply
 ```
 
-قبل إنشاء الجدول: الصفحة تعرض تنبيهًا وتُعطّل الإضافة، وتتيح «عرض بيانات تجريبية» (أسماء وهمية في المتصفّح فقط — لا طلب كتابة واحد). وكذلك `?demo=1`.
+### التراجع (Rollback)
+
+```bash
+node scripts/migrate-staff-directory.js --rollback --dry-run
+node scripts/migrate-staff-directory.js --rollback --apply
+```
+
+معاملة واحدة تعيد `employee_eid` وتملؤه من الدليل وتعيد قيده `RESTRICT` وفهرسه، ثم تحذف `staff_id` و`staff_directory`. **يُرفض** إن وُجدت رحلات لموظفي ذروة (لا مكان لها في البنية القديمة) ما لم يُمرَّر `--drop-droua-trips` صراحةً. والتراجع عن دفعة استيراد وحدها: `import-staff-directory.js --undo-batch=<اسم> [--apply]` (يحذف صفوف الدفعة بلا رحلات ويعطّل ما له رحلات).
+
+## استيراد موظفي ذروة — مرّة واحدة (بانتظار التقرير)
+
+يقرأ xlsx أو csv، ويتعرّف على الأعمدة بعناوينها العربية أو الإنجليزية: رقم الموظف، الاسم، المسمّى، القسم، الهوية/الإقامة، حالة الموظف (غير النشط يُستورد معطَّلًا).
+
+```bash
+node scripts/import-staff-directory.js "<التقرير>.xlsx" --report=/خارج/المستودع/r.json   # معاينة، بلا كتابة
+node scripts/import-staff-directory.js "<التقرير>.xlsx" --apply --batch=droua-2026-11
+```
+
+**منع التكرار** — كل صفّ يُصنَّف قبل أي كتابة:
+
+| النتيجة | متى | ماذا يُكتب |
+|---|---|---|
+| `ajeer` | الهوية تطابق موظف أجير **واحدًا** | لا شيء — يظهر الشخص مرّة واحدة كأجير |
+| `new` | لا تطابق | صفّ ذروة |
+| `update` · `unchanged` | موجود في الدليل بالهوية أو الرقم (إعادة استيراد) | تحديث / لا شيء — لا صفّ ثانٍ أبدًا |
+| `review` | الهوية تطابق أكثر من موظف · بلا هوية والاسم يطابق أجير · رقم أو هوية مكرّران في الملف · الهوية والرقم يشيران إلى صفّين | **لا شيء**، و`--apply` يُرفض كلّه حتى يُحسم بـ`--assign=<رقم>=new\|skip\|ajeer:<eid>` |
+| `invalid` | الاسم أو الرقم ناقص | لا شيء |
+
+التقرير الكامل يُكتب خارج المستودع حصرًا، والهويات مُقنَّعة في الطباعة والتقرير.
+
+## واجهة الاختيار والعرض
+
+- منتقي الموظف: `الكل | ذروة | أجير` + بحث بالاسم أو الرقم الوظيفي أو الهوية/الإقامة؛ كل خيار `[ذروة] الاسم — المسمّى` بشارة المصدر.
+- البطاقات: شارة المصدر بجانب الاسم، وفلتر مصدر `الكل | ذروة | أجير` يعمل مع فلتر الحالة والبحث.
+- الهوية والجواز يُرسلان في الدليل لمن يملك `employees:view` فقط.
+- لا بيانات وهمية في الصفحة (أُزيل وضع العرض التجريبي): كل ما يُعرض من الخادم.
 
 ## الحالات التلقائية (لا تُخزَّن)
 
@@ -61,7 +114,7 @@ node scripts/setup-staff-travel.js --rollback --yes   # التراجع: DROP TAB
 
 ## التنبيهات (داخل الصفحة)
 
-سفر خلال 7 أيام · عودة خلال 7 أيام · تأشيرة تنتهي خلال 30 يومًا · تأشيرة منتهية · تأشيرة تنتهي قبل موعد العودة · تجاوز تاريخ العودة دون تأكيد (لآخر رحلة فقط؛ رحلة تُسجَّل بعد انتهائها مؤكَّدة ضمنًا).
+سفر خلال 7 أيام · عودة خلال 7 أيام · تأشيرة تنتهي خلال 30 يومًا · تأشيرة منتهية · تأشيرة تنتهي قبل موعد العودة · تجاوز تاريخ العودة دون تأكيد (ما لم تبدأ بعدها رحلة أخرى؛ رحلة تُسجَّل بعد انتهائها مؤكَّدة ضمنًا).
 
 ## الصلاحيات
 
@@ -69,9 +122,10 @@ node scripts/setup-staff-travel.js --rollback --yes   # التراجع: DROP TAB
 
 ## الأمان
 
-لا بيانات حقيقية في Git، ولا تخزين ملفّات، ولا `localStorage`. سجلّ التدقيق يحمل المعرّف ورقم الموظف فقط — لا رقم تأشيرة. دليل الموظفين في الاستجابة مختصر (الاسم، الرقم، المهنة، الإقامة، الجواز) بلا رواتب ولا حسابات.
+لا بيانات حقيقية في Git، ولا تخزين ملفّات، ولا `localStorage`. سجلّ التدقيق يحمل معرّف الرحلة و`staff_id` فقط — لا رقم تأشيرة ولا هوية. الدليل في الاستجابة مختصر بلا رواتب ولا حسابات، والهوية/الجواز لمن يملك `employees:view`.
 
 ## التراجع
 
-- الشيفرة: `git revert` لالتزامات الفرع (أو عدم الدمج).
-- القاعدة (إن طُبّقت الهجرة): `node scripts/setup-staff-travel.js --rollback --yes` — الجدول طرفٌ لا يعتمد عليه شيء.
+- الشيفرة: عدم الدمج، أو `git revert` لالتزامات الفرع.
+- الهجرة 2: `migrate-staff-directory.js --rollback` (أعلاه).
+- الهجرة 1: `setup-staff-travel.js --rollback --yes` — بعد التراجع عن الهجرة 2.

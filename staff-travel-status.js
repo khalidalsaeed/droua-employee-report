@@ -138,13 +138,15 @@ const StaffTravel = (function () {
   }
 
   /* موظف واحد = مجموعة رحلاته + الرحلة الممثِّلة. employees: [{eid,name,job,...}] */
-  function groupByEmployee(trips, employees, today, th) {
-    const byEid = new Map();
-    for (const e of employees || []) byEid.set(String(e.eid), e);
+  /* people: الدليل الموحَّد [{staffId, key, source, number, name, job, ...}].
+     المجموعة تُعرَّف بـstaffId (staff_directory.id) — ذروة وأجير بالمفتاح نفسه. */
+  function groupByEmployee(trips, people, today, th) {
+    const byId = new Map();
+    for (const p of people || []) if (p.staffId) byId.set(String(p.staffId), p);
     const groups = new Map();
     for (const trip of trips || []) {
-      const k = String(trip.employeeEid);
-      if (!groups.has(k)) groups.set(k, { eid: k, employee: byEid.get(k) || { eid: k, name: trip.employeeName || `موظف ${k}` }, trips: [] });
+      const k = String(trip.staffId);
+      if (!groups.has(k)) groups.set(k, { id: k, employee: byId.get(k) || { staffId: k, key: `staff:${k}`, source: "", number: "", name: `موظف ${k}` }, trips: [] });
       groups.get(k).trips.push(trip);
     }
     const out = [];
@@ -181,7 +183,7 @@ const StaffTravel = (function () {
       const name = g.employee.name;
       for (const trip of g.trips) {
         const st = tripStatus(trip, today, t);
-        const base = { eid: g.eid, tripId: trip.id, name };
+        const base = { gid: g.id, tripId: trip.id, name };
         if (st.key === "returned") continue;
         if (st.key === "soon") {
           out.push({ ...base, kind: "departure_soon", level: "warn",
@@ -237,12 +239,12 @@ const StaffTravel = (function () {
     const n = norm(q);
     if (!n) return true;
     const e = group.employee || {};
-    return [e.name, e.eid, e.iqama, e.passport].some((v) => v && norm(v).includes(n));
+    return [e.name, e.number, e.identity, e.passport, e.job, e.department].some((v) => v && norm(v).includes(n));
   }
 
   /* التحقّق من حقول النموذج — نفسه في المتصفّح والخادم. يرجع رسالة أو null. */
   function validateTrip(t) {
-    if (!t || !String(t.employeeEid || "").trim()) return "اختر الموظف";
+    if (!t || !String(t.person || t.staffId || "").trim()) return "اختر الموظف";
     if (!isIso(t.startDate)) return "تاريخ بداية الرحلة غير صالح";
     if (!isIso(t.endDate)) return "تاريخ نهاية الرحلة غير صالح";
     if (t.endDate < t.startDate) return "تاريخ النهاية يجب أن يكون في يوم البداية أو بعده";
@@ -257,7 +259,13 @@ const StaffTravel = (function () {
 
   /* رحلتان للموظف نفسه تتداخل أيامهما. */
   function overlaps(a, b) {
-    return String(a.employeeEid) === String(b.employeeEid) && a.startDate <= b.endDate && b.startDate <= a.endDate;
+    return !!a.staffId && String(a.staffId) === String(b.staffId) && a.startDate <= b.endDate && b.startDate <= a.endDate;
+  }
+
+  /* مصدر الموظف في الدليل الموحَّد. */
+  const SOURCES = { droua: "ذروة", ajeer: "أجير" };
+  function sourceMatches(p, src) {
+    return !src || src === "all" || (p && p.source === src);
   }
 
   /* إخفاء جزئي للعرض المختصر: آخر أربعة محارف فقط. */
@@ -270,7 +278,7 @@ const StaffTravel = (function () {
   return {
     DEFAULTS, STATUS, thresholds, isIso, dayNum, todayIso, fmt, days,
     tripStatus, visaStatus, visaBeforeReturn, primaryTrip, sortHistory,
-    groupByEmployee, alerts, summary, norm, matches, validateTrip, overlaps, mask,
+    groupByEmployee, alerts, summary, norm, matches, validateTrip, overlaps, mask, SOURCES, sourceMatches,
   };
 })();
 
