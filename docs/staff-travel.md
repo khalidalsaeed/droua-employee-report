@@ -12,12 +12,14 @@
 | `staff-travel-shell.html` · `staff-travel.js` · `staff-travel.css` | الصفحة |
 | `lib/data/staffTravel.js` | القراءة والكتابة على الجدول، ورفض التداخل، والموظف من السجلّ |
 | `api/app.js` → `handleStaffTravel` | `GET/POST/PUT/DELETE /api/data/staff-travel` |
-| `scripts/setup-staff-travel.js` | الهجرة (**لم تُشغَّل — بانتظار الاعتماد**) |
+| `scripts/setup-staff-travel.js` | الهجرة — **طُبّقت 2026-11-02** بعد الاعتماد |
 | `test/staff-travel.test.js` | 26 اختبارًا |
 
 لا دالّة خادمة جديدة (يبقى العدد 2)، ولا اعتماديات جديدة.
 
-## قاعدة البيانات — `employee_travel` (بانتظار الاعتماد)
+## قاعدة البيانات — `employee_travel` (مُطبَّقة 2026-11-02)
+
+> ⚠️ Preview وProduction يتشاركان قاعدة Neon نفسها (`DATABASE_URL` واحد للبيئات الثلاث). الجدول إذن موجود في قاعدة الإنتاج، لكن لا شيء يقرؤه هناك قبل دمج الفرع.
 
 | العمود | النوع | ملاحظة |
 |---|---|---|
