@@ -14,7 +14,7 @@
 | `lib/data/staffDirectory.js` | الدليل الموحَّد: القائمة الموحَّدة، تحويل مفتاح الشخص إلى `staff_id`، منطق منع التكرار للاستيراد |
 | `api/app.js` → `handleStaffTravel` | `GET/POST/PUT/DELETE /api/data/staff-travel` |
 | `scripts/setup-staff-travel.js` | الهجرة 1 — `employee_travel` (طُبّقت 2026-11-02) |
-| `scripts/migrate-staff-directory.js` | الهجرة 2 — `staff_directory` وربط الرحلات به |
+| `scripts/migrate-staff-directory.js` | الهجرة 2 — `staff_directory` وربط الرحلات به (**طُبّقت 2026-11-03**؛ نُقلت الرحلة القائمة الوحيدة بمحتواها وصاحبها كما هما) |
 | `scripts/import-staff-directory.js` | استيراد موظفي ذروة من التقرير — مرّة واحدة (**لم يُشغَّل: بانتظار التقرير**) |
 | `test/staff-travel.test.js` · `test/staff-directory.test.js` | 29 + 12 اختبارًا |
 
