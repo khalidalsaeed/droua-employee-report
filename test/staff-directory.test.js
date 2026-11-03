@@ -15,15 +15,15 @@ const { readFirstSheet } = require("../scripts/import-org-xlsx");
 /* الدليل الموحَّد: منع التكرار، والهجرة، والاستيراد. كل الأسماء والأرقام مُختلَقة. */
 
 const AJEER = [
-  { eid: "501", name: "لامين مولا", identity: "2400000501" },
-  { eid: "502", name: "شكيب مياه", identity: "2400000502" },
+  { eid: "501", name: "سليم الحارثي", identity: "2400000501" },
+  { eid: "502", name: "حامد الزهراني", identity: "2400000502" },
   { eid: "503", name: "توأم الاسم", identity: "2400000503" },
   { eid: "504", name: "توأم الاسم", identity: "2400000504" },
 ];
 
 /* ─── منع التكرار ─── */
 test("الهوية مفتاح المطابقة القويّ: موظف أجير واحد = لا صفّ ذروة (يظهر مرّة واحدة كأجير)", () => {
-  const [r] = dir.classifyImport([{ row: 2, number: "D-1", name: "Lamine Moula", job: "عامل", identity: "2400000501" }], { ajeer: AJEER });
+  const [r] = dir.classifyImport([{ row: 2, number: "D-1", name: "Salim Alharthi", job: "عامل", identity: "2400000501" }], { ajeer: AJEER });
   assert.equal(r.status, "ajeer");
   assert.equal(r.ajeerEid, "501");
 });
@@ -32,7 +32,7 @@ test("الالتباس يُعرض للمراجعة لا يُخمَّن", () => {
   const ajeer = [...AJEER, { eid: "509", name: "آخر", identity: "2400000501" }];
   const out = dir.classifyImport([
     { row: 2, number: "D-1", name: "س", identity: "2400000501" },        // هوية تطابق اثنين
-    { row: 3, number: "D-2", name: "شكيب مياه" },                       // بلا هوية والاسم يطابق أجير
+    { row: 3, number: "D-2", name: "حامد الزهراني" },                   // بلا هوية والاسم يطابق أجير
     { row: 4, number: "D-3", name: "أ", identity: "1000000003" },
     { row: 5, number: "D-3", name: "ب", identity: "1000000004" },        // رقم مكرّر داخل الملف
     { row: 6, number: "D-6", name: "ج", identity: "1000000006" },
@@ -63,7 +63,7 @@ test("جديد، وناقص، وإعادة الاستيراد لا تُنشئ ص
 });
 
 test("قرار المراجعة (--assign) يحسم الالتباس صراحةً", () => {
-  const rows = [{ row: 2, number: "D-2", name: "شكيب مياه" }, { row: 3, number: "D-3", name: "شكيب مياه" }, { row: 4, number: "D-4", name: "توأم الاسم" }];
+  const rows = [{ row: 2, number: "D-2", name: "حامد الزهراني" }, { row: 3, number: "D-3", name: "حامد الزهراني" }, { row: 4, number: "D-4", name: "توأم الاسم" }];
   const out = dir.classifyImport(rows, { ajeer: AJEER, assign: { "D-2": "ajeer:502", "D-3": "new", "D-4": "skip" } });
   assert.deepEqual(out.map((r) => [r.status, r.ajeerEid]), [["ajeer", "502"], ["new", undefined], ["skip", undefined]]);
   assert.deepEqual(imp.parseAssign(["--assign=D-2=ajeer:502", "--assign= D-3 =new"]), { "D-2": "ajeer:502", "D-3": "new" });
@@ -137,14 +137,14 @@ test("الاستيراد: يقرأ تقرير xlsx بعناوين عربية و�
     ["تقرير قائمة الموظفين"],
     [],
     ["رقم الموظف", "الاسم كاملاً باللغة العربية", "المسمى الوظيفي", "القسم", "رقم الهوية/الإقامة", "حالة الموظف"],
-    ["D-1", "خالد السعيد", "مدير الموارد البشرية", "الموارد البشرية", "1000000001", "نشط"],
+    ["D-1", "نايف العتيبي", "مدير الموارد البشرية", "الموارد البشرية", "1000000001", "نشط"],
     ["D-2", "ريم علي", "محاسبة", "المالية", "", "غير نشط"],
     [],
   ]);
   const { columns, rows } = imp.extract(readFirstSheet(bytes));
   assert.deepEqual(columns.sort(), ["department", "identity", "job", "name", "number", "status"]);
   assert.equal(rows.length, 2);
-  assert.deepEqual(rows[0], { row: 4, number: "D-1", name: "خالد السعيد", job: "مدير الموارد البشرية", department: "الموارد البشرية", identity: "1000000001", active: true });
+  assert.deepEqual(rows[0], { row: 4, number: "D-1", name: "نايف العتيبي", job: "مدير الموارد البشرية", department: "الموارد البشرية", identity: "1000000001", active: true });
   assert.equal(rows[1].active, false);
   assert.equal(rows[1].identity, null);
 });
@@ -184,4 +184,51 @@ test("لا تقرير موظفين ولا هويات حقيقية في المس�
   for (const f of ["lib/data/staffDirectory.js", "scripts/import-staff-directory.js", "scripts/migrate-staff-directory.js"]) {
     assert.doesNotMatch(fs.readFileSync(path.join(ROOT, f), "utf8"), /\b[12]\d{9}\b/, f);
   }
+});
+
+/* ─── رقم جسر: تقرير قائمة الموظفين يُصدَّر من جسر ─── */
+test("رقم جسر مفتاح قويّ مع حارس تقارب الاسم: اختلاف الإملاء يُطابَق، والاسم البعيد يُراجَع", () => {
+  const ajeer = [
+    { eid: "601", name: "سليم حارثي", jisr: "305" },
+    { eid: "602", name: "وليد", jisr: "0307" },
+    { eid: "603", name: "كمال يوسف", jisr: "312" },
+  ];
+  const out = dir.classifyImport([
+    { row: 2, number: "305", name: "سليم الحارثي" },   // إملاء مختلف للاسم نفسه
+    { row: 3, number: "307", name: "وليد سعيد" },      // أصفار بادئة في سجلّ أجير
+    { row: 4, number: "312", name: "يزن فاضل" },       // الرقم يطابق والاسم بعيد
+    { row: 5, number: "399", name: "سارة" },            // لا تطابق
+  ], { ajeer });
+  assert.deepEqual(out.map((r) => [r.status, r.ajeerEid]), [["ajeer", "601"], ["ajeer", "602"], ["review", "603"], ["new", undefined]]);
+  assert.match(out[0].reason, /اختلاف إملاء/);
+  assert.ok(out[0].similarity >= dir.SIMILAR_NAME && out[2].similarity < dir.SIMILAR_NAME);
+  /* معطَّل لتقرير ليس من جسر: الأرقام لا تُطابَق. */
+  const off = dir.classifyImport([{ row: 2, number: "305", name: "سليم الحارثي" }], { ajeer, jisrMatch: false });
+  assert.equal(off[0].status, "new");
+  /* رقم جسر مكرّر بين موظفي أجير: التباس. */
+  const dup = dir.classifyImport([{ row: 2, number: "305", name: "x" }], { ajeer: [...ajeer, { eid: "609", name: "y", jisr: "305" }] });
+  assert.equal(dup[0].status, "review");
+  assert.equal(dir.normalizeJisr("0307"), "307");
+});
+
+test("تقارب الأسماء: الإملاء المختلف للاسم نفسه مرتفع، والأسماء غير المترابطة منخفضة", () => {
+  assert.ok(dir.nameSimilarity("عبد الكريم ناصر", "عبدالكريم ناصر") > 0.8);
+  assert.ok(dir.nameSimilarity("مد فاروق", "مد فروق مد علي") >= 0.5);
+  assert.ok(dir.nameSimilarity("نادر سمير", "سليم الحارثي") < 0.2);
+  assert.equal(dir.nameSimilarity("", "أ"), 0);
+});
+
+test("قارئ xlsx يقبل الوسوم بنطاق اسم صريح (<x:row> <x:c>) — صيغة بعض الأنظمة", () => {
+  const sheet = buildXlsx([["الرقم الوظيفي", "الاسم كاملاً باللغة العربية", "القسم"], ["7", "اسم مختلق", "قسم"]]);
+  /* أعد كتابة ورقة المصنّف بنطاق x: — كما تُصدرها بعض الأنظمة. */
+  const { unzip } = require("../scripts/import-org-xlsx");
+  const { zip } = require("./helpers/workbook-builder");
+  const files = unzip(sheet);
+  const prefixed = [...files.entries()].map(([name, data]) => {
+    let xml = data.toString("utf8");
+    if (/worksheets\/sheet|sharedStrings/.test(name)) xml = xml.replace(/<(\/?)(worksheet|sheetData|row|c|v|sst|si|t)\b/g, "<$1x:$2");
+    return [name, xml];
+  });
+  const { rows } = imp.extract(readFirstSheet(zip(prefixed)));
+  assert.deepEqual(rows.map((r) => [r.number, r.name, r.department]), [["7", "اسم مختلق", "قسم"]]);
 });

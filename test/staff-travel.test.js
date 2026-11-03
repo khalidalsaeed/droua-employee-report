@@ -21,7 +21,7 @@ let seq = 0;
 const trip = (staffId, s, e, v, extra) => ({ id: String(++seq), staffId, startDate: d(s), endDate: d(e), visaExpiryDate: d(v), returnConfirmedAt: null, ...extra });
 /* الدليل الموحَّد كما يصل إلى الواجهة. أسماء وأرقام مُختلَقة. */
 const PEOPLE = [
-  { staffId: "1001", key: "ajeer:1001", source: "ajeer", number: "1001", name: "أحمد محمد علي", job: "عامل", department: "", identity: "2400000001", passport: "P1000001" },
+  { staffId: "1001", key: "ajeer:1001", source: "ajeer", number: "1001", name: "أنس فهد المطيري", job: "عامل", department: "", identity: "2400000001", passport: "P1000001" },
   { staffId: "1002", key: "staff:1002", source: "droua", number: "D-2", name: "سعود عبدالله", job: "سائق", department: "النقل", identity: "2400000002", passport: "" },
 ];
 
@@ -113,7 +113,7 @@ test("البطاقة تعرض الجارية، وإلا الأقرب قدومً�
   assert.equal(g.status.key, "overdue");
   [g] = T.groupByEmployee([old, { ...recent, returnConfirmedAt: "x" }], PEOPLE, TODAY);
   assert.equal(g.status.key, "returned");
-  assert.equal(g.employee.name, "أحمد محمد علي");
+  assert.equal(g.employee.name, "أنس فهد المطيري");
 });
 
 test("ترتيب البطاقات: بانتظار التأكيد ثم مسافر ثم قريب ثم مجدولة ثم عاد", () => {
@@ -166,7 +166,7 @@ test("الملخّص: مسافرون، قريبة، تأشيرات قريبة، 
 /* ─── البحث ─── */
 test("البحث بالاسم والرقم الوظيفي والإقامة والجواز، مع تطبيع العربية والأرقام", () => {
   const [g] = T.groupByEmployee([trip("1001", 1, 2, 3)], PEOPLE, TODAY);
-  for (const q of ["أحمد", "احمد", "محمد علي", "1001", "١٠٠١", "2400000001", "p1000001", ""]) assert.ok(T.matches(g, q), q);
+  for (const q of ["أنس", "انس", "فهد المطيري", "1001", "١٠٠١", "2400000001", "p1000001", ""]) assert.ok(T.matches(g, q), q);
   for (const q of ["سعود", "D-2", "9999"]) assert.ok(!T.matches(g, q), q);
 });
 
@@ -203,12 +203,12 @@ test("التحقّق: الموظف والتواريخ إلزامية، والن�
 /* ─── الخادم: وحدة البيانات والموجّه على قاعدة مُزيَّفة في الذاكرة ─── */
 /* موظفو أجير في employees، وموظف ذروة في الدليل. مُختلَقون. */
 const AJEER = [
-  { eid: "1001", name: "أحمد محمد علي", job: "عامل", iqama: "2400000001", passport: "P1000001" },
-  { eid: "1003", name: "لامين مولا", job: "عامل تحميل وتنزيل", iqama: "2400000003", passport: "" },
+  { eid: "1001", name: "أنس فهد المطيري", job: "عامل", iqama: "2400000001", passport: "P1000001" },
+  { eid: "1003", name: "يوسف عادل", job: "عامل تحميل وتنزيل", iqama: "2400000003", passport: "" },
 ];
 function memoryDb({ missing = false } = {}) {
   const db = { trips: [], audit: [], nextId: 1, nextDir: 51,
-    dir: [{ id: 50, source_type: "droua", source_employee_eid: null, employee_number: "D-1", name: "خالد السعيد", job_title: "مدير الموارد البشرية", department: "الموارد البشرية", identity_number: "1000000001", active: true }] };
+    dir: [{ id: 50, source_type: "droua", source_employee_eid: null, employee_number: "D-1", name: "نايف العتيبي", job_title: "مدير الموارد البشرية", department: "الموارد البشرية", identity_number: "1000000001", active: true }] };
   const row = (t) => ({ ...t, id: String(t.id) });
   const empRow = (e) => ({ eid: e.eid, name: e.name, data: { "اسم العامل": e.name, "المهنة": e.job, "رقم الإقامة": e.iqama, "رقم الجواز": e.passport, "الراتب الأساسي": 9999 } });
   const sql = makeFakeSql((call) => {
@@ -291,7 +291,7 @@ test("الموجّه: رحلة لموظف أجير تُجسِّد صفّه في 
   const ajeerRow = m.db.dir.find((d) => d.source_employee_eid === "1001");
   assert.ok(ajeerRow, "صفّ أجير يُنشأ عند أوّل رحلة");
   assert.equal(r.json.item.staffId, String(ajeerRow.id));
-  assert.equal(ajeerRow.name, "أحمد محمد علي");
+  assert.equal(ajeerRow.name, "أنس فهد المطيري");
   /* رحلة ثانية للشخص نفسه لا تُنشئ صفًّا ثانيًا. */
   assert.equal((await call("POST", { body: { ...NEW, startDate: rd(60), endDate: rd(80), visaExpiryDate: rd(90) } })).code, 200);
   assert.equal(m.db.dir.filter((d) => d.source_employee_eid === "1001").length, 1);
@@ -309,7 +309,7 @@ test("الموجّه: رحلة لموظف أجير تُجسِّد صفّه في 
   assert.equal(people.find((p) => p.number === "1001").staffId, String(ajeerRow.id));
   assert.equal(people.find((p) => p.number === "1003").staffId, null);
   const droua = people.find((p) => p.source === "droua");
-  assert.deepEqual([droua.key, droua.name, droua.job], ["staff:50", "خالد السعيد", "مدير الموارد البشرية"]);
+  assert.deepEqual([droua.key, droua.name, droua.job], ["staff:50", "نايف العتيبي", "مدير الموارد البشرية"]);
   assert.ok(!JSON.stringify(people).includes("9999"));
 });
 

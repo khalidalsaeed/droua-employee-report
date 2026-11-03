@@ -13,6 +13,7 @@
 
    الكتابة (--apply) في معاملة واحدة، وتُرفض ما بقي صفّ «review» دون حسم.
    الحسم بعد المراجعة: --assign=<رقم الموظف>=new|skip|ajeer:<eid> (يتكرّر).
+   رقم التقرير يُطابَق بـ«رقم جسر» لموظفي أجير (تقرير جسر)؛ --no-jisr-match يعطّله.
 
    التشغيل:
      node scripts/import-staff-directory.js "<التقرير>.xlsx" [--report=/خارج/المستودع/r.json]
@@ -114,6 +115,7 @@ function assertOutsideRepo(p) {
 async function loadContext(sql) {
   const ajeer = (await sql`SELECT eid, name, data FROM employees`).map((e) => ({
     eid: String(e.eid), name: (e.data && e.data["اسم العامل"]) || e.name, identity: e.data && e.data["رقم الإقامة"],
+    jisr: e.data && e.data["رقم جسر"],
   }));
   const existing = (await sql`SELECT id, employee_number, name, job_title, department, identity_number FROM staff_directory WHERE source_type = 'droua'`)
     .map((d) => ({ id: String(d.id), employeeNumber: d.employee_number, name: d.name, job: d.job_title, department: d.department, identity: d.identity_number }));
@@ -174,11 +176,12 @@ async function main() {
 
   const ctx = sql ? await loadContext(sql) : { ajeer: [], existing: [] };
   if (!sql) console.log("⚠️ بلا DATABASE_URL: تصنيف داخل الملف فقط، بلا مطابقة مع أجير أو الدليل. لا كتابة ممكنة.");
-  const result = dir.classifyImport(rows, { ...ctx, assign: parseAssign(argv) });
+  /* --no-jisr-match: لتقرير لا يأتي من جسر (رقمه الوظيفي ليس رقم جسر). */
+  const result = dir.classifyImport(rows, { ...ctx, assign: parseAssign(argv), jisrMatch: !argv.includes("--no-jisr-match") });
   const sum = summarize(result);
   console.log("الملخّص:", JSON.stringify(sum));
-  for (const r of result.filter((x) => x.status === "review" || x.status === "invalid")) {
-    console.log(`  صفّ ${r.row} [${r.status}] رقم ${r.number || "—"}: ${r.reason}${r.candidates ? ` (مرشّحو أجير: ${r.candidates.join("، ")})` : ""}`);
+  for (const r of result.filter((x) => x.status === "review" || x.status === "invalid" || x.status === "ajeer")) {
+    console.log(`  صفّ ${r.row} [${r.status}] رقم ${r.number || "—"}${r.ajeerEid ? ` → أجير ${r.ajeerEid}` : ""}${r.similarity != null ? ` (تقارب ${r.similarity})` : ""}: ${r.reason}${r.candidates ? ` (مرشّحو أجير: ${r.candidates.join("، ")})` : ""}`);
   }
   if (reportPath) {
     fs.writeFileSync(reportPath, JSON.stringify({ file: path.basename(file), summary: sum, rows: result.map(safe) }, null, 2));
