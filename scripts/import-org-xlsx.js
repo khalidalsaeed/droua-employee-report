@@ -59,28 +59,30 @@ function unzip(buf) {
 
 const decode = (s) => s.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&apos;/g, "'")
   .replace(/&#(\d+);/g, (_, d) => String.fromCodePoint(+d)).replace(/&amp;/g, "&");
-const textOf = (xml) => [...xml.matchAll(/<t\b[^>]*>([\s\S]*?)<\/t>/g)].map((m) => decode(m[1])).join("");
+/* البادئة الاختيارية (?:\w+:)? — بعض الأنظمة تُصدر الوسوم بنطاق اسم صريح
+   (<x:row> <x:c> <x:t>) وهو xlsx صالح؛ بدونها كان المصنّف يُقرأ صفرَ صفوف. */
+const textOf = (xml) => [...xml.matchAll(/<(?:\w+:)?t\b[^>]*>([\s\S]*?)<\/(?:\w+:)?t>/g)].map((m) => decode(m[1])).join("");
 const colIndex = (ref) => [...ref.replace(/\d+/g, "")].reduce((n, ch) => n * 26 + ch.charCodeAt(0) - 64, 0) - 1;
 
 function readFirstSheet(bytes) {
   const zip = unzip(bytes);
   const sstXml = zip.get("xl/sharedStrings.xml");
-  const sst = sstXml ? [...sstXml.toString("utf8").matchAll(/<si\b[^>]*>([\s\S]*?)<\/si>/g)].map((m) => textOf(m[1])) : [];
+  const sst = sstXml ? [...sstXml.toString("utf8").matchAll(/<(?:\w+:)?si\b[^>]*>([\s\S]*?)<\/(?:\w+:)?si>/g)].map((m) => textOf(m[1])) : [];
   const sheetKey = [...zip.keys()].filter((k) => /^xl\/worksheets\/sheet\d+\.xml$/.test(k)).sort()[0];
   if (!sheetKey) throw new Error("لا ورقة في المصنّف");
   const xml = zip.get(sheetKey).toString("utf8");
   const rows = [];
-  for (const rm of xml.matchAll(/<row\b([^>]*)>([\s\S]*?)<\/row>/g)) {
+  for (const rm of xml.matchAll(/<(?:\w+:)?row\b([^>]*)>([\s\S]*?)<\/(?:\w+:)?row>/g)) {
     const rowNo = Number((/\br="(\d+)"/.exec(rm[1]) || [])[1]);
     const cells = [];
-    for (const cm of rm[2].matchAll(/<c\b([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g)) {
+    for (const cm of rm[2].matchAll(/<(?:\w+:)?c\b([^>]*?)(?:\/>|>([\s\S]*?)<\/(?:\w+:)?c>)/g)) {
       const attrs = cm[1], body = cm[2] || "";
       const ref = (/\br="([A-Z]+\d+)"/.exec(attrs) || [])[1];
       const type = (/\bt="([^"]+)"/.exec(attrs) || [])[1];
       let v = null;
       if (type === "inlineStr") v = textOf(body);
       else {
-        const raw = (/<v>([\s\S]*?)<\/v>/.exec(body) || [])[1];
+        const raw = (/<(?:\w+:)?v>([\s\S]*?)<\/(?:\w+:)?v>/.exec(body) || [])[1];
         if (raw != null) v = type === "s" ? sst[Number(raw)] : decode(raw);
       }
       if (ref) cells[colIndex(ref)] = v;
@@ -142,4 +144,4 @@ function main() {
 
 if (require.main === module) main();
 
-module.exports = { extract, render, unzip, COLUMNS };
+module.exports = { extract, render, unzip, readFirstSheet, COLUMNS };
