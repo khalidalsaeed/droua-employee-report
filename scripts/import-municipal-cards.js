@@ -163,6 +163,8 @@ async function apply(items, oidcToken) {
       sourceFileHash: it.row.sourceFileHash,
       createdAt: previous ? previous.createdAt : now,
       updatedAt: now,
+      /* سجلّ التجديد من الواجهة يبقى مع البطاقة إذا أعاد السكربت استيرادها. */
+      history: previous ? previous.history || [] : [],
     };
     const uploads = [[entry.cardKey, it.face]].concat(it.qr ? [[entry.qrKey, it.qr]] : []);
     for (const [key, bytes] of uploads) {
@@ -190,7 +192,7 @@ async function removeAll(oidcToken) {
   const store = require("../lib/municipal/store");
   const index = await store.readIndex(oidcToken, { fresh: true });
   await store.writeIndex({ version: 1, cards: [] }, oidcToken);
-  await store.deleteObjects(index.cards.flatMap((e) => [e.cardKey, e.qrKey]).filter(Boolean), oidcToken);
+  await store.deleteObjects(index.cards.flatMap(store.allObjectKeys), oidcToken);
   console.log(`حُذفت ${index.cards.length} بطاقة من المتجر، والفهرس فارغ.`);
 }
 

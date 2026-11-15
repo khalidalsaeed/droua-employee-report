@@ -9,6 +9,7 @@ const {
   PAGE_PERMISSION,
   SECTION_BY_KEY,
   hasPermission,
+  canRenew,
   resolvePermissions,
   usesRoleDefaults,
   sanitizePermissions,
@@ -950,6 +951,10 @@ async function handleFiles(req, res, action) {
      الخاصّ — قراءةٌ بـmunicipal:view. */
   if (action === "municipal-card-image") return filesMunicipalObject(req, res, actor, "card");
   if (action === "municipal-qr") return filesMunicipalObject(req, res, actor, "qr");
+  /* «تجديد المستند»: رفع المستند المجدَّد على بطاقة قائمة. صلاحية التجديد
+     مستقلّة عن العرض (canRenew في lib/auth/permissions.js). */
+  if (action === "municipal-renew") return filesRenewDocument(req, res, actor, "municipal");
+  if (action === "ajeer-renew") return filesRenewDocument(req, res, actor, "ajeer");
 
   const fileAction = action === "upload" ? "upload_files" : action === "delete" ? "delete_files" : null;
   if (!fileAction) return res.status(404).json({ ok: false, error: "Not found" });
@@ -1274,6 +1279,72 @@ async function filesMunicipalObject(req, res, actor, kind) {
     console.error("municipal card object not served:", err && err.message);
     return notFound();
   }
+}
+
+/* ─── «تجديد المستند» — البلدية وأجير بمسار واحد ───
+   الجسم: بايتات الـPDF الخام. الاستعلام: id=<cardId> (البلدية) أو
+   permit=<رقم التصريح> (أجير). القراءة والمطابقة والتحقّق كلها هنا على
+   الخادم (lib/municipal/renew.js، lib/ajeer/renew.js، والقواعد المشتركة في
+   lib/renewal/rules.js) — لا شيء يُكتب ما لم تنجح كلها. الرفض 422 بـ
+   { stage, reason, message } تعرضه شاشة التقدّم على خطوته نفسها.
+   الاستجابة لا تحمل مفتاح تخزين ولا رابط ملفّ. */
+async function filesRenewDocument(req, res, actor, kind) {
+  if (req.method !== "POST") return res.status(405).json({ ok: false, error: "Method not allowed" });
+  if (!canRenew(actor, kind)) return res.status(403).json(FORBIDDEN);
+  res.setHeader("Cache-Control", "private, no-store");
+  const q = req.query || {};
+  let body;
+  try {
+    body = await readRequestBody(req);
+  } catch (err) {
+    return res.status(413).json({ ok: false, stage: "read", reason: "too_large", error: "حجم الملف كبير جدًا" });
+  }
+  if (!body || !body.length) return res.status(400).json({ ok: false, stage: "read", reason: "empty", error: "الملف فارغ" });
+  if (!looksLikePdf(body)) {
+    return res.status(422).json({ ok: false, stage: "read", reason: "unreadable", error: "المستند تالف أو غير مدعوم — ارفع ملف PDF" });
+  }
+  const { getSql } = require("../lib/db");
+  let out;
+  try {
+    if (kind === "municipal") {
+      const store = require("../lib/municipal/store");
+      if (!store.configured()) return res.status(404).json({ ok: false, error: "البطاقات البلدية غير مُهيّأة" });
+      out = await require("../lib/municipal/renew").renewMunicipalCard({
+        cardId: String(q.id || ""), pdf: body, actor, oidcToken: req.headers["x-vercel-oidc-token"], sql: getSql(),
+      });
+    } else {
+      const permitNo = String(q.permit || "");
+      if (!permitNo || permitNo.length > 64) return res.status(400).json({ ok: false, error: "رقم التصريح مطلوب" });
+      out = await require("../lib/ajeer/renew").renewAjeerPermit({
+        permitNo, pdf: body, actor, sql: getSql(), permits: getResource("permits"), upload: uploadFile, remove: deleteFile,
+      });
+    }
+  } catch (err) {
+    console.error(`${kind} renewal failed:`, err && err.message);
+    return res.status(500).json({ ok: false, stage: "verify", reason: "server_error", error: "تعذّر إكمال التجديد — لم يتغيّر شيء، أعد المحاولة" });
+  }
+
+  const targetId = kind === "municipal" ? String(q.id || "") : String(q.permit || "");
+  if (!out.ok) {
+    logEvent({
+      type: kind === "municipal" ? "municipal_card_renewal_rejected" : "ajeer_permit_renewal_rejected",
+      actorEmail: actor.email, actorId: actor.id, targetId,
+      meta: { stage: out.stage, reason: out.reason },
+    });
+    return res.status(out.httpStatus || 422).json({
+      ok: false, stage: out.stage, reason: out.reason, error: out.message,
+      otherEmployee: out.otherEmployee || null, previousExpiry: out.previousExpiry || null, newExpiry: out.newExpiry || null,
+    });
+  }
+  const s = out.summary;
+  logEvent({
+    type: kind === "municipal" ? "municipal_card_renewed" : "ajeer_permit_renewed",
+    actorEmail: actor.email, actorId: actor.id, targetId,
+    meta: { previousNumber: s.previousNumber, newNumber: s.newNumber, previousExpiry: s.previousExpiry, newExpiry: s.newExpiry },
+  });
+  const item = kind === "municipal" ? getResource("municipal-cards").toItem(out.entry) : out.item;
+  if (item && kind === "ajeer") delete item.file; // لا رابط ملفّ في استجابة التجديد
+  return res.status(200).json({ ok: true, summary: s, item });
 }
 
 async function filesDelete(req, res, actor) {

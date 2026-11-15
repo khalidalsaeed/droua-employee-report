@@ -63,6 +63,34 @@
     return { m, name: (m && m.e[o.F.name]) || it.nameOnCard || "", role: (m && m.e[o.F.job]) || it.occupation || "" };
   }
 
+  /* «تجديد المستند» بصلاحية municipal:manage — منفصلة عن العرض. */
+  const canRenew = () => !!root.DocRenewal && AdminUI.can("municipal", "manage");
+
+  function openRenew(cardId) {
+    const it = S.items.find((x) => x.cardId === cardId);
+    if (!it) return;
+    const p = personOf(it);
+    root.DocRenewal.open({
+      kind: "municipal", id: it.cardId, employeeName: p.name,
+      currentNumber: it.certificateNumber, currentExpiry: it.expiryDate, history: it.history,
+      statusOf: (iso) => { const st = statusOf({ expiryDate: iso }); return { label: st.label, cls: st.cls }; },
+      onSuccess: (item) => applyRenewed(item),
+    });
+  }
+
+  /* البطاقة تتحدّث في مكانها بلا إعادة تحميل: الحقول الجديدة، والإصدار
+     الجديد يكسر ذاكرة صورتي الوجه والرمز. */
+  function applyRenewed(item) {
+    if (!item || !ID_RE.test(String(item.cardId || ""))) return;
+    const i = S.items.findIndex((x) => x.cardId === item.cardId);
+    if (i < 0) return;
+    S.items[i] = item;
+    fillDepartments();
+    render();
+    const el = S.opts.grid.querySelector(`[data-card="${item.cardId}"]`);
+    if (el && root.DocRenewal) root.DocRenewal.flash(el);
+  }
+
   const cardUrl = (it) => `/api/files/municipal-card-image?id=${it.cardId}&v=${encodeURIComponent(it.version || "")}`;
   const qrUrl = (it, dl) => `/api/files/municipal-qr?id=${it.cardId}&v=${encodeURIComponent(it.version || "")}${dl ? "&download=1" : ""}`;
 
@@ -84,6 +112,7 @@
         </div>
         ${it.hasQr ? `<button type="button" class="mc-qr-btn" data-qr="${it.cardId}" aria-label="عرض الباركود الخاص بـ${esc(p.name || it.certificateNumber)}">
           <span>عرض الباركود</span>${icon("qr", 20)}</button>` : `<div class="mc-qr-btn is-empty">لا يوجد باركود في الملف</div>`}
+        ${canRenew() ? root.DocRenewal.buttonHtml("municipal", it.cardId, p.name) : ""}
       </article>`;
   }
 
@@ -201,6 +230,8 @@
     o.grid.addEventListener("click", (ev) => {
       const q = ev.target.closest("[data-qr]");
       if (q) { openQr(q.dataset.qr); return; }
+      const rn = ev.target.closest("[data-renew]");
+      if (rn) { openRenew(rn.dataset.renewId); return; }
       const emp = ev.target.closest("[data-open-emp]");
       if (emp && o.openEmployee) o.openEmployee(Number(emp.dataset.openEmp));
     });
@@ -221,5 +252,5 @@
     return reload();
   }
 
-  root.MunicipalCards = { mount, statusOf, _state: S };
+  root.MunicipalCards = { mount, statusOf, applyRenewed, _state: S };
 })(window);

@@ -454,6 +454,7 @@ footer.site{border-top:1px solid var(--hair);margin-top:30px}
 <link rel="stylesheet" href="/employee-photos.css?v=2">
 <link rel="stylesheet" href="/municipal-cards.css?v=3">
 <link rel="stylesheet" href="/ajeer-cards.css?v=1">
+<link rel="stylesheet" href="/doc-renewal.css?v=2">
 <link rel="stylesheet" href="/update-tour.css?v=1">
 <!-- منع الوميض: يجب أن ترتفع طبقة الترحيب قبل أوّل رسم للجسم، وإلّا لمح
      المستخدم النظام قبل الترحيب. سطر مضمّن عمدًا — أي ملف خارجي يصل بعد
@@ -814,7 +815,8 @@ try{ if(sessionStorage.getItem("droua:welcome")==="1") document.documentElement.
 <script src="/org-core.js?v=1"></script>
 <script src="/employee-photos.js?v=1"></script>
 <script src="/org-chart.js?v=2"></script>
-<script src="/municipal-cards.js?v=3"></script>
+<script src="/doc-renewal.js?v=2"></script>
+<script src="/municipal-cards.js?v=4"></script>
 <!-- جولة التحديثات: تُستدعى في آخر boot() بعد رسم الأقسام التي تشرحها. -->
 <script src="/update-tour.js?v=2"></script>
 <script>
@@ -1344,6 +1346,7 @@ function ajeerCard(p,i){
       ${ajIcon("chev",18)}
     </button>`:`<div class="aj-qr-btn is-empty">${ajIcon("qr",18)}<span>لا يوجد باركود — يُستخرج من ملف التصريح</span></div>`}
     ${p.file?`<div class="aj-links"><a href="${esc(p.file)}" target="_blank" rel="noopener">فتح ملف PDF</a><a href="${esc(p.file)}" download>تحميل</a></div>`:""}
+    ${DocRenewal.canRenew("ajeer")?DocRenewal.buttonHtml("ajeer",p.permit,name):""}
     ${AdminUI.canAny("ajeer",["edit","delete"])?`<div class="admin-row-actions" data-permit-actions="${esc(p.permit)}">
       ${AdminUI.can("ajeer","edit")?`<button class="admin-mini-btn" data-act="edit-permit" data-permit="${esc(p.permit)}">تعديل</button>`:""}
       ${AdminUI.can("ajeer","delete")?`<button class="admin-mini-btn danger" data-act="delete-permit" data-permit="${esc(p.permit)}">حذف</button>`:""}
@@ -1374,6 +1377,8 @@ function renderAjeer(){
 }
 /* نقرة واحدة مفوَّضة للقسم: الباركود، صفحة التصريح كاملة، ملف الموظف. */
 document.getElementById("ajeerSec").addEventListener("click",ev=>{
+  const rn=ev.target.closest("[data-renew]");
+  if(rn){openAjeerRenew(rn.dataset.renewId);return;}
   const q=ev.target.closest("[data-aj-qr]");
   if(q&&!q.disabled){openAjeerQr(q.dataset.ajQr);return;}
   const d=ev.target.closest("[data-aj-doc]");
@@ -1394,6 +1399,24 @@ document.addEventListener("error",ev=>{
   if(big)big.innerHTML=`<p class="aj-qr-fail">تعذّر تحميل الرمز — أعد المحاولة.</p>`;
 },true);
 
+/* «تجديد المستند» (doc-renewal.js): رفع التصريح الجديد على بطاقة الموظف.
+   الخادم يُنشئ التصريح الجديد ويُبقي السابق أثرًا في السجلّ، فبعد النجاح
+   تُعاد قراءة التصاريح وتعرض البطاقة الأحدث لهذه الإقامة في مكانها. */
+function openAjeerRenew(permitNo){
+  const p=AJEER_LATEST.find(x=>x.permit===permitNo);
+  if(!p)return;
+  const who=ajeerPerson(p);
+  DocRenewal.open({
+    kind:"ajeer",id:p.permit,employeeName:who.name||p.nameOnPermit,
+    currentNumber:p.permit,currentExpiry:p.expiryDate,
+    statusOf:iso=>{const st=ajeerStatusOf(iso);return {label:ajeerStatusLabel(st),cls:st.cls==="warn2"?"bad":st.cls};},
+    onSuccess:async item=>{
+      await refreshPermits();
+      const el=item&&document.querySelector(`#ajeerSec [data-permit-card="${CSS.escape(item.permit)}"]`);
+      if(el){DocRenewal.flash(el);}
+    },
+  });
+}
 /* ── نوافذ أجير: الباركود الأصلي، وصفحة التصريح كاملة ── */
 let ajModal=null;
 function ajOpenLayer(html,labelId,wide){
