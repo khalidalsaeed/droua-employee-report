@@ -42,7 +42,15 @@ async function main() {
   const sql = getSql();
   const report = { before: await counts(sql) };
   assert.equal(report.before.test_runs, 0, `المسير الوهمي ${TEST_RUN} موجود مسبقًا — توقّف`);
+  /* رقم جسر يُقرأ حيًّا بربطٍ مع سجلّ الموظف، والموظفون الوهميون بلا سجلّ —
+     فيُكمَّل لهم وحدهم هنا كي يُقرأ المستحقّ. القراءة نفسها حقيقية. */
+  const jisrOf = Object.fromEntries(EMPS.map((e) => [e.eid, e.jisrNo]));
   const deps = {
+    getRun: async (id) => {
+      const run = await payrollRuns.get(id);
+      if (run && id === TEST_RUN) run.employees = run.employees.map((e) => ({ ...e, jisrNo: e.jisrNo || jisrOf[e.eid] || null }));
+      return run;
+    },
     listEmployees: async () => EMPS.map((e) => ({ "الرقم الوظيفي": e.eid, "اسم العامل": e.name, IBAN: e.iban })),
     fetchFile: async () => Buffer.from("x"),
     extractRoster: async () => ({ ok: true, staff: EMPS.map((e) => ({ jisrNo: e.jisrNo, net: e.expected / 100 })) }),
