@@ -427,6 +427,7 @@ async function handleData(req, res, resource) {
   if (resource === "tickets") return handleTickets(req, res, actor);
   if (resource === "municipal-cards") return handleMunicipalCards(req, res, actor);
   if (resource === "staff-travel") return handleStaffTravel(req, res, actor);
+  if (resource === "payroll-transfers") return handlePayrollTransfers(req, res, actor);
 
   const mod = getResource(resource);
   if (!mod || !mod.section) return res.status(404).json({ ok: false, error: "قسم بيانات غير معروف" });
@@ -478,6 +479,40 @@ async function handleData(req, res, resource) {
     res.status(405).json({ ok: false, error: "Method not allowed" });
   } catch (err) {
     res.status(400).json({ ok: false, error: (err && err.message) || "تعذّر تنفيذ العملية" });
+  }
+}
+
+/* ---------------- مطابقة ملفّ التحويل البنكي لمسير الرواتب ----------------
+   GET  ?run=2026-10          → الحالة الحالية + سجلّ الملفّات (payroll:view)
+   POST ?run=2026-10[&replace=1] جسمٌ خام هو الملفّ نفسه (payroll:reconcile)
+
+   الملفّ يُقرأ في الذاكرة ولا يُكتب إلى Blob ولا إلى أي رابط. والصلاحيتان
+   منفصلتان: من يرى المسير لا يرفع ملفّ البنك. الأخطاء تُرجع رمزًا ثابتًا
+   (exists / wrong_period / scanned_pdf …) تبني عليه الواجهة، ولا تحمل شيئًا
+   من محتوى الملفّ. */
+async function handlePayrollTransfers(req, res, actor) {
+  const transfers = require("../lib/payroll/transfers/service");
+  const runId = String((req.query || {}).run || "");
+  if (!/^\d{4}-\d{2}$/.test(runId)) return res.status(400).json({ ok: false, error: "معرّف المسير غير صالح" });
+  try {
+    if (req.method === "GET") {
+      if (!hasPermission(actor, "payroll", "view")) return res.status(403).json(FORBIDDEN);
+      return res.status(200).json({ ok: true, ...(await transfers.getState(runId)) });
+    }
+    if (req.method === "POST") {
+      if (!hasPermission(actor, "payroll", "reconcile")) return res.status(403).json(FORBIDDEN);
+      const bytes = await readRequestBody(req);
+      const fileName = decodeURIComponent(String(req.headers["x-filename"] || "transfer"));
+      const replace = String((req.query || {}).replace || "") === "1";
+      const state = await transfers.reconcileUpload({ runId, bytes, fileName, replace, actor });
+      return res.status(200).json({ ok: true, ...state });
+    }
+    return res.status(405).json({ ok: false, error: "Method not allowed" });
+  } catch (err) {
+    if (err instanceof transfers.ReconcileError) return res.status(err.status).json({ ok: false, code: err.code, error: err.message });
+    /* لا err.message هنا: قد يحمل خطأ قاعدةٍ قيمًا من الاستعلام. */
+    console.error("payroll transfers failed:", err && err.code);
+    return res.status(500).json({ ok: false, code: "internal", error: "تعذّرت معالجة ملفّ التحويل" });
   }
 }
 

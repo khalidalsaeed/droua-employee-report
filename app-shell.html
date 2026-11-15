@@ -1584,6 +1584,7 @@ function openDrawer(i){
         ${drRow("رقم الحساب",clean(e[F.acc]),1)}
         ${drRow("الآيبان (IBAN)",clean(e[F.iban]),1)}
         ${drRow("اسم المستفيد (كما في البنك)",clean(e[F.benef]),1)}
+        ${e["طريقة صرف الراتب"]?drRow("طريقة صرف الراتب",clean(e["طريقة صرف الراتب"])):""}
       </div></div>
 
       ${e[F.note]?`<div class="dr-group"><div class="gt">ملاحظات</div><div class="dl">${drRow("ملاحظة",AdminUI.esc(e[F.note]))}</div></div>`:""}
@@ -1669,6 +1670,11 @@ const EMP_FIELD_SPECS={
     {key:"acc",label:"رقم الحساب",type:"text"},
     {key:"iban",label:"الآيبان (IBAN)",type:"text"},
     {key:"benef",label:"اسم المستفيد (كما في البنك)",type:"text"},
+    /* يُقرأ في مطابقة ملفّ التحويل البنكي لمسير الرواتب: «نقدي» يُخرج
+       الموظف من المطابقة البنكية بدل أن يظهر «لم يُعثر على تحويل». الغياب
+       = تحويل بنكي. يُخزَّن في JSONB كبقية الحقول — بلا هجرة. */
+    {key:"طريقة صرف الراتب",raw:true,label:"طريقة صرف الراتب",type:"select",options:["","تحويل بنكي","نقدي"],
+      hint:"«نقدي» يستثني الموظف من مطابقة ملف التحويل البنكي في مسير الرواتب."},
   ],
   notes:[
     {key:"note",label:"ملاحظات",type:"textarea"},
@@ -1679,6 +1685,10 @@ function fieldInputHtml(spec,value,disabled){
   const id=`ef_${spec.key}`;
   if(spec.type==="checkbox"){
     return `<div class="admin-field"><label style="flex-direction:row;align-items:center;gap:8px;display:flex"><input type="checkbox" id="${id}" ${value?"checked":""}> ${AdminUI.esc(spec.label)}</label></div>`;
+  }
+  if(spec.type==="select"){
+    const opts=spec.options.map(o=>`<option value="${AdminUI.esc(o)}" ${String(value==null?"":value)===o?"selected":""}>${AdminUI.esc(o||"— غير محدّد (تحويل بنكي) —")}</option>`).join("");
+    return `<div class="admin-field"><label for="${id}">${AdminUI.esc(spec.label)}</label><select class="in" id="${id}" ${disabled?"disabled":""}>${opts}</select>${spec.hint?`<div class="hint">${AdminUI.esc(spec.hint)}</div>`:""}</div>`;
   }
   if(spec.type==="textarea"){
     return `<div class="admin-field"><label for="${id}">${AdminUI.esc(spec.label)}</label><textarea class="in" id="${id}" rows="4">${AdminUI.esc(value==null?"":value)}</textarea></div>`;

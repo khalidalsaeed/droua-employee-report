@@ -68,14 +68,66 @@ main.block{padding-block:20px}
 .emp-ident{min-width:0}
 .emp-name{font-size:14px;font-weight:600;color:var(--ink);overflow-wrap:anywhere}
 .emp-meta{font-size:11.5px;color:var(--ink-soft);margin-top:2px}
-/* البطاقة الصغيرة نفسها */
-.proof-card{flex:none;border:1px solid var(--hair-2);border-radius:10px;background:var(--paper-2);padding:8px 10px}
-@media(min-width:768px){.proof-card{min-width:300px}}
-.proof-label{font-size:11.5px;font-weight:700;color:var(--ink-soft);line-height:1.5}
-.proof-sub{font-size:11.5px;color:var(--ink-soft);margin-top:1px}
-.proof-file{display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--ok);margin-top:1px;overflow-wrap:anywhere}
-.proof-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
-.proof-actions .admin-mini-btn,.proof-actions .mini-btn{font-size:11.5px;padding:5px 10px}
+/* ─── حالة التحويل (ملفّ تحويل واحد للشهر) ─── */
+.tx-file{background:var(--paper);border:1px solid var(--hair);border-radius:12px;padding:14px 16px;margin-bottom:12px}
+.tx-file-top{display:flex;flex-direction:column;gap:10px}
+@media(min-width:768px){.tx-file-top{flex-direction:row;align-items:center;justify-content:space-between}}
+.tx-file-top>*{min-width:0}
+.tx-file-name{font-size:14px;font-weight:600;color:var(--ink);overflow-wrap:anywhere}
+.tx-file-meta{font-size:12px;color:var(--ink-soft);margin-top:2px;overflow-wrap:anywhere}
+.tx-file-actions{display:flex;gap:8px;flex-wrap:wrap}
+.tx-note{font-size:12.5px;color:var(--ink-soft);margin-top:10px;line-height:1.7}
+.tx-note.warn{color:var(--warn)}
+.tx-chips{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:12px}
+@media(min-width:768px){.tx-chips{grid-template-columns:repeat(5,minmax(0,1fr))}}
+.tx-chip{display:flex;flex-direction:column;gap:2px;align-items:flex-start;text-align:start;border:1px solid var(--hair-2);background:var(--paper-2);border-radius:10px;padding:8px 10px;cursor:pointer;font-family:var(--sans);color:var(--ink);min-width:0;transition:border-color .2s,background .2s}
+.tx-chip .n{font-size:18px;font-weight:700;font-variant-numeric:tabular-nums}
+.tx-chip .l{font-size:11.5px;color:var(--ink-soft);overflow-wrap:anywhere}
+.tx-chip.on{border-color:var(--slate);background:var(--hair-2)}
+.tx-chip.ok .n{color:var(--ok)} .tx-chip.warn .n{color:var(--warn)} .tx-chip.bad .n{color:var(--bad)} .tx-chip.review .n{color:#B5651D}
+.tx-review-btn{margin-top:10px}
+.tx-status{flex:none;border:1px solid var(--hair-2);border-radius:10px;background:var(--paper-2);padding:8px 10px;min-width:0}
+@media(min-width:768px){.tx-status{width:300px}}
+.tx-status-label{font-size:11px;font-weight:700;color:var(--ink-soft)}
+.tx-badge{display:inline-flex;align-items:center;gap:5px;font-size:12.5px;font-weight:700;margin-top:2px}
+.tx-badge.matched{color:var(--ok)} .tx-badge.amount_mismatch{color:var(--warn)} .tx-badge.not_found{color:var(--bad)}
+.tx-badge.needs_review{color:#B5651D} .tx-badge.cash,.tx-badge.pending{color:var(--ink-soft)}
+.tx-sub{font-size:11.5px;color:var(--ink-soft);margin-top:2px;line-height:1.6;overflow-wrap:anywhere}
+.tx-diff{display:grid;grid-template-columns:auto 1fr;gap:0 10px;font-size:11.5px;margin-top:4px}
+.tx-diff dt{color:var(--ink-soft)} .tx-diff dd{margin:0;font-variant-numeric:tabular-nums}
+.tx-diff dd.neg{color:var(--bad)} .tx-diff dd.pos{color:var(--warn)}
+.tx-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+.tx-actions .mini-btn{font-size:11.5px;padding:4px 10px}
+.tx-legacy{font-size:11px;color:var(--ink-soft);margin-top:6px;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.tx-legacy .mini-btn{font-size:11px;padding:3px 8px}
+.emp-row.is-hidden{display:none}
+.tx-more{margin-top:14px;background:var(--paper);border:1px solid var(--hair);border-radius:12px;padding:0 14px}
+.tx-more>summary{cursor:pointer;padding:12px 0;font-size:13px;font-weight:700;color:var(--ink-soft);list-style-position:inside}
+.tx-more-list{display:flex;flex-direction:column;gap:8px;padding-bottom:12px}
+.tx-item{border-top:1px solid var(--hair-2);padding-top:8px;font-size:12px;color:var(--ink);line-height:1.7;overflow-wrap:anywhere}
+.tx-item .s{color:var(--ink-soft)}
+.tx-pill{display:inline-block;font-size:10.5px;padding:1px 8px;border-radius:999px;background:var(--hair-2);color:var(--ink-soft);margin-inline-start:6px}
+.tx-pill.cur{background:var(--ok-bg);color:var(--ok)}
+/* تقدّم المعالجة: خطوات تظهر علامتها تدريجيًا — لا مؤشّر دوّار وحده. */
+.tx-steps{list-style:none;margin:4px 0 0;padding:0;display:flex;flex-direction:column;gap:12px}
+.tx-step{display:flex;align-items:center;gap:10px;font-size:14px;color:var(--ink-soft);opacity:.45;transition:opacity .3s,color .3s}
+.tx-step.active,.tx-step.done{opacity:1;color:var(--ink)}
+.tx-step.fail{opacity:1;color:var(--bad)}
+.tx-step .dot{flex:none;width:22px;height:22px;border-radius:50%;border:2px solid var(--hair);display:inline-flex;align-items:center;justify-content:center;transition:background .3s,border-color .3s}
+.tx-step.active .dot{border-color:var(--slate);border-top-color:transparent;animation:spin .9s linear infinite}
+.tx-step.done .dot{background:var(--ok);border-color:var(--ok);animation:none}
+.tx-step.fail .dot{background:var(--bad);border-color:var(--bad);animation:none}
+.tx-step .dot svg{opacity:0;transform:scale(.4);transition:opacity .25s,transform .3s var(--ease)}
+.tx-step.done .dot svg,.tx-step.fail .dot svg{opacity:1;transform:none}
+.tx-step-err{font-size:13px;color:var(--bad);line-height:1.7;margin-top:12px}
+.tx-summary-title{font-size:16px;font-weight:700;color:var(--ok);margin:0 0 10px}
+.tx-summary-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px;font-size:14px}
+.tx-summary-list li{display:flex;align-items:center;gap:8px}
+.tx-summary-list li{opacity:0;transform:translateY(6px);animation:txIn .35s var(--ease) forwards}
+@keyframes txIn{to{opacity:1;transform:none}}
+.tx-dl{display:grid;grid-template-columns:auto 1fr;gap:8px 14px;margin:0;font-size:14px}
+.tx-dl dt{color:var(--ink-soft)} .tx-dl dd{margin:0;overflow-wrap:anywhere}
+@media(prefers-reduced-motion:reduce){.tx-step .dot,.tx-step.active .dot{animation:none}.tx-summary-list li{animation:none;opacity:1;transform:none}}
 .empty-note{padding:40px 20px;text-align:center;color:var(--ink-soft)}
 .access-denied{text-align:center;padding:56px 20px;color:var(--ink-soft)}
 .num{font-variant-numeric:tabular-nums;direction:ltr;unicode-bidi:embed;display:inline-block}
@@ -300,65 +352,313 @@ function editAttachmentNote(key, currentNote){
     }catch(err){ AdminUI.showError(modal, err.message); }
   });
 }
-/* ─── إثبات تحويل راتب الموظف ───
-   ملف واحد مستقلّ لكل موظف. الرفع يمرّ على نقطة الرفع العامّة نفسها
-   (payroll:upload_files) ببادئة تحمل معرّف المسير ورقم ضمان، ثم
-   يُربط بالسجلّ بـPUT يحمل eid صراحةً — والخادم يكتب صفًّا واحدًا
-   مقيَّدًا بـ(run_id, employee_eid) فلا يختلط إثبات بموظف آخر.
+/* ─── حالة التحويل: ملفّ تحويل واحد للشهر ───
+   بدل إثبات مستقلّ لكل موظف: يُرفع ملفّ التحويل البنكي مرّة واحدة، والخادم
+   يقرؤه في الذاكرة (لا يُخزَّن الملفّ ولا يُعطى رابطًا) ويطابقه على موظفي
+   المسير بالآيبان ثم رقم الحساب ثم رقم الموظف — والاسم تعزيزٌ فقط، والمبلغ
+   للمقارنة فقط. النتيجة لكل موظف تُعرض هنا.
 
-   الصيغ المسموحة PDF/JPG/JPEG/PNG. سمة accept هنا للتجربة، والرفض
-   الحقيقي في lib/data/payrollRuns.js على الخادم. */
-const PROOF_ACCEPT="application/pdf,image/jpeg,image/png";
+   الرفع بصلاحية payroll:reconcile وحدها، لا upload_files. والحساب يصل
+   مقنَّعًا من الخادم (SA••••••1234) — الصفحة لا ترى رقمًا كاملًا أبدًا.
 
-function proofCard(emp, monthLabel){
-  const has=!!(emp.proof && emp.proof.fileUrl);
-  const mayUpload=AdminUI.can("payroll","upload_files");
-  const mayDeleteFile=AdminUI.can("payroll","delete_files");
-  const label=`إثبات تحويل راتب ${emp.name} — ${monthLabel}`;
-  return `<div class="proof-card">
-    <div class="proof-label">إثبات تحويل راتب الموظف</div>
-    ${has
-      ? `<div class="proof-file">
-           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
-           مرفق${emp.proof.uploadedAt?` · <span class="num">${fmtDate(emp.proof.uploadedAt)}</span>`:""}
-         </div>`
-      : `<div class="proof-sub">إرفاق إثبات التحويل</div>`}
-    <div class="proof-actions">
-      ${has?`
-        <button class="mini-btn" data-act="proof-preview" data-file="${esc(emp.proof.fileUrl)}" data-label="${esc(label)}">عرض</button>
-        <a class="mini-btn" href="${esc(emp.proof.fileUrl)}" download>تنزيل</a>`:""}
-      ${mayUpload?`<label class="admin-mini-btn" style="cursor:pointer">
-        ${has?"استبدال":"رفع الملف"}
-        <input type="file" accept="${PROOF_ACCEPT}" style="display:none" data-act="proof-upload" data-eid="${esc(emp.eid)}">
-      </label>`:""}
-      ${has&&mayDeleteFile?`<button class="admin-mini-btn danger" data-act="proof-delete" data-eid="${esc(emp.eid)}">حذف</button>`:""}
-    </div>
-  </div>`;
+   الإثباتات القديمة (ملفّ لكل موظف) تبقى ظاهرةً للعرض فقط تحت «إثبات سابق». */
+let TX={setup:true,current:null,matches:{},history:[]};
+let TX_FILTER=null;            // null = الكل، أو مفتاح حالة، أو "attention"
+let CURRENT_RUN=null;
+const TX_ACCEPT=".pdf,.xlsx,.csv,application/pdf,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+
+const TX_STATUS={
+  matched:{icon:"✅",label:"تم التحويل",chip:"ok"},
+  amount_mismatch:{icon:"⚠️",label:"مبلغ التحويل غير مطابق",short:"غير مطابق",chip:"warn"},
+  not_found:{icon:"❌",label:"لم يتم العثور على تحويل",short:"غير موجود",chip:"bad"},
+  needs_review:{icon:"🔶",label:"بحاجة مراجعة",chip:"review"},
+  cash:{icon:"💵",label:"صرف نقدي — خارج المطابقة البنكية",short:"نقدي",chip:""},
+};
+const TX_REASON={
+  multiple_transfers:"أكثر من تحويل محتمل",
+  duplicate_reference:"رقم المرجع مكرّر في الملف",
+  key_conflict:"تعارض بين الآيبان ورقم الموظف",
+  shared_iban:"الآيبان مسجّل لأكثر من موظف",
+  name_only:"تحويل محتمل بالاسم فقط — الحساب لا يطابق",
+  no_expected_amount:"لا يوجد مبلغ مستحق للمقارنة (كشف المسير غير مقروء)",
+  cash_with_transfer:"موظف نقدي لكن وُجد تحويل بحسابه",
+  ambiguous_amount:"أكثر من مبلغ في سطر التحويل",
+  invalid_iban:"آيبان غير صالح في الملف",
+  no_identifier_match:"لا يطابق آيبان أو حساب أي موظف",
+};
+const BASIS_LABEL={iban:"الآيبان",account:"رقم الحساب",emp_no:"رقم الموظف",name:"الاسم (ترشيح فقط)"};
+const sar=(n)=>n==null?"—":Number(n).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});
+const signed=(n)=>n==null?"—":(n>0?"+":n<0?"−":"")+sar(Math.abs(n));
+function fmtDateTime(s){ if(!s) return "—"; const d=new Date(s); if(isNaN(d)) return "—"; return `${fmtDate(s)} · ${d.toLocaleTimeString("ar-SA-u-nu-latn",{hour:"2-digit",minute:"2-digit"})}`; }
+const CHECK_SVG=`<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>`;
+const CROSS_SVG=`<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>`;
+
+async function loadTransfers(){
+  try{
+    const r=await fetch(`/api/data/payroll-transfers?run=${encodeURIComponent(RUN_ID)}`);
+    const j=await r.json();
+    if(r.ok&&j.ok){ TX={setup:j.setup,current:j.current,matches:j.matches||{},history:j.history||[]}; return; }
+  }catch(e){}
+  TX={setup:true,current:null,matches:{},history:[],loadError:true};
 }
 
-function employeeRow(emp, monthLabel){
-  return `<div class="emp-row">
+function txStatusCell(emp){
+  const m=TX.matches[emp.eid];
+  const legacy=emp.proof&&emp.proof.fileUrl?`<div class="tx-legacy">إثبات سابق (أرشيف)${emp.proof.uploadedAt?` · <span class="num">${fmtDate(emp.proof.uploadedAt)}</span>`:""}
+      <button class="mini-btn" data-act="legacy-preview" data-file="${esc(emp.proof.fileUrl)}" data-label="${esc(`إثبات تحويل سابق — ${emp.name}`)}">عرض</button></div>`:"";
+  if(!m){
+    return `<div class="tx-status"><div class="tx-status-label">حالة التحويل</div>
+      <div class="tx-badge pending">⏳ ${TX.current?"غير مشمول في المطابقة":"بانتظار ملف التحويل"}</div>${legacy}</div>`;
+  }
+  const cfg=TX_STATUS[m.status]||{icon:"",label:m.status};
+  let body="";
+  if(m.status==="matched"){
+    body=`<div class="tx-sub"><span class="num">${sar(m.transferred)}</span> ر.س${m.date?` · <span class="num">${esc(m.date)}</span>`:""}${m.reference?` · مرجع <span class="num">${esc(m.reference)}</span>`:""}</div>
+      ${m.nameMismatch?`<div class="tx-sub" style="color:var(--warn)">اسم المستفيد في الملف يختلف عن اسم الموظف</div>`:""}`;
+  }else if(m.status==="amount_mismatch"){
+    body=`<dl class="tx-diff"><dt>المستحق</dt><dd class="num">${sar(m.expected)}</dd><dt>المحوّل</dt><dd class="num">${sar(m.transferred)}</dd>
+      <dt>الفرق</dt><dd class="num ${m.diff<0?"neg":"pos"}">${signed(m.diff)}</dd></dl>`;
+  }else if(m.status==="needs_review"){
+    body=`<div class="tx-sub">${esc(TX_REASON[m.reason]||"تحويل غير واضح لمن")}${m.candidates>1?` — <span class="num">${m.candidates}</span> تحويلات`:""}</div>`;
+  }else if(m.status==="not_found"&&m.expected!=null){
+    body=`<div class="tx-sub">المستحق <span class="num">${sar(m.expected)}</span> ر.س</div>`;
+  }
+  const hasDetails=m.transferred!=null||m.account||m.beneficiaryName;
+  return `<div class="tx-status"><div class="tx-status-label">حالة التحويل</div>
+    <div class="tx-badge ${esc(m.status)}">${cfg.icon} ${esc(cfg.label)}</div>${body}
+    ${hasDetails?`<div class="tx-actions"><button class="mini-btn" data-act="tx-details" data-eid="${esc(emp.eid)}">عرض التفاصيل</button></div>`:""}
+    ${legacy}</div>`;
+}
+
+function employeeRow(emp){
+  const m=TX.matches[emp.eid];
+  return `<div class="emp-row" data-status="${esc(m?m.status:"pending")}">
     <div class="emp-ident">
       <div class="emp-name">${esc(emp.name)}</div>
       <div class="emp-meta">رقم ضمان <span class="num">${esc(emp.eid)}</span>${emp.jisrNo?` · رقم جسر <span class="num">${esc(emp.jisrNo)}</span>`:""}${emp.jobTitle?` · ${esc(emp.jobTitle)}`:""}</div>
     </div>
-    ${proofCard(emp, monthLabel)}
+    ${txStatusCell(emp)}
   </div>`;
 }
 
-async function uploadProof(eid, file, onProgress){
-  const url=await AdminUI.uploadFile(file, `payroll/${RUN_ID}/proofs/${eid}`, "payroll", onProgress);
-  await AdminUI.api("PUT","/api/data/payroll-runs",{id:RUN_ID, proofs:[{eid, fileUrl:url, fileName:file.name}]});
-  await loadRun();
-  AdminUI.toastOk("تم رفع إثبات التحويل");
+function txFileCard(run){
+  const mayReconcile=AdminUI.can("payroll","reconcile");
+  const cur=TX.current;
+  if(!TX.setup){
+    return `<div class="tx-file"><div class="tx-file-name">ملف التحويل البنكي — ${esc(run.monthLabel)}</div>
+      <div class="tx-note warn">ميزة مطابقة ملف التحويل جاهزة، وبانتظار اعتماد تهيئة قاعدة البيانات قبل التفعيل. الإثباتات السابقة تبقى معروضة كما هي.</div></div>`;
+  }
+  const btn=mayReconcile?`<label class="admin-mini-btn" style="cursor:pointer" id="txUploadLabel">${cur?"استبدال ملف التحويل":"رفع ملف التحويل"}
+      <input type="file" accept="${TX_ACCEPT}" style="display:none" id="txFileInput"></label>`:"";
+  if(!cur){
+    return `<div class="tx-file"><div class="tx-file-top"><div>
+        <div class="tx-file-name">ملف التحويل البنكي — ${esc(run.monthLabel)}</div>
+        <div class="tx-file-meta">لم يُرفع ملف التحويل لهذا الشهر بعد. ملف واحد للشهر كاملًا (PDF أو Excel أو CSV)، ويُطابَق تلقائيًا على موظفي المسير.</div>
+      </div><div class="tx-file-actions">${btn}</div></div>
+      ${TX.loadError?`<div class="tx-note warn">تعذّر تحميل حالة المطابقة — حدّث الصفحة.</div>`:""}</div>`;
+  }
+  const c=cur.counts;
+  const chip=(key,n,label,cls)=>`<button type="button" class="tx-chip ${cls} ${TX_FILTER===key?"on":""}" data-act="tx-filter" data-key="${key}"><span class="n num">${n}</span><span class="l">${label}</span></button>`;
+  const attention=c.amount_mismatch+c.not_found+c.needs_review;
+  return `<div class="tx-file"><div class="tx-file-top"><div>
+      <div class="tx-file-name">${esc(cur.fileName)}</div>
+      <div class="tx-file-meta">رُفع ${fmtDateTime(cur.uploadedAt)}${cur.uploadedBy?` · بواسطة ${esc(cur.uploadedBy)}`:""} · <span class="num">${c.transfers}</span> تحويل في الملف</div>
+    </div><div class="tx-file-actions">${btn}</div></div>
+    <div class="tx-chips">
+      ${chip("matched",c.matched,"تم التحويل","ok")}
+      ${chip("amount_mismatch",c.amount_mismatch,"مبلغ غير مطابق","warn")}
+      ${chip("not_found",c.not_found,"لم يُعثر على تحويل","bad")}
+      ${chip("needs_review",c.needs_review,"بحاجة مراجعة","review")}
+      ${chip("cash",c.cash,"صرف نقدي","")}
+    </div>
+    ${attention?`<button type="button" class="mini-btn tx-review-btn" data-act="tx-filter" data-key="attention">عرض الحالات التي تحتاج مراجعة · <span class="num">${attention}</span></button>`:""}
+    ${TX_FILTER?`<button type="button" class="mini-btn tx-review-btn" data-act="tx-filter" data-key="">عرض الكل</button>`:""}
+    ${cur.expectedSource!=="jisr_sheet"?`<div class="tx-note warn">تعذّرت قراءة صافي الرواتب من كشف المسير المرفوع، فلم تُقارن المبالغ. ارفع كشف المسير ثم أعد رفع ملف التحويل.</div>`:""}
+  </div>`;
 }
-async function deleteProof(eid){
-  if(!await AdminUI.confirmDanger("هل أنت متأكد من حذف إثبات التحويل لهذا الموظف؟ لا يمكن التراجع عن هذا الإجراء.")) return;
+
+function txUnassigned(){
+  const list=(TX.current&&TX.current.unassigned)||[];
+  if(!list.length) return "";
+  return `<details class="tx-more"><summary>تحويلات في الملف لم تُسند لأي موظف · <span class="num">${list.length}</span></summary>
+    <div class="tx-more-list">${list.map(u=>`<div class="tx-item">
+      ${esc(u.beneficiaryName||"بلا اسم")} · <span class="num">${esc(u.account||"—")}</span> · <span class="num">${sar(u.amount)}</span> ر.س
+      <div class="s">${esc(TX_REASON[u.reason]||u.reason)}${u.reference?` · مرجع <span class="num">${esc(u.reference)}</span>`:""}${u.date?` · <span class="num">${esc(u.date)}</span>`:""}</div></div>`).join("")}</div></details>`;
+}
+
+function txHistory(){
+  if(!TX.history.length) return "";
+  return `<details class="tx-more"><summary>سجل ملفات التحويل لهذا الشهر · <span class="num">${TX.history.length}</span></summary>
+    <div class="tx-more-list">${TX.history.map(h=>{const c=h.counts;return `<div class="tx-item">
+      ${esc(h.fileName)}<span class="tx-pill ${h.replacedAt?"":"cur"}">${h.replacedAt?"مستبدَل":"الحالي"}</span>
+      <div class="s">رُفع ${fmtDateTime(h.uploadedAt)}${h.uploadedBy?` · ${esc(h.uploadedBy)}`:""}${h.replacedAt?` · استُبدل ${fmtDateTime(h.replacedAt)}${h.replacedBy?` · ${esc(h.replacedBy)}`:""}`:""}</div>
+      <div class="s">مطابق <span class="num">${c.matched}</span> · غير مطابق <span class="num">${c.amount_mismatch}</span> · غير موجود <span class="num">${c.not_found}</span> · مراجعة <span class="num">${c.needs_review}</span></div>
+    </div>`;}).join("")}</div></details>`;
+}
+
+function applyTxFilter(){
+  const content=document.getElementById("detailContent");
+  content.querySelectorAll(".emp-row").forEach(row=>{
+    const st=row.dataset.status;
+    const show=!TX_FILTER||(TX_FILTER==="attention"?["amount_mismatch","not_found","needs_review"].includes(st):st===TX_FILTER);
+    row.classList.toggle("is-hidden",!show);
+  });
+}
+
+function setTxFilter(key){
+  TX_FILTER=key||null;
+  renderRun(CURRENT_RUN);
+  if(TX_FILTER){ const list=document.querySelector(".proofs-list"); if(list) list.scrollIntoView({behavior:"smooth",block:"start"}); }
+}
+
+function openTxDetails(eid){
+  const emp=(CURRENT_RUN.employees||[]).find(e=>e.eid===eid);
+  const m=TX.matches[eid];
+  if(!emp||!m) return;
+  const cfg=TX_STATUS[m.status]||{label:m.status,icon:""};
+  const row=(k,v)=>v==null||v===""?"":`<dt>${k}</dt><dd>${v}</dd>`;
+  AdminUI.openModal(`
+    <div class="admin-mhead"><button class="admin-mclose" data-admin-close aria-label="إغلاق">✕</button><h3>تفاصيل التحويل</h3></div>
+    <div class="admin-mbody">
+      <p style="margin:0 0 12px;font-weight:600">${esc(emp.name)}</p>
+      <dl class="tx-dl">
+        ${row("الحالة",`${cfg.icon} ${esc(cfg.label)}`)}
+        ${row("المبلغ المحوّل",m.transferred!=null?`<span class="num">${sar(m.transferred)}</span> ر.س`:null)}
+        ${row("المبلغ المستحق",m.expected!=null?`<span class="num">${sar(m.expected)}</span> ر.س`:null)}
+        ${m.status==="amount_mismatch"?row("الفرق",`<span class="num">${signed(m.diff)}</span> ر.س`):""}
+        ${row("رقم المرجع",m.reference?`<span class="num">${esc(m.reference)}</span>`:null)}
+        ${row("تاريخ التحويل",m.date?`<span class="num">${esc(m.date)}</span>`:null)}
+        ${row("الحساب",m.account?`<span class="num">${esc(m.account)}</span>`:null)}
+        ${row("اسم المستفيد في الملف",m.beneficiaryName?esc(m.beneficiaryName):null)}
+        ${row("البنك",m.bank?esc(m.bank):null)}
+        ${row("أساس المطابقة",m.basis?esc(BASIS_LABEL[m.basis]||m.basis):null)}
+        ${m.status==="needs_review"?row("سبب المراجعة",esc(TX_REASON[m.reason]||"—")):""}
+      </dl>
+    </div>
+    <div class="admin-mfoot"><button class="admin-btn-ghost" data-admin-close>إغلاق</button></div>`);
+}
+
+/* ── الرفع: تقدّم بخطوات تظهر علاماتها تدريجيًا ── */
+const TX_STEPS=["جاري قراءة الملف...","جاري استخراج التحويلات...","جاري مطابقة الحسابات...","جاري مقارنة المبالغ...","تمت المطابقة"];
+const sleep=(ms)=>new Promise(r=>setTimeout(r,ms));
+const reduceMotion=()=>window.matchMedia&&matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+function openProgress(fileName){
+  const modal=AdminUI.openModal(`
+    <div class="admin-mhead"><h3>مطابقة ملف التحويل</h3></div>
+    <div class="admin-mbody" id="txProgressBody">
+      <p class="tx-file-meta" style="margin:0 0 14px;overflow-wrap:anywhere">${esc(fileName)}</p>
+      <ol class="tx-steps">${TX_STEPS.map((t,i)=>`<li class="tx-step" data-i="${i}"><span class="dot">${CHECK_SVG}</span><span>${t}</span></li>`).join("")}</ol>
+      <div id="txProgressErr"></div>
+    </div>
+    <div class="admin-mfoot" id="txProgressFoot" style="display:none"></div>`);
+  const steps=[...modal.querySelectorAll(".tx-step")];
+  let at=-1;
+  const go=(i)=>{ steps.forEach((el,k)=>{ el.classList.toggle("done",k<i); el.classList.toggle("active",k===i); }); at=i; };
+  return {
+    modal, steps,
+    step:go,
+    get at(){ return at; },
+    async finish(){ const d=reduceMotion()?0:260; for(let i=Math.max(at,0);i<TX_STEPS.length;i++){ go(i); await sleep(d); } steps.forEach(el=>{el.classList.remove("active");el.classList.add("done");}); },
+    fail(message){
+      const i=Math.max(at,0);
+      steps[i].classList.remove("active"); steps[i].classList.add("fail");
+      steps[i].querySelector(".dot").innerHTML=CROSS_SVG;
+      modal.querySelector("#txProgressErr").innerHTML=`<div class="tx-step-err">${esc(message)}</div>`;
+      const foot=modal.querySelector("#txProgressFoot");
+      foot.style.display=""; foot.innerHTML=`<button class="admin-btn-ghost" data-admin-close>إغلاق</button>`;
+      foot.querySelector("[data-admin-close]").addEventListener("click", AdminUI.closeModal);
+    },
+  };
+}
+
+function postTransferFile(file, replace, onUploaded){
+  return new Promise((resolve,reject)=>{
+    const xhr=new XMLHttpRequest();
+    xhr.open("POST",`/api/data/payroll-transfers?run=${encodeURIComponent(RUN_ID)}${replace?"&replace=1":""}`);
+    /* octet-stream دائمًا: نوعٌ نصّي قد يجعل المنصّة تفكّ الجسم نصًّا فتُفسد بايتاته. */
+    xhr.setRequestHeader("Content-Type","application/octet-stream");
+    xhr.setRequestHeader("X-Filename",encodeURIComponent(file.name));
+    xhr.timeout=120000;
+    xhr.upload.addEventListener("load",()=>onUploaded&&onUploaded());
+    xhr.addEventListener("load",()=>{ let j={}; try{ j=JSON.parse(xhr.responseText); }catch(e){} resolve({status:xhr.status,body:j}); });
+    xhr.addEventListener("error",()=>reject(new Error("تعذّر الاتصال بالخادم أثناء الرفع")));
+    xhr.addEventListener("timeout",()=>reject(new Error("انتهت مهلة المعالجة — أعد المحاولة")));
+    xhr.send(file);
+  });
+}
+
+async function runTransferUpload(file){
+  if(file.size>4*1024*1024){ AdminUI.toastError("حجم ملف التحويل يتجاوز 4MB"); return; }
+  let replace=false;
+  if(TX.current){
+    replace=await AdminUI.confirmDanger("يوجد ملف تحويل مرفوع مسبقًا، هل تريد استبداله؟ يبقى الملف السابق ونتيجته في سجل الشهر.",{confirmLabel:"استبدال الملف",cancelLabel:"إلغاء"});
+    if(!replace) return;
+    /* النقرة التي أكّدت ما زالت تنتشر: فتح الحوار الآن يجعلها تُغلقه
+       فورًا كنقرة خارجه. ننتظر انتهاءها. */
+    await sleep(60);
+  }
+  const p=openProgress(file.name);
+  p.step(0);
+  /* خطوات الخادم تتقدّم على مؤقّت أثناء الانتظار ولا تبلغ «تمت» إلا بالردّ. */
+  let timer=null;
+  const advance=()=>{ timer=setInterval(()=>{ if(p.at<3) p.step(p.at+1); },reduceMotion()?150:650); };
   try{
-    await AdminUI.api("PUT","/api/data/payroll-runs",{id:RUN_ID, proofs:[{eid, fileUrl:null, fileName:null}]});
-    await loadRun();
-    AdminUI.toastOk("تم حذف إثبات التحويل");
-  }catch(err){ AdminUI.toastError(err.message); }
+    let res=await postTransferFile(file,replace,()=>{ p.step(1); advance(); });
+    if(res.status===409&&res.body.code==="exists"){
+      clearInterval(timer);
+      AdminUI.closeModal();
+      const ok=await AdminUI.confirmDanger(res.body.error||"يوجد ملف تحويل مرفوع مسبقًا، هل تريد استبداله؟",{confirmLabel:"استبدال الملف"});
+      if(!ok){ await loadTransfers(); renderRun(CURRENT_RUN); return; }
+      await sleep(60);
+      return runTransferUploadForced(file);
+    }
+    clearInterval(timer);
+    if(res.status<200||res.status>=300||!res.body.ok){ p.fail(res.body.error||"تعذّرت معالجة ملف التحويل"); return; }
+    await p.finish();
+    TX={setup:res.body.setup,current:res.body.current,matches:res.body.matches||{},history:res.body.history||[]};
+    TX_FILTER=null;
+    renderRun(CURRENT_RUN);
+    await sleep(reduceMotion()?0:350);
+    showTxSummary(p.modal);
+  }catch(err){ clearInterval(timer); p.fail(err.message); }
+}
+async function runTransferUploadForced(file){
+  TX.current=TX.current||{counts:{}};
+  const p=openProgress(file.name); p.step(0);
+  let timer=null;
+  try{
+    const res=await postTransferFile(file,true,()=>{ p.step(1); timer=setInterval(()=>{ if(p.at<3) p.step(p.at+1); },650); });
+    clearInterval(timer);
+    if(res.status<200||res.status>=300||!res.body.ok){ p.fail(res.body.error||"تعذّرت معالجة ملف التحويل"); return; }
+    await p.finish();
+    TX={setup:res.body.setup,current:res.body.current,matches:res.body.matches||{},history:res.body.history||[]};
+    renderRun(CURRENT_RUN);
+    showTxSummary(p.modal);
+  }catch(err){ clearInterval(timer); p.fail(err.message); }
+}
+
+function showTxSummary(modal){
+  const c=TX.current.counts;
+  const attention=c.amount_mismatch+c.not_found+c.needs_review;
+  const li=(icon,n,text,i)=>`<li style="animation-delay:${i*90}ms"><span>${icon}</span><span><span class="num">${n}</span> ${text}</span></li>`;
+  modal.querySelector("#txProgressBody").innerHTML=`
+    <p class="tx-summary-title">تمت مطابقة ملف التحويل</p>
+    <ul class="tx-summary-list">
+      ${li("✅",c.matched,"موظف تم التحويل لهم",0)}
+      ${li("⚠️",c.amount_mismatch,"مبلغ غير مطابق",1)}
+      ${li("❌",c.not_found,"لم يتم العثور على تحويل لهم",2)}
+      ${li("🔶",c.needs_review,"بحاجة مراجعة",3)}
+      ${c.cash?li("💵",c.cash,"صرف نقدي (خارج المطابقة)",4):""}
+      ${c.unassigned?li("•",c.unassigned,"تحويل في الملف لم يُسند لموظف",5):""}
+    </ul>`;
+  const foot=modal.querySelector("#txProgressFoot");
+  foot.style.display="";
+  foot.innerHTML=`<button class="admin-btn-ghost" data-admin-close>إغلاق</button>
+    ${attention?`<button class="admin-btn-primary" id="txShowReview">عرض الحالات التي تحتاج مراجعة</button>`:""}`;
+  foot.querySelector("[data-admin-close]").addEventListener("click", AdminUI.closeModal);
+  const b=foot.querySelector("#txShowReview");
+  if(b) b.addEventListener("click",()=>{ AdminUI.closeModal(); setTxFilter("attention"); });
 }
 
 async function uploadMainFile(file, onProgress){
@@ -376,7 +676,7 @@ async function deleteRun(){
 }
 
 async function loadRun(){
-  const r = await fetch(`/api/data/payroll-runs?id=${encodeURIComponent(RUN_ID)}`);
+  const [r] = await Promise.all([fetch(`/api/data/payroll-runs?id=${encodeURIComponent(RUN_ID)}`), loadTransfers()]);
   const j = await r.json();
   if(!r.ok || !j.ok){
     document.getElementById("detailContent").innerHTML = `<div class="empty-note">لم يتم العثور على مسير الرواتب المطلوب</div>`;
@@ -386,6 +686,7 @@ async function loadRun(){
 }
 
 function renderRun(run){
+  CURRENT_RUN = run;
   document.title = `مسير رواتب ${run.monthLabel} — ذروة الصعود`;
   document.getElementById("pageTitle").textContent = `مسير رواتب ${run.monthLabel}`;
   document.getElementById("pageStatus").innerHTML = statusBadge(run.statusKey);
@@ -395,7 +696,6 @@ function renderRun(run){
   /* القسم لا يُرسم إطلاقًا لمسير بلا لقطة موظفين — أي لكل مسير أُنشئ
      قبل هذه الميزة. المسيرات السابقة تُعرض اليوم كما كانت بالضبط. */
   const employees = run.employees||[];
-  const attachedCount = employees.filter(e=>e.proof&&e.proof.fileUrl).length;
 
   document.getElementById("detailContent").innerHTML = `
     <div class="payroll-card">
@@ -433,12 +733,15 @@ function renderRun(run){
     ${employees.length?`
     <div class="proofs-section">
       <div class="proofs-head">
-        <div class="proofs-title">إثباتات تحويل الرواتب</div>
-        <div class="proofs-count"><span class="num">${attachedCount}</span> من <span class="num">${employees.length}</span> مرفق</div>
+        <div class="proofs-title">حالة تحويل الرواتب</div>
+        <div class="proofs-count"><span class="num">${employees.length}</span> موظف في المسير</div>
       </div>
+      ${txFileCard(run)}
       <div class="proofs-list">
-        ${employees.map(emp=>employeeRow(emp, run.monthLabel)).join("")}
+        ${employees.map(emp=>employeeRow(emp)).join("")}
       </div>
+      ${txUnassigned()}
+      ${txHistory()}
     </div>`:""}
   `;
 
@@ -468,10 +771,12 @@ function renderRun(run){
   content.querySelectorAll('[data-act="att-upload"]').forEach(inp=>
     AdminUI.wireUpload(inp, inp.closest("label"), (file,onProgress)=>uploadAttachmentFile(inp.dataset.key, file, onProgress)));
   content.querySelectorAll('[data-act="att-delete-file"]').forEach(b=>b.addEventListener("click", ()=>deleteAttachmentFile(b.dataset.key)));
-  content.querySelectorAll('[data-act="proof-preview"]').forEach(b=>b.addEventListener("click", ()=>openPreview(b.dataset.file, b.dataset.label)));
-  content.querySelectorAll('[data-act="proof-upload"]').forEach(inp=>
-    AdminUI.wireUpload(inp, inp.closest("label"), (file,onProgress)=>uploadProof(inp.dataset.eid, file, onProgress)));
-  content.querySelectorAll('[data-act="proof-delete"]').forEach(b=>b.addEventListener("click", ()=>deleteProof(b.dataset.eid)));
+  content.querySelectorAll('[data-act="legacy-preview"]').forEach(b=>b.addEventListener("click", ()=>openPreview(b.dataset.file, b.dataset.label)));
+  content.querySelectorAll('[data-act="tx-details"]').forEach(b=>b.addEventListener("click", ()=>openTxDetails(b.dataset.eid)));
+  content.querySelectorAll('[data-act="tx-filter"]').forEach(b=>b.addEventListener("click", ()=>setTxFilter(b.dataset.key===TX_FILTER?null:b.dataset.key)));
+  const txInput=document.getElementById("txFileInput");
+  if(txInput) txInput.addEventListener("change", ()=>{ const f=txInput.files&&txInput.files[0]; txInput.value=""; if(f) runTransferUpload(f); });
+  applyTxFilter();
   content.querySelectorAll('[data-act="att-edit-note"]').forEach(b=>{
     b.addEventListener("click", ()=>{
       const att=(run.attachments||[]).find(a=>a.key===b.dataset.key);
