@@ -117,7 +117,11 @@ async function handlePage(req, res) {
     res.end();
     return;
   }
-  const html = fs.readFileSync(path.join(process.cwd(), file), "utf8");
+  /* ⚠️ مؤقّت حتى الاعتماد — انظر lib/previewBadge.js. */
+  const html = require("../lib/previewBadge").inject(fs.readFileSync(path.join(process.cwd(), file), "utf8"), {
+    env: process.env.VERCEL_ENV,
+    commit: process.env.VERCEL_GIT_COMMIT_SHA,
+  });
   /* أيّ نشرٍ خدم الصفحة: commit وبيئته في الترويسة. مشروعٌ واحد بفروع
      معاينة متعدّدة (ونسخة إنتاج أقدم) يجعل «أيّ نسخة أرى؟» سؤالًا حقيقيًا،
      وهذه الترويسة تجيبه من أدوات المتصفّح بلا تخمين. لا سرّ فيها. */
