@@ -400,9 +400,13 @@ test("الصلاحيات: العرض منفصل عن التجديد", () => {
     assert.equal(perms.canRenew(user(r), "municipal"), false, r);
     assert.equal(perms.canRenew(user(r), "ajeer"), false, r);
   }
-  /* أجير: إنشاء + رفع ملفّات معًا؛ أحدهما وحده لا يكفي. */
-  assert.equal(perms.canRenew(user("hr", ["ajeer:view", "ajeer:create"]), "ajeer"), false);
-  assert.equal(perms.canRenew(user("hr", ["ajeer:view", "ajeer:create", "ajeer:upload_files"]), "ajeer"), true);
+  /* أجير: ajeer:manage وحدها تجدّد. الإنشاء ورفع الملفّات (ولو كاملة) لا تجدّد. */
+  assert.equal(perms.canRenew(user("hr", ["ajeer:view", "ajeer:create", "ajeer:upload_files", "ajeer:edit", "ajeer:delete", "ajeer:delete_files"]), "ajeer"), false);
+  assert.equal(perms.canRenew(user("hr", ["ajeer:view", "ajeer:manage"]), "ajeer"), true);
+  /* الكتالوج: تظهر في إدارة الصلاحيات، وللمالك والمدير وحدهما افتراضيًا. */
+  assert.ok(perms.SECTION_BY_KEY.ajeer.actions.includes("manage"));
+  for (const r of ["owner", "admin"]) assert.ok(perms.defaultPermissionsForRole(r).includes("ajeer:manage"), r);
+  for (const r of ["hr", "viewer", "finance"]) assert.ok(!perms.defaultPermissionsForRole(r).includes("ajeer:manage"), r);
   assert.equal(perms.canRenew(user("hr", ["municipal:view", "municipal:manage"]), "municipal"), true);
 });
 
@@ -414,6 +418,16 @@ test("فراس (حساب HR على افتراضيات الدور): يرى الق
   for (const p of ["municipal:manage", "ajeer:create", "ajeer:upload_files", "ajeer:edit", "ajeer:delete"]) assert.ok(!effective.includes(p), p);
   assert.equal(perms.canRenew(firas, "municipal"), false);
   assert.equal(perms.canRenew(firas, "ajeer"), false);
+});
+
+test("فراس بسجلّه المخصّص الفعلي (يضيف تصاريح ويرفع ملفّاتها): يرى البلدية وأجير ولا يجدّد أيًّا منهما", () => {
+  /* الصلاحيات المتعلّقة بالقسمين كما في صفّه على القاعدة بعد إضافة municipal:view. */
+  const firas = { id: "env-hr-specialist", role: "hr", permissions: [
+    "employees:view", "ajeer:view", "ajeer:create", "ajeer:edit", "ajeer:delete", "ajeer:upload_files", "ajeer:delete_files", "municipal:view",
+  ] };
+  for (const [s, a] of [["ajeer", "view"], ["ajeer", "create"], ["ajeer", "upload_files"], ["municipal", "view"]]) assert.equal(perms.hasPermission(firas, s, a), true, `${s}:${a}`);
+  assert.equal(perms.canRenew(firas, "ajeer"), false);
+  assert.equal(perms.canRenew(firas, "municipal"), false);
 });
 
 test("المسار: canRenew قبل أي قراءة للجسم، والاستجابة بلا رابط ملفّ، والحدثان في سجلّ التدقيق", () => {
@@ -436,7 +450,8 @@ test("الواجهة: زر «تجديد المستند» محروس بصلاحي
   const mc = read("municipal-cards.js");
   assert.match(mc, /AdminUI\.can\("municipal", ?"manage"\)/);
   assert.match(shell, /DocRenewal\.canRenew\("ajeer"\)/);
-  assert.match(ui, /A\.can\("ajeer","create"\)&&A\.can\("ajeer","upload_files"\)/);
+  assert.match(ui, /A\.can\("ajeer", "manage"\)/);
+  assert.doesNotMatch(ui, /upload_files/);
   for (const s of ["جاري قراءة المستند", "جاري تحديد نوع المستند", "جاري مطابقة بيانات الموظف", "جاري التحقق من بيانات التجديد"]) assert.ok(ui.includes(s), s);
   assert.ok(ui.includes("تمت مطابقة المستند بنجاح"));
   assert.ok(ui.includes("تعذر مطابقة المستند مع الموظف الحالي"));

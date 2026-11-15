@@ -45,7 +45,7 @@
     const A = adminUI();
     if (!A) return false;
     if (kind === "municipal") return A.can("municipal", "manage");
-    if (kind === "ajeer") return A.can("ajeer","create")&&A.can("ajeer","upload_files");
+    if (kind === "ajeer") return A.can("ajeer", "manage");
     return false;
   }
 
