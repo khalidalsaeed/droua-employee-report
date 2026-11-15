@@ -118,7 +118,12 @@ async function handlePage(req, res) {
     return;
   }
   const html = fs.readFileSync(path.join(process.cwd(), file), "utf8");
-  res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", ...NO_CACHE });
+  /* أيّ نشرٍ خدم الصفحة: commit وبيئته في الترويسة. مشروعٌ واحد بفروع
+     معاينة متعدّدة (ونسخة إنتاج أقدم) يجعل «أيّ نسخة أرى؟» سؤالًا حقيقيًا،
+     وهذه الترويسة تجيبه من أدوات المتصفّح بلا تخمين. لا سرّ فيها. */
+  const commit = String(process.env.VERCEL_GIT_COMMIT_SHA || "local").slice(0, 7);
+  const env = String(process.env.VERCEL_ENV || "local");
+  res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "X-App-Commit": `${commit} (${env})`, ...NO_CACHE });
   res.end(html);
 }
 
