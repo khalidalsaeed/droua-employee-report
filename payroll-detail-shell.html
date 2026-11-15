@@ -490,7 +490,7 @@ function txHistory(){
   if(!TX.history.length) return "";
   return `<details class="tx-more"><summary>سجل ملفات التحويل لهذا الشهر · <span class="num">${TX.history.length}</span></summary>
     <div class="tx-more-list">${TX.history.map(h=>{const c=h.counts;return `<div class="tx-item">
-      ${esc(h.fileName)}<span class="tx-pill ${h.replacedAt?"":"cur"}">${h.replacedAt?"مستبدَل":"الحالي"}</span>
+      ${esc(h.fileName)}<span class="tx-pill ${h.state==="replaced"?"":"cur"}">${h.state==="replaced"?"مستبدَل (replaced)":"الحالي"}</span>
       <div class="s">رُفع ${fmtDateTime(h.uploadedAt)}${h.uploadedBy?` · ${esc(h.uploadedBy)}`:""}${h.replacedAt?` · استُبدل ${fmtDateTime(h.replacedAt)}${h.replacedBy?` · ${esc(h.replacedBy)}`:""}`:""}</div>
       <div class="s">مطابق <span class="num">${c.matched}</span> · غير مطابق <span class="num">${c.amount_mismatch}</span> · غير موجود <span class="num">${c.not_found}</span> · مراجعة <span class="num">${c.needs_review}</span></div>
     </div>`;}).join("")}</div></details>`;

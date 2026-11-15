@@ -10,7 +10,8 @@
 
    ── ما لا يُخزَّن ──
    • الملفّ نفسه لا يُخزَّن إطلاقًا: لا Blob ولا رابط عامّ ولا bytea. تبقى
-     بصمته SHA-256 واسمه وحجمه فقط.
+     بصمته SHA-256 وحجمه وتسمية داخلية (transfer-YYYY-MM-xxxxxxxx.ext) —
+     لا اسمه الأصلي، فقد يحمل اسم شخص أو رقم حساب.
    • الآيبان/رقم الحساب لا يُخزَّن كاملًا: آخر أربع خانات + بصمة SHA-256
      (لإعادة المطابقة إن صُحّح آيبان موظف) داخل transfers.
 
@@ -26,7 +27,9 @@ const STATEMENTS = [
       CREATE TABLE IF NOT EXISTS payroll_transfer_files (
         id               bigserial PRIMARY KEY,
         run_id           text NOT NULL REFERENCES payroll_runs(id) ON DELETE CASCADE,
-        file_name        text NOT NULL CHECK (file_name !~ '[[:cntrl:]]' AND length(file_name) <= 200),
+        -- تسمية داخلية لا اسم الملفّ الأصلي: اسم ملفّ البنك قد يحمل اسم
+        -- شخص أو رقم حساب، فلا يدخل القاعدة أصلًا. القيد يجعل ذلك بنيويًا.
+        file_label       text NOT NULL CHECK (file_label ~ '^transfer-[0-9]{4}-[0-9]{2}-[0-9a-f]{8}[.](pdf|xlsx|csv)$'),
         file_format      text NOT NULL CHECK (file_format IN ('pdf', 'xlsx', 'csv')),
         file_size        integer NOT NULL CHECK (file_size > 0),
         file_sha256      text NOT NULL CHECK (file_sha256 ~ '^[0-9a-f]{64}$'),
@@ -36,6 +39,8 @@ const STATEMENTS = [
         -- الاستبدال لا يحذف: الملفّ السابق يبقى صفًّا في السجلّ بتاريخ استبداله.
         superseded_at    timestamptz,
         superseded_by    text,
+        -- current / replaced مشتقّة من superseded_at فلا يمكن أن تتناقضا.
+        state            text GENERATED ALWAYS AS (CASE WHEN superseded_at IS NULL THEN 'current' ELSE 'replaced' END) STORED,
         -- التحويلات المستخرجة مقنَّعة: {line,name,ibanLast4,ibanHash,accountLast4,
         -- accountHash,amount(هللة),reference,date,bank,empNo,flags}
         transfers        jsonb NOT NULL,
@@ -48,6 +53,10 @@ const STATEMENTS = [
     label: "فهرس: ملفّ حالي واحد فقط لكل شهر",
     sql: `CREATE UNIQUE INDEX IF NOT EXISTS uq_payroll_transfer_files_current
             ON payroll_transfer_files (run_id) WHERE superseded_at IS NULL`,
+  },
+  {
+    label: "فهرس: البصمة لكل مسير (كشف رفع الملفّ نفسه مرّتين)",
+    sql: `CREATE INDEX IF NOT EXISTS idx_payroll_transfer_files_sha ON payroll_transfer_files (run_id, file_sha256)`,
   },
   {
     label: "جدول payroll_transfer_matches (نتيجة لكل موظف)",

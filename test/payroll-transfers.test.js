@@ -292,7 +292,7 @@ test("الخدمة: الرفع الأول يحفظ ملفًّا واحدًا و�
   const { db, sql } = transfersDb();
   const logs = [];
   const bytes = F.csv(fullRows({ amounts: { 902: 370050 } }));
-  const state = await service.reconcileUpload({ runId: RUN_ID, bytes, fileName: "نوفمبر.csv", actor: { email: "a@example.com", id: "u1" } }, serviceDeps(sql, { logs }));
+  const state = await service.reconcileUpload({ runId: RUN_ID, bytes, fileName: "november.csv", actor: { email: "a@example.com", id: "u1" } }, serviceDeps(sql, { logs }));
   assert.equal(db.files.length, 1);
   assert.equal(db.matches.length, 5);
   assert.equal(state.setup, true);
@@ -334,12 +334,37 @@ test("قبول: استبدال ملفّ الشهر — بلا تأكيد يُر�
   const state = await service.reconcileUpload({ runId: RUN_ID, bytes: F.csv(fullRows()), fileName: "v2.csv", replace: true, actor: { email: "b@example.com" } }, d);
   assert.equal(db.files.length, 2);
   assert.equal(db.files.filter((f) => !f.superseded_at).length, 1);
-  assert.equal(state.current.fileName, "v2.csv");
+  assert.match(state.current.fileName, /^transfer-2026-10-[0-9a-f]{8}\.csv$/);
+  assert.equal(state.current.state, "current");
   assert.equal(state.current.counts.matched, 5);
   assert.equal(state.history.length, 2);
-  assert.equal(state.history[1].fileName, "v1.csv");
+  assert.equal(state.history[1].state, "replaced");
   assert.equal(state.history[1].replacedBy, "b@example.com");
+  assert.equal(state.history[1].counts.amount_mismatch, 1, "نتيجة الملفّ المستبدَل محفوظة لا تُحذف");
+  assert.equal(db.matches.length, 10, "نتائج الملفّين معًا — لا حذف صامت");
   assert.equal(logs[1].type, "payroll_transfer_file_replaced");
+});
+
+test("SHA-256: رفع الملفّ الحالي نفسه مرّة أخرى يُرفض بـduplicate_file حتى مع التأكيد", async () => {
+  const { db, sql } = transfersDb();
+  const d = serviceDeps(sql);
+  const bytes = F.csv(fullRows());
+  await service.reconcileUpload({ runId: RUN_ID, bytes, fileName: "a.csv", actor: {} }, d);
+  await assert.rejects(
+    service.reconcileUpload({ runId: RUN_ID, bytes, fileName: "renamed.csv", replace: true, actor: {} }, d),
+    (e) => e.code === "duplicate_file" && e.status === 409);
+  assert.equal(db.files.length, 1);
+});
+
+test("اسم الملفّ الأصلي لا يُخزَّن — تسمية داخلية فقط", async () => {
+  const { db, sql } = transfersDb();
+  const logs = [];
+  const raw = "تحويل رواتب سالم القحطاني SA6080000000000000001001.csv";
+  await service.reconcileUpload({ runId: RUN_ID, bytes: F.csv(fullRows()), fileName: raw, actor: {} }, serviceDeps(sql, { logs }));
+  assert.match(db.files[0].file_label, /^transfer-2026-10-[0-9a-f]{8}\.csv$/);
+  const all = JSON.stringify({ files: db.files, logs });
+  assert.ok(!all.includes("القحطاني SA"), "الاسم الأصلي لا يدخل القاعدة ولا السجلّ");
+  assert.ok(!all.includes("تحويل رواتب"));
 });
 
 test("قبول: ملفّ شهر مختلف يُرفض بلا كتابة", async () => {
@@ -396,6 +421,9 @@ test("الهجرة: جدولان جديدان فقط، إضافية بالكام
   assert.match(all, /UNIQUE INDEX IF NOT EXISTS uq_payroll_transfer_files_current\s+ON payroll_transfer_files \(run_id\) WHERE superseded_at IS NULL/);
   assert.match(all, /CHECK \(status IN \('matched', 'amount_mismatch', 'not_found', 'needs_review', 'cash'\)\)/);
   assert.ok(!/\biban\b\s+text/i.test(all), "لا عمود آيبان كامل");
-  assert.ok(!/bytea|file_url/i.test(all), "الملفّ نفسه لا يُخزَّن");
+  assert.ok(!/bytea|file_url|file_name/i.test(all), "الملفّ نفسه ولا اسمه الأصلي يُخزَّن");
+  assert.match(all, /file_label\s+text NOT NULL CHECK \(file_label ~/);
+  assert.match(all, /state\s+text GENERATED ALWAYS AS \(CASE WHEN superseded_at IS NULL THEN 'current' ELSE 'replaced' END\) STORED/);
+  assert.match(all, /idx_payroll_transfer_files_sha ON payroll_transfer_files \(run_id, file_sha256\)/);
   assert.deepEqual(ROLLBACK, ["DROP TABLE IF EXISTS payroll_transfer_matches", "DROP TABLE IF EXISTS payroll_transfer_files"]);
 });

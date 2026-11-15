@@ -10,8 +10,8 @@ function transfersDb({ missing = false } = {}) {
       err.code = "42P01";
       throw err;
     }
-    if (/SELECT id, file_name FROM payroll_transfer_files WHERE run_id = \? AND superseded_at IS NULL/.test(text)) {
-      return db.files.filter((f) => f.run_id === v[0] && !f.superseded_at).map((f) => ({ id: f.id, file_name: f.file_name }));
+    if (/SELECT id, file_sha256 FROM payroll_transfer_files WHERE run_id = \? AND superseded_at IS NULL/.test(text)) {
+      return db.files.filter((f) => f.run_id === v[0] && !f.superseded_at).map((f) => ({ id: f.id, file_sha256: f.file_sha256 }));
     }
     if (/nextval/.test(text)) return [{ id: ++db.seq }];
     if (/^UPDATE payroll_transfer_files SET superseded_at/.test(text)) {
@@ -19,9 +19,10 @@ function transfersDb({ missing = false } = {}) {
       return [];
     }
     if (/^INSERT INTO payroll_transfer_files/.test(text)) {
-      const [id, run_id, file_name, file_format, file_size, file_sha256, detected_period, uploaded_by, transfers, summary] = v;
+      const [id, run_id, file_label, file_format, file_size, file_sha256, detected_period, uploaded_by, transfers, summary] = v;
       if (db.files.some((f) => f.run_id === run_id && !f.superseded_at)) throw new Error("duplicate current file");
-      db.files.push({ id, run_id, file_name, file_format, file_size, file_sha256, detected_period, uploaded_by,
+      if (!/^transfer-\d{4}-\d{2}-[0-9a-f]{8}\.(pdf|xlsx|csv)$/.test(file_label)) throw new Error("label check violated");
+      db.files.push({ id, run_id, file_label, file_format, file_size, file_sha256, detected_period, uploaded_by,
         uploaded_at: "2026-11-15T09:00:00Z", superseded_at: null, superseded_by: null,
         transfers: JSON.parse(transfers), summary: JSON.parse(summary) });
       return [];
@@ -31,7 +32,8 @@ function transfersDb({ missing = false } = {}) {
       return [];
     }
     if (/FROM payroll_transfer_files WHERE run_id = \? ORDER BY id DESC/.test(text)) {
-      return db.files.filter((f) => f.run_id === v[0]).sort((a, b) => b.id - a.id);
+      return db.files.filter((f) => f.run_id === v[0]).sort((a, b) => b.id - a.id)
+        .map((f) => ({ ...f, state: f.superseded_at ? "replaced" : "current" }));
     }
     if (/FROM payroll_transfer_matches WHERE file_id = \?/.test(text)) {
       return db.matches.filter((m) => m.file_id === v[0]);
