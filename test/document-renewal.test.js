@@ -470,3 +470,26 @@ test("لا مستند حقيقي جديد في المستودع", () => {
     assert.doesNotMatch(read(f), /base64,[A-Za-z0-9+/]{200}/, f);
   }
 });
+
+/* ⚠️ مؤقّت مع شارة التشخيص — يُزال معها قبل الدمج. */
+test("شارة تشخيص التجديد: تُختم على Preview فقط، ولا تظهر في Production", () => {
+  const app = read("api/app.js");
+  const at = app.indexOf("function injectRenewalDiag");
+  const src = app.slice(at, app.indexOf("\n}\n", at) + 2);
+  const fn = new Function(`${src}; return injectRenewalDiag;`)();
+  const html = "<html><head></head><body></body></html>";
+  const run = (env, page) => {
+    const saved = { e: process.env.VERCEL_ENV, s: process.env.VERCEL_GIT_COMMIT_SHA };
+    process.env.VERCEL_ENV = env; process.env.VERCEL_GIT_COMMIT_SHA = "abcdef1234567";
+    try { return fn(html, page); } finally {
+      if (saved.e == null) delete process.env.VERCEL_ENV; else process.env.VERCEL_ENV = saved.e;
+      if (saved.s == null) delete process.env.VERCEL_GIT_COMMIT_SHA; else process.env.VERCEL_GIT_COMMIT_SHA = saved.s;
+    }
+  };
+  assert.match(run("preview", "home"), /<meta name="renewal-diag" content="abcdef1\|preview">/);
+  assert.equal(run("production", "home"), html);
+  assert.equal(run("preview", "users"), html);
+  const js = read("municipal-cards.js");
+  assert.match(js, /meta\[name="renewal-diag"\]/);
+  assert.match(js, /municipal:manage = \$\{AdminUI\.can\("municipal", "manage"\)\}/);
+});

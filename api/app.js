@@ -118,9 +118,20 @@ async function handlePage(req, res) {
     res.end();
     return;
   }
-  const html = fs.readFileSync(path.join(process.cwd(), file), "utf8");
+  let html = fs.readFileSync(path.join(process.cwd(), file), "utf8");
+  html = injectRenewalDiag(html, page);
   res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", ...NO_CACHE });
   res.end(html);
+}
+
+/* ⚠️ مؤقّت — تشخيص «تجديد المستند» على Preview فقط، يُزال قبل الدمج.
+   يختم الصفحة الرئيسية بالـcommit الذي تخدمه هذه النسخة، فتعرضه شارة
+   التشخيص في قسم البلدية. لا يعمل في Production أبدًا (VERCEL_ENV). */
+function injectRenewalDiag(html, page) {
+  if (page !== "home" || process.env.VERCEL_ENV === "production") return html;
+  const sha = String(process.env.VERCEL_GIT_COMMIT_SHA || "local").replace(/[^0-9a-z]/gi, "").slice(0, 7) || "local";
+  const env = String(process.env.VERCEL_ENV || "local").replace(/[^a-z]/gi, "");
+  return html.replace("</head>", `<meta name="renewal-diag" content="${sha}|${env}">\n</head>`);
 }
 
 async function handleApi(req, res) {

@@ -130,6 +130,12 @@
   }
 
   function render() {
+    DIAG.renders++;
+    DIAG.inRender = true;
+    try { renderInner(); } finally { DIAG.inRender = false; }
+    diag();
+  }
+  function renderInner() {
     const o = S.opts;
     const all = S.items;
     const filtered = all.filter(matches);
@@ -209,6 +215,8 @@
     } catch (err) {
       S.items = [];
       S.opts.grid.innerHTML = `<div class="mc-empty"><p>تعذّر تحميل البطاقات البلدية.</p></div>`;
+      DIAG.loadError = (err && err.message) || "load failed";
+      diag();
       return;
     }
     fillDepartments();
@@ -249,8 +257,59 @@
     o.status.addEventListener("change", (ev) => { S.status = ev.target.value; render(); });
     o.dept.addEventListener("change", (ev) => { S.dept = ev.target.value; render(); });
     document.addEventListener("error", onImgError, true);
+    watchDiag();
+    diag();
     return reload();
   }
 
-  root.MunicipalCards = { mount, statusOf, applyRenewed, _state: S };
+  /* ⚠️ مؤقّت — شارة تشخيص «تجديد المستند»، تظهر فقط حين يختم الخادم الصفحة
+     بـ<meta name="renewal-diag"> (Preview، لا Production). تُزال قبل الدمج.
+     تعرض الحالة الحيّة: الـcommit، municipal:manage، تحميل DocRenewal، عدد
+     الكروت وأزرار التجديد — وتراقب الشبكة: إن حُذف زرّ بعد الرسم تقول ذلك. */
+  const BUILD = "renew-diag-1";
+  const DIAG = { removed: 0, renders: 0, lastRenderButtons: 0 };
+  function diagMeta() {
+    const m = document.querySelector('meta[name="renewal-diag"]');
+    return m ? String(m.content || "").split("|") : null;
+  }
+  function diag() {
+    const meta = diagMeta();
+    if (!meta) return;
+    const sec = document.getElementById("municipalSec");
+    if (!sec) return;
+    let box = document.getElementById("renewDiag");
+    if (!box) {
+      box = document.createElement("div");
+      box.id = "renewDiag";
+      box.setAttribute("dir", "ltr");
+      box.style.cssText = "margin:0 0 14px;padding:10px 14px;border:2px dashed #A98544;border-radius:10px;background:#FFF8E8;font:600 13px/1.7 ui-monospace,Menlo,monospace;color:#3a2c0f;overflow-wrap:anywhere";
+      sec.insertBefore(box, sec.firstChild);
+    }
+    const u = AdminUI.getUser && AdminUI.getUser();
+    const grid = S.opts && S.opts.grid;
+    const tiles = grid ? grid.querySelectorAll(".mc-tile").length : 0;
+    const btns = grid ? grid.querySelectorAll("[data-renew]").length : 0;
+    box.innerHTML = [
+      `<b>Renewal Preview — commit: ${esc(meta[0])}</b> (${esc(meta[1])}) · script: ${BUILD}`,
+      `user role: ${esc(u ? u.role : "—")} · municipal:view = ${AdminUI.can("municipal", "view")} · municipal:manage = ${AdminUI.can("municipal", "manage")} · ajeer:manage = ${AdminUI.can("ajeer", "manage")}`,
+      `DocRenewal loaded: ${!!root.DocRenewal} · municipal cards: ${tiles} · [data-renew] buttons: ${btns} (items: ${S.items.length}, renders: ${DIAG.renders})`,
+      DIAG.loadError ? `<span style="color:#A6382C">⚠ /api/data/municipal-cards: ${esc(DIAG.loadError)}</span>` : "",
+      DIAG.removed ? `<span style="color:#A6382C">⚠ renew buttons removed after render: ${DIAG.removed}</span>` : `buttons removed after render: 0`,
+    ].filter(Boolean).map((l) => `<div>${l}</div>`).join("");
+  }
+  function watchDiag() {
+    if (!diagMeta() || !S.opts || !S.opts.grid || typeof MutationObserver === "undefined") return;
+    new MutationObserver((muts) => {
+      for (const m of muts) for (const n of m.removedNodes) {
+        if (n.nodeType === 1 && (n.matches("[data-renew]") || (n.querySelector && n.querySelector("[data-renew]")))) {
+          /* إزالة خارج render() نفسه = كود آخر يحذف الزرّ. */
+          if (!DIAG.inRender) DIAG.removed++;
+        }
+      }
+      clearTimeout(DIAG.t);
+      DIAG.t = setTimeout(diag, 60);
+    }).observe(S.opts.grid, { childList: true, subtree: true });
+  }
+
+  root.MunicipalCards = { mount, statusOf, applyRenewed, _state: S, _diag: DIAG };
 })(window);
