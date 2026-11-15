@@ -132,7 +132,12 @@
   function render() {
     DIAG.renders++;
     DIAG.inRender = true;
-    try { renderInner(); } finally { DIAG.inRender = false; }
+    try { renderInner(); } finally {
+      /* سجلّات الحذف التي أنتجها render() نفسه تُستهلك هنا، فلا يُحسب
+         استبدال الشبكة الطبيعي «حذفًا بعد الرسم». */
+      if (DIAG.obs) DIAG.obs.takeRecords();
+      DIAG.inRender = false;
+    }
     diag();
   }
   function renderInner() {
@@ -266,7 +271,7 @@
      بـ<meta name="renewal-diag"> (Preview، لا Production). تُزال قبل الدمج.
      تعرض الحالة الحيّة: الـcommit، municipal:manage، تحميل DocRenewal، عدد
      الكروت وأزرار التجديد — وتراقب الشبكة: إن حُذف زرّ بعد الرسم تقول ذلك. */
-  const BUILD = "renew-diag-1";
+  const BUILD = "renew-diag-2";
   const DIAG = { removed: 0, renders: 0, lastRenderButtons: 0 };
   function diagMeta() {
     const m = document.querySelector('meta[name="renewal-diag"]');
@@ -299,7 +304,7 @@
   }
   function watchDiag() {
     if (!diagMeta() || !S.opts || !S.opts.grid || typeof MutationObserver === "undefined") return;
-    new MutationObserver((muts) => {
+    DIAG.obs = new MutationObserver((muts) => {
       for (const m of muts) for (const n of m.removedNodes) {
         if (n.nodeType === 1 && (n.matches("[data-renew]") || (n.querySelector && n.querySelector("[data-renew]")))) {
           /* إزالة خارج render() نفسه = كود آخر يحذف الزرّ. */
@@ -308,7 +313,8 @@
       }
       clearTimeout(DIAG.t);
       DIAG.t = setTimeout(diag, 60);
-    }).observe(S.opts.grid, { childList: true, subtree: true });
+    });
+    DIAG.obs.observe(S.opts.grid, { childList: true, subtree: true });
   }
 
   root.MunicipalCards = { mount, statusOf, applyRenewed, _state: S, _diag: DIAG };
