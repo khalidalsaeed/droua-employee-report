@@ -4,6 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>مسير الرواتب — ذروة الصعود</title>
+<!-- علامة نسخة الواجهة: تميّز صفحة «ملف التحويل الواحد» عن صفحة الإثبات لكل موظف عند التشخيص. -->
+<meta name="payroll-ui" content="transfer-file-v1">
 <meta name="theme-color" content="#16283B">
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="icon" href="/assets/icons/icon-192.png" type="image/png">
@@ -76,6 +78,8 @@ main.block{padding-block:20px}
 .tx-file-name{font-size:14px;font-weight:600;color:var(--ink);overflow-wrap:anywhere}
 .tx-file-meta{font-size:12px;color:var(--ink-soft);margin-top:2px;overflow-wrap:anywhere}
 .tx-file-actions{display:flex;gap:8px;flex-wrap:wrap}
+.tx-upload-btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;cursor:pointer;min-height:var(--tap);white-space:nowrap}
+@media(max-width:767px){.tx-file-actions,.tx-upload-btn{width:100%}}
 .tx-note{font-size:12.5px;color:var(--ink-soft);margin-top:10px;line-height:1.7}
 .tx-note.warn{color:var(--warn)}
 .tx-chips{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:12px}
@@ -448,8 +452,14 @@ function txFileCard(run){
     return `<div class="tx-file"><div class="tx-file-name">ملف التحويل البنكي — ${esc(run.monthLabel)}</div>
       <div class="tx-note warn">ميزة مطابقة ملف التحويل جاهزة، وبانتظار اعتماد تهيئة قاعدة البيانات قبل التفعيل. الإثباتات السابقة تبقى معروضة كما هي.</div></div>`;
   }
-  const btn=mayReconcile?`<label class="admin-mini-btn" style="cursor:pointer" id="txUploadLabel">${cur?"استبدال ملف التحويل":"رفع ملف التحويل"}
-      <input type="file" accept="${TX_ACCEPT}" style="display:none" id="txFileInput"></label>`:"";
+  /* زرّ واحد واضح في أعلى القسم — هو مدخل المسار الجديد كلّه. بلا صلاحية
+     reconcile لا يُخفى بصمت: يظهر سبب غيابه، كي لا يُظنّ الزرّ مفقودًا. */
+  const btn=mayReconcile
+    ? `<label class="admin-btn-primary tx-upload-btn" id="txUploadLabel">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 16V4"/><path d="m7 9 5-5 5 5"/><path d="M5 20h14"/></svg>
+        ${cur?"استبدال ملف التحويل البنكي":"رفع ملف التحويل البنكي"}
+        <input type="file" accept="${TX_ACCEPT}" style="display:none" id="txFileInput"></label>`
+    : `<div class="tx-file-meta">رفع ملف التحويل يتطلّب صلاحية «رفع ملف التحويل والمطابقة».</div>`;
   if(!cur){
     return `<div class="tx-file"><div class="tx-file-top"><div>
         <div class="tx-file-name">ملف التحويل البنكي — ${esc(run.monthLabel)}</div>
@@ -461,8 +471,8 @@ function txFileCard(run){
   const chip=(key,n,label,cls)=>`<button type="button" class="tx-chip ${cls} ${TX_FILTER===key?"on":""}" data-act="tx-filter" data-key="${key}"><span class="n num">${n}</span><span class="l">${label}</span></button>`;
   const attention=c.amount_mismatch+c.not_found+c.needs_review;
   return `<div class="tx-file"><div class="tx-file-top"><div>
-      <div class="tx-file-name">${esc(cur.fileName)}</div>
-      <div class="tx-file-meta">رُفع ${fmtDateTime(cur.uploadedAt)}${cur.uploadedBy?` · بواسطة ${esc(cur.uploadedBy)}`:""} · <span class="num">${c.transfers}</span> تحويل في الملف</div>
+      <div class="tx-file-name">ملف التحويل البنكي — ${esc(run.monthLabel)}</div>
+      <div class="tx-file-meta"><span class="num">${esc(cur.fileName)}</span> · رُفع${fmtDateTime(cur.uploadedAt)}${cur.uploadedBy?` · بواسطة ${esc(cur.uploadedBy)}`:""} · <span class="num">${c.transfers}</span> تحويل في الملف</div>
     </div><div class="tx-file-actions">${btn}</div></div>
     <div class="tx-chips">
       ${chip("matched",c.matched,"تم التحويل","ok")}
