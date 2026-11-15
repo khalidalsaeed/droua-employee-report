@@ -105,7 +105,11 @@ async function main() {
   for (const k of ["test_runs", "test_proofs", "test_files", "test_matches"]) assert.equal(report.after_cleanup[k], 0, `بقي ${k}`);
   assert.equal(report.after_cleanup.legacy_proofs_with_file, report.before.legacy_proofs_with_file);
   assert.equal(report.after_cleanup.real_runs, report.before.real_runs);
-  console.log(JSON.stringify(report, null, 2));
+  return report;
 }
 
-main().catch((e) => { console.error("FAILED:", e.code || "", String(e.message).slice(0, 300)); process.exitCode = 1; });
+module.exports = { main, counts, TEST_RUN };
+
+if (require.main === module) {
+  main().catch((e) => { console.error("FAILED:", e.code || "", String(e.message).slice(0, 300)); process.exitCode = 1; });
+}
