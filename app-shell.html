@@ -449,9 +449,9 @@ footer.site{border-top:1px solid var(--hair);margin-top:30px}
 <!-- طبقة الحركة والتفاعل وقسم الهيكل التنظيمي — ملفات مستقلّة تُحذف معًا إن أُلغي التطوير. -->
 <link rel="stylesheet" href="/motion.css?v=1">
 <link rel="stylesheet" href="/dashboard-fx.css?v=2">
-<link rel="stylesheet" href="/doc-expiry.css?v=3">
+<link rel="stylesheet" href="/reminders.css?v=1">
 <link rel="stylesheet" href="/org-chart.css?v=1">
-<link rel="stylesheet" href="/employee-photos.css?v=2">
+<link rel="stylesheet" href="/employee-photos.css?v=3">
 <link rel="stylesheet" href="/municipal-cards.css?v=3">
 <link rel="stylesheet" href="/ajeer-cards.css?v=1">
 <link rel="stylesheet" href="/doc-renewal.css?v=2">
@@ -575,9 +575,14 @@ try{ if(sessionStorage.getItem("droua:welcome")==="1") document.documentElement.
       <div id="soonLic"></div>
     </div>
   </div>
-  <!-- الوثائق القادمة على انتهاء الصلاحية — حسب التصميم المعتمد. يملؤه
-       doc-expiry.js من DocStatus.empDocs نفسها التي تعطي البطاقات أرقامها. -->
-  <div class="dx" id="docExpiry"></div>
+</section>
+
+<!-- التذكيرات — جدول موحّد لكل وثيقة لها تاريخ انتهاء (reminders.js). قسم
+     مستقلّ عن المؤشّرات: يظهر لمن يرى نوعًا واحدًا على الأقل من الوثائق،
+     وكل نوع يظهر بصلاحية عرضه وحدها. -->
+<section class="block wrap" id="remindersSec" style="display:none">
+  <div class="sec-head"><h2>التذكيرات</h2><span class="idx" id="remindersIdx"></span></div>
+  <div class="rm" id="docReminders"></div>
 </section>
 
 <section class="block wrap" id="finSec">
@@ -811,19 +816,17 @@ try{ if(sessionStorage.getItem("droua:welcome")==="1") document.documentElement.
 <!-- الحركة والتفاعل (dashboard-fx.js) والهيكل التنظيمي (org-core.js + org-chart.js). -->
 <script src="/motion.js?v=1"></script>
 <script src="/dashboard-fx.js?v=2"></script>
-<script src="/doc-expiry.js?v=5"></script>
+<script src="/reminders.js?v=2"></script>
 <script src="/org-core.js?v=1"></script>
 <script src="/employee-photos.js?v=1"></script>
 <script src="/org-chart.js?v=2"></script>
 <script src="/doc-renewal.js?v=3"></script>
-<script src="/municipal-cards.js?v=4"></script>
+<script src="/municipal-cards.js?v=5"></script>
 <!-- جولة التحديثات: تُستدعى في آخر boot() بعد رسم الأقسام التي تشرحها. -->
-<script src="/update-tour.js?v=2"></script>
+<script src="/update-tour.js?v=3"></script>
 <script>
 let DATA = [];
 let FIN = {};
-/* لحظة وصول البيانات من الخادم — «آخر تحديث» في قسم الوثائق. */
-let DATA_LOADED_AT = null;
 /* Ajeer staffing-contract permits — matched to employees by iqama number.
    A new permit for the same iqama supersedes the older one (see dedupeAjeer). */
 let AJEER = [];
@@ -849,7 +852,12 @@ function applyPermissionVisibility(){
     const el=document.getElementById(sectionId);
     if(el) el.style.display=visible?"":"none";
   });
+  const rem=document.getElementById("remindersSec");
+  if(rem) rem.style.display=REMINDER_VIEWS.some(([s,a])=>AdminUI.can(s,a))?"":"none";
 }
+/* صلاحيات العرض التي يأتي منها نوع واحد على الأقل من التذكيرات
+   (Reminders.TYPES). بلا أيّ منها لا يظهر القسم أصلًا. */
+const REMINDER_VIEWS=[["employees","view"],["ajeer","view"],["municipal","view"],["staff_travel","view"]];
 async function initAuthGate(){
   try{
     const r=await fetch("/api/auth/me");
@@ -945,14 +953,9 @@ const cIq=countBy(e=>statusOf(e[F.iqExp]));
 const cLic=countBy(e=>licStatus(e));
 const validIq=cIq.valid, expiredIq=cIq.expired, soonIq=cIq.soon;
 const validLic=cLic.valid, expiredLic=cLic.expired, soonLic=cLic.soon, pendingLic=cLic.pending;
-/* الوثائق بحاجة إلى متابعة والمنتهية عبر كل موظف وكل وثيقة لها تاريخ
-   انتهاء — الإقامة والرخصة والجواز وتصريح أجير. الحساب من doc-status.js
-   وهي الدالّة نفسها التي تستدعيها صفحة /expiring.html، فرقمُ البطاقة
-   وقائمةُ الصفحة لا يمكن أن يختلفا.
-   AJEER الخام يُمرَّر كما هو: latestPermits داخل doc-status.js تختار
-   الأحدث لكل إقامة بالقاعدة نفسها التي يرسم بها قسم أجير. */
-const followUpDocs=DocStatus.collectFollowUpDocs(DATA,AJEER);
-const expiredDocs=DocStatus.collectExpiredDocs(DATA,AJEER);
+/* الوثائق بحاجة إلى متابعة والمنتهية: من التذكيرات نفسها (drawFollowUp
+   أدناه) — كل الأنواع التي يعرضها قسم التذكيرات وبصلاحياتها، فلا يختلف رقم
+   البطاقة عن القسم ولا عن قائمة /expiring.html. */
 
 /* تنبيه أعلى القسم. يقرأ followUpDocs نفسها التي تعطي البطاقة رقمها — لا
    عدّ ولا شرط متابعة يُكتب هنا — ولا يظهر إطلاقًا إذا كانت فارغة.
@@ -982,7 +985,7 @@ function renderSoonCallout(docs){
       </span>
       <span class="sc-txt">
         <span class="sc-title">${soonCountPhrase(docs.length)}</span>
-        <span class="sc-sub">وثائق منتهية أو تنتهي خلال ${DocStatus.SOON} أيام — راجعها واتّخذ الإجراء.</span>
+        <span class="sc-sub">وثائق منتهية أو تنتهي خلال ${Reminders.URGENT_DAYS} أيام — راجعها واتّخذ الإجراء.</span>
       </span>
       <span class="sc-cta">
         عرض الوثائق
@@ -1007,6 +1010,14 @@ function kpiCard(o){
 /* الانتقال إلى الصفحة يتطلّب employees:view — وهي صلاحية بياناتها.
    بدونها تبقى البطاقة رقمًا للاطّلاع لا رابطًا يقود إلى تحويلة. */
 const canOpenSoon=AdminUI.can("employees","view");
+/* «بحاجة إلى متابعة» = حالتا «منتهي» و«عاجل» في التذكيرات نفسها
+   (reminders.js) — بكل أنواعها وصلاحياتها وبتوقيت الرياض، والقائمة في
+   /expiring.html تُبنى بالدالّة نفسها. تُعاد رسمها حين تصل البطاقات البلدية
+   والتأشيرات لاحقًا (redrawFollowUp)، فلا يختلف الرقم عن قسم التذكيرات. */
+function drawFollowUp(){
+const followUpDocs=Reminders.followUp(Reminders.build(
+  {employees:DATA,permits:AJEER,municipal:REM_SRC.municipal,travel:REM_SRC.travel},{can:(s,a)=>AdminUI.can(s,a)}));
+const expiredDocs=followUpDocs.filter(d=>d.status==="expired");
 kpiRow.innerHTML=[
   kpiCard({tone:"feature",icon:"people",lbl:"إجمالي الموظفين",big:DATA.length,cap:"موظف مسجّل في القائمة"}),
   kpiCard({tone:"ok",icon:"shield",lbl:"إقامات سارية",big:validIq,cap:soonIq?`منها ${soonIq} قريبة من الانتهاء`:"جميعها غير منتهية"}),
@@ -1014,17 +1025,20 @@ kpiRow.innerHTML=[
            aria:`عرض الوثائق بحاجة إلى متابعة — ${followUpDocs.length} وثيقة`,
            lbl:"وثائق بحاجة إلى متابعة",big:followUpDocs.length,
            cap:followUpDocs.length
-                 ? `${DocStatus.summarizeDocs(followUpDocs)} — منتهية أو خلال ${DocStatus.SOON} أيام`
-                 : `لا توجد وثائق منتهية أو تنتهي خلال ${DocStatus.SOON} أيام`,
+                 ? `${Reminders.summarize(followUpDocs)} — منتهية أو خلال ${Reminders.URGENT_DAYS} أيام`
+                 : `لا توجد وثائق منتهية أو تنتهي خلال ${Reminders.URGENT_DAYS} أيام`,
            hint:canOpenSoon?"عرض القائمة كاملة ←":""}),
   /* المنتهية مجموعة جزئية من البطاقة السابقة لا قائمة موازية لها:
      تفصيلٌ لِما بلغ الحدّ الأقصى من الإلحاح داخل قائمة المتابعة. */
   kpiCard({tone:"bad",icon:"alert",critical:expiredDocs.length>0,lbl:"منها وثائق منتهية",big:expiredDocs.length,
-           cap:expiredDocs.length?DocStatus.summarizeDocs(expiredDocs):"لا توجد وثائق منتهية"}),
+           cap:expiredDocs.length?Reminders.summarize(expiredDocs):"لا توجد وثائق منتهية"}),
 ].join("");
 DashFx.kpis(kpiRow);
 /* المصفوفة نفسها التي أعطت البطاقة رقمها */
 renderSoonCallout(followUpDocs);
+}
+drawFollowUp();
+redrawFollowUp=drawFollowUp;
 
 /* SVG donut — offline, no dependency */
 /* الحلقة نفسها والحساب نفسه؛ الجديد أن كل قوس يحمل تسميته وعدده
@@ -1059,10 +1073,10 @@ function donut(boxId,rows,legendId,ringOpts){
 const canFilterPeople=AdminUI.can("employees","view");
 donut("chartIqama",[["سارية",validIq,C.ok],["منتهية",expiredIq,C.bad,"bad"]],"legendIqama",{field:"iq",subject:"إقامة"});
 donut("chartLicense",[["سارية",validLic,C.ok], pendingLic?["جاري السداد",pendingLic,C.pending,"pending"]:null, ["منتهية",expiredLic,C.bad,"bad"]],"legendLicense",{field:"lic",subject:"رخصة عمل"});
-/* قسم الوثائق القادمة على الانتهاء، من مصدر البطاقات نفسه (DocStatus.empDocs) */
-DocExpiry.render(document.getElementById("docExpiry"),DATA,AJEER,{
-  loadedAt:DATA_LOADED_AT,onPick:canFilterPeople?(i=>openDrawer(i)):null,
-  photoImg:e=>EmployeePhotos.img(photoRef(e))});
+/* التذكيرات تُبنى من البيانات الحالية في كل رسم: تعديل تاريخ أو تجديد
+   تصريح (refreshEmployees / refreshPermits يستدعيان هذه الدالّة) يحدّثها
+   فورًا مع الإبقاء على البحث والفلاتر. */
+Reminders.update({employees:DATA,permits:AJEER});
 /* amber "expiring soon" flags below each donut (still valid, need renewal) */
 function soonFlag(id,n){const el=document.getElementById(id);if(!el)return;
   el.innerHTML = n? (canOpenSoon
@@ -1629,7 +1643,9 @@ function openDrawer(i){
 }
 function closeDrawer(){scrim.classList.remove("show");drawer.classList.remove("show");document.body.style.overflow="";}
 scrim.addEventListener("click",closeDrawer);
-document.addEventListener("keydown",e=>{if(e.key==="Escape"){closeDrawer();closeSidenav();closeQrModal();}});
+/* closeSidenav أُزيلت مع إعادة بناء التنقّل (app-nav.js يغلق درجه بنفسه)؛
+   بقاء ندائها هنا كان يرمي ReferenceError مع كل Escape فلا يُغلق closeQrModal. */
+document.addEventListener("keydown",e=>{if(e.key==="Escape"){closeDrawer();closeQrModal();}});
 
 /* ---------- employee management (add/edit/delete) ----------
    Every control below is shown only when the user holds the matching
@@ -2054,7 +2070,7 @@ function employeeTicketsBlock(eid){
    حُذفت هنا: openSoonModal و closeSoonModal و collectSoon و docIcon
    و syncSoonToHash ومستمعا popstate/hashchange ومفوِّضا النقر ولوحة
    المفاتيح. القائمة نفسها تُبنى الآن في expiring-shell.html من
-   DocStatus.collectFollowUpDocs — المصدر نفسه الذي يعطي البطاقة رقمها. */
+   Reminders.followUp — المصدر نفسه الذي يعطي البطاقة رقمها. */
 
 /* نقرة على جزء من حلقة الإقامة/الرخصة: تطبّق مرشّح الحالة المطابق في سجلّ
    الموظفين وتنتقل إليه. المرشّح نفسه الذي في القائمة المنسدلة، فإعادة
@@ -2142,7 +2158,6 @@ async function loadAppData(){
   const permJson=await permRes.json();
   const settJson=await settRes.json();
   DATA = empJson.ok ? empJson.items : [];
-  DATA_LOADED_AT = new Date();
   AJEER = permJson.ok ? permJson.items : [];
   const settings = settJson.ok ? settJson.settings : {};
   FIN = settings.financial_summary || {};
@@ -2165,6 +2180,50 @@ function showSkeletons(){
   const a=document.getElementById("ajeerGrid");
   if(a) a.innerHTML='<div class="u-skeleton u-skeleton-card"></div>'.repeat(2);
 }
+/* ---------- التذكيرات (reminders.js) ----------
+   الإجراءات معالجات قائمة في هذه الصفحة — لا وظيفة جديدة: درج الموظف،
+   نموذج التعديل (رفع المستند يستخرج التاريخ الجديد)، تجديد أجير والبلدية
+   (DocRenewal)، ونافذتا التصريح والباركود. */
+const REM_EDIT_TAB={iqama:"iqama",work_license:"license",passport:"general"};
+/* المصدران اللذان يصلان بعد رسم المؤشّرات: البطاقات البلدية والتأشيرات.
+   يُحفظان هنا ليدخلا عدّاد «بحاجة إلى متابعة» كما يدخلان التذكيرات. */
+const REM_SRC={municipal:[],travel:null};
+let redrawFollowUp=null;
+function syncLateSource(partial){
+  Object.assign(REM_SRC,partial);
+  Reminders.update(partial);
+  if(redrawFollowUp) redrawFollowUp();
+}
+function mountReminders(){
+  if(!REMINDER_VIEWS.some(([s,a])=>AdminUI.can(s,a))) return;
+  Reminders.mount(document.getElementById("docReminders"),{
+    idx:document.getElementById("remindersIdx"),
+    can:(s,a)=>AdminUI.can(s,a),
+    photoImg:ref=>EmployeePhotos.img(ref),
+    handlers:{
+      openEmployee:i=>openDrawer(i),
+      editEmployee:(i,type)=>{
+        openEmployeeForm(DATA[i]);
+        const tab=document.querySelector(`.admin-tab[data-tab="${REM_EDIT_TAB[type]||"general"}"]`);
+        if(tab) tab.click();
+      },
+      renewAjeer:permit=>openAjeerRenew(permit),
+      ajeerDoc:permit=>openAjeerDoc(permit),
+      ajeerQr:permit=>openAjeerQr(permit),
+      renewMunicipal:cardId=>MunicipalCards.openRenew(cardId),
+      municipalQr:cardId=>MunicipalCards.openQr(cardId),
+    },
+  });
+}
+/* تأشيرات رحلات موظفي ذروة القائمة — staff_travel:view وحدها. فشلها لا
+   يمسّ بقية التذكيرات. */
+async function loadTravelReminders(){
+  if(!AdminUI.can("staff_travel","view")) return;
+  try{
+    const j=await AdminUI.api("GET","/api/data/staff-travel");
+    syncLateSource({travel:{items:j.items||[],people:j.people||[]}});
+  }catch(err){ /* تبقى التذكيرات الأخرى كما هي */ }
+}
 (async function boot(){
   showSkeletons();
   const ok = await initAuthGate();
@@ -2180,6 +2239,7 @@ function showSkeletons(){
   /* قبل renderDashboardTop() لا بعده: العدّاد يقرأ التصاريح الآن، فترتيبٌ
      معكوس يجعله يحسب مصفوفة فارغة في أول رسم. */
   AJEER_LATEST = dedupeAjeer(AJEER);
+  mountReminders();
   renderDashboardTop();
   render();
   renderAjeer();
@@ -2196,7 +2256,11 @@ function showSkeletons(){
     grid:document.getElementById("municipalGrid"), idx:document.getElementById("municipalIdx"),
     search:document.getElementById("municipalQ"), status:document.getElementById("municipalStatus"),
     dept:document.getElementById("municipalDept"), allBtn:document.getElementById("municipalAllBtn"),
-    platform:DATA, F, openEmployee:i=>openDrawer(i)});
+    platform:DATA, F, openEmployee:i=>openDrawer(i),
+    /* كل تحميل أو تجديد ناجح يُعيد البطاقات إلى التذكيرات — فلا يبقى فيها
+       تاريخ قديم معلّق بعد التجديد. */
+    onItems:items=>syncLateSource({municipal:items})});
+  loadTravelReminders();
   /* جولة التحديثات بعد اكتمال الرسم: تحتاج الأقسام التي تُبرزها في
      مكانها. تسأل الخادم عن الإصدار الحالي في كل تحميل — جلسة قائمة أو
      دخول جديد سواء — وتنتظر بنفسها انصراف شاشة الترحيب إن ظهرت. */

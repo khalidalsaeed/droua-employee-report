@@ -1,0 +1,143 @@
+/* reminders.css — قسم «التذكيرات» في الصفحة الرئيسية.
+   =========================================================================
+   لوح واحد بلغة المنصّة (الورق، الخطّ الشعري، الكحلي): أدوات البحث والفلترة
+   في الأعلى، وجدول بخمسة أعمدة. على الجوال يصير كل صفّ بطاقة مكدّسة — لا
+   تمرير أفقي ولا صندوق داخلي بتمرير. ألوان الحالات من القسم السابق، ودرجات
+   النصّ منها أغمق لتبلغ 4.5:1 على خلفياتها. */
+.rm{
+  --rm-exp:#D9534F; --rm-exp-ink:#A8322E; --rm-exp-bg:#FCEAEA;
+  --rm-urg:#F07B22; --rm-urg-ink:#A84B07; --rm-urg-bg:#FDEFE4;
+  --rm-soon:#E3A21A; --rm-soon-ink:#7E5A04; --rm-soon-bg:#FDF5E1;
+  --rm-watch:#2E9A68; --rm-watch-ink:#1D6B46; --rm-watch-bg:#E7F4EC;
+  --rm-ok:#6B7A8C; --rm-ok-ink:#46525F; --rm-ok-bg:#EEF1F4;
+  --rm-line:#ECE7DD;
+  background:var(--paper-2);border:1px solid var(--hair);border-radius:20px;box-shadow:var(--shadow);
+  padding:16px;min-width:0;
+}
+@media(min-width:768px){.rm{padding:22px 24px 18px}}
+
+/* ── الأدوات ── */
+.rm-tools{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.rm-search{position:relative;flex:1 1 300px;min-width:0;display:flex;align-items:center}
+.rm-search svg{position:absolute;inset-inline-start:14px;color:var(--ink-soft);pointer-events:none}
+.rm-search input{width:100%;min-height:46px;padding-block:0;padding-inline:44px 14px;border:1px solid var(--hair);border-radius:12px;
+  background:#fff;font-family:var(--sans);font-size:14px;color:var(--ink);min-width:0}
+.rm-search input::placeholder{color:#8A847A}
+.rm-search input:focus,.rm-period select:focus{outline:2px solid var(--slate);outline-offset:1px;border-color:var(--slate)}
+
+.rm-types{position:relative;flex:0 1 auto}
+.rm-select,.rm-period{display:inline-flex;align-items:center;gap:8px;min-height:46px;padding:0 14px;border:1px solid var(--hair);border-radius:12px;
+  background:#fff;color:var(--ink);font-family:var(--sans);font-size:14px;cursor:pointer;white-space:nowrap;position:relative}
+.rm-select:focus-visible{outline:2px solid var(--slate);outline-offset:1px}
+.rm-select.on{border-color:var(--slate);background:#F3F5F8}
+.rm-select>svg:first-child,.rm-period>svg:first-child{color:var(--ink-soft)}
+.rm-select>svg:last-child,.rm-period>svg:last-child{color:var(--ink-soft);pointer-events:none}
+.rm-select-t{max-width:160px;overflow:hidden;text-overflow:ellipsis}
+.rm-period select{appearance:none;-webkit-appearance:none;border:none;background:transparent;font:inherit;color:inherit;
+  padding-inline-end:22px;margin-inline-end:-22px;min-height:44px;cursor:pointer;border-radius:8px}
+.rm-period select:focus{outline-offset:2px}
+
+.rm-pop{position:absolute;z-index:30;top:calc(100% + 6px);inset-inline-start:0;min-width:240px;max-width:min(320px,calc(100vw - 32px));
+  background:#fff;border:1px solid var(--hair);border-radius:14px;box-shadow:0 16px 40px -16px rgba(22,40,59,.35);padding:6px}
+.rm-opt{display:flex;align-items:center;gap:10px;min-height:42px;padding:0 10px;border-radius:10px;cursor:pointer;font-size:14px}
+.rm-opt:hover{background:#F6F3EE}
+.rm-opt input{width:18px;height:18px;accent-color:var(--slate);flex:none;margin:0}
+.rm-opt span{flex:1;min-width:0}
+.rm-opt b{font-weight:600;color:var(--ink-soft);font-size:13px;background:#F3F0EA;border-radius:999px;padding:1px 9px;min-width:30px;text-align:center}
+.rm-opt-all{border-bottom:1px solid var(--rm-line);border-radius:10px 10px 0 0;margin-bottom:4px}
+
+.rm-custom{display:flex;flex-wrap:wrap;gap:10px;flex:1 1 100%}
+.rm-custom[hidden]{display:none}
+.rm-custom label{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--ink-soft);flex:1 1 180px;min-width:0}
+.rm-custom input{flex:1;min-width:0;min-height:42px;padding:0 10px;border:1px solid var(--hair);border-radius:10px;background:#fff;font-family:var(--sans);font-size:14px;color:var(--ink)}
+
+.rm-meta{margin:14px 2px 10px;font-size:13px;color:var(--ink-soft)}
+.rm-meta:empty{display:none}
+.rm-m-exp b{color:var(--rm-exp-ink)}
+.rm-m-urg b{color:var(--rm-urg-ink)}
+
+/* ── الجدول ── */
+.rm-table{width:100%;border-collapse:separate;border-spacing:0;font-size:14px}
+.rm-table thead th{background:#F6F3EE;color:var(--ink-soft);font-weight:500;font-size:12.5px;text-align:start;padding:12px 14px;white-space:nowrap}
+.rm-table thead th:first-child{border-start-start-radius:10px;border-end-start-radius:10px}
+.rm-table thead th:last-child{border-start-end-radius:10px;border-end-end-radius:10px}
+.rm-table td{padding:12px 14px;border-bottom:1px solid var(--rm-line);vertical-align:middle}
+.rm-table tbody tr:last-child td{border-bottom:none}
+.rm-row{transition:background .2s}
+@media(hover:hover) and (pointer:fine){.rm-row:hover{background:#FAF7F1}}
+.rm-flash{animation:rmFlash 1.6s ease-out}
+@keyframes rmFlash{0%,30%{background:#E7F4EC}100%{background:transparent}}
+
+.rm-emp{display:flex;align-items:center;gap:12px;min-width:0}
+.rm-av{flex:none;width:40px;height:40px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+  background:#EEF1F4;color:var(--slate);font-weight:600;font-size:14px}
+.rm-who{display:flex;flex-direction:column;min-width:0}
+.rm-who b{font-weight:600;color:var(--ink);overflow-wrap:anywhere;line-height:1.35}
+.rm-who small{font-size:12.5px;color:var(--ink-soft);margin-top:2px;overflow-wrap:anywhere}
+
+.rm-type{display:inline-flex;align-items:center;min-height:28px;padding:0 11px;border-radius:999px;background:#F3F0EA;color:var(--ink);font-size:13px;white-space:nowrap}
+.rm-type-sub{display:block;font-size:12px;color:var(--ink-soft);margin-top:3px}
+
+.rm-st{display:inline-grid;grid-template-columns:auto 1fr;column-gap:7px;align-items:center;padding:6px 12px;border-radius:12px;
+  background:var(--b);color:var(--k);line-height:1.35}
+.rm-st i{width:8px;height:8px;border-radius:50%;background:var(--c);grid-row:span 2}
+.rm-st b{font-weight:700;font-size:13px}
+.rm-st span{font-size:12.5px;white-space:nowrap}
+.rm-st.expired{--c:var(--rm-exp);--k:var(--rm-exp-ink);--b:var(--rm-exp-bg)}
+.rm-st.urgent{--c:var(--rm-urg);--k:var(--rm-urg-ink);--b:var(--rm-urg-bg)}
+.rm-st.soon{--c:var(--rm-soon);--k:var(--rm-soon-ink);--b:var(--rm-soon-bg)}
+.rm-st.watch{--c:var(--rm-watch);--k:var(--rm-watch-ink);--b:var(--rm-watch-bg)}
+.rm-st.ok{--c:var(--rm-ok);--k:var(--rm-ok-ink);--b:var(--rm-ok-bg)}
+
+.rm-date{white-space:nowrap;color:var(--ink)}
+
+.rm-acts{display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-start}
+.rm-act{display:inline-flex;align-items:center;gap:6px;min-height:36px;padding:0 11px;border-radius:10px;border:1px solid var(--hair);
+  background:#fff;color:var(--slate);font-family:var(--sans);font-size:13px;cursor:pointer;text-decoration:none;white-space:nowrap;
+  transition:background .2s,border-color .2s,color .2s}
+.rm-act:hover{border-color:var(--slate)}
+.rm-act:focus-visible{outline:2px solid var(--slate);outline-offset:2px}
+.rm-act.primary{background:var(--slate);border-color:var(--slate);color:#fff}
+.rm-act.primary:hover{background:var(--slate-2)}
+/* على الشاشة العريضة: الإجراءات الثانوية أيقونات بتلميح، والأساسي بنصّه */
+@media(min-width:1100px){.rm-act:not(.primary){padding:0;width:36px;justify-content:center}.rm-act:not(.primary) span{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}}
+.rm-none{font-size:12.5px;color:var(--ink-soft)}
+
+/* ── الحالات الفارغة والتذييل ── */
+.rm-empty{display:flex;flex-direction:column;align-items:center;gap:10px;text-align:center;padding:30px 12px;color:var(--ink-soft)}
+.rm-empty p{margin:0;font-size:14px}
+.rm-foot{display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:10px 18px;margin-top:12px}
+.rm-foot:empty{display:none}
+.rm-all{display:inline-flex;align-items:center;gap:8px;min-height:44px;padding:0 20px;border-radius:999px;border:1px solid var(--slate);
+  background:#fff;color:var(--slate);font-family:var(--sans);font-size:14px;font-weight:500;cursor:pointer}
+.rm-all:hover{background:var(--slate);color:#fff}
+.rm-all:focus-visible,.rm-link:focus-visible,.rm-pg:focus-visible{outline:2px solid var(--slate);outline-offset:2px}
+.rm-link{background:none;border:none;color:var(--slate);font-family:var(--sans);font-size:13.5px;text-decoration:underline;text-underline-offset:3px;cursor:pointer;min-height:40px;padding:0 6px}
+.rm-pager{display:flex;align-items:center;gap:10px}
+.rm-pg{display:inline-flex;align-items:center;gap:6px;min-height:40px;padding:0 14px;border-radius:10px;border:1px solid var(--hair);background:#fff;
+  color:var(--slate);font-family:var(--sans);font-size:13.5px;cursor:pointer}
+.rm-pg:disabled{opacity:.45;cursor:default}
+.rm-pg-info{font-size:13px;color:var(--ink-soft);white-space:nowrap}
+
+/* ── الجوال: كل صفّ بطاقة ── */
+@media(max-width:760px){
+  .rm-tools>.rm-types,.rm-tools>.rm-period{flex:1 1 calc(50% - 5px);min-width:0}
+  .rm-select,.rm-period{width:100%;justify-content:space-between;min-width:0}
+  .rm-select-t{flex:1;max-width:none;text-align:start}
+  .rm-period select{flex:1;min-width:0}
+  .rm-pop{inset-inline-start:0;inset-inline-end:auto;width:min(320px,calc(100vw - 32px))}
+  .rm-table,.rm-table tbody{display:block}
+  .rm-table thead{display:none}
+  .rm-row{display:grid;grid-template-columns:1fr auto;gap:10px 12px;padding:14px 2px;border-bottom:1px solid var(--rm-line)}
+  .rm-table tbody tr:last-child{border-bottom:none}
+  .rm-table td{display:block;padding:0;border:none;min-width:0}
+  .rm-c-emp{grid-column:1 / -1}
+  .rm-c-type{align-self:center}
+  .rm-c-date{grid-column:2;grid-row:2;align-self:center;font-size:13px;color:var(--ink-soft)}
+  .rm-c-st{grid-column:1 / -1}
+  .rm-st{display:inline-flex;gap:7px;flex-wrap:wrap}
+  .rm-st i{grid-row:auto}
+  .rm-c-act{grid-column:1 / -1}
+  .rm-act{flex:1 1 auto;justify-content:center;min-height:40px}
+}
+@media(prefers-reduced-motion:reduce){.rm-flash{animation:none}}

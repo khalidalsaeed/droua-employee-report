@@ -96,24 +96,21 @@ tbody tr.row-expired td:first-child{box-shadow:inset 3px 0 0 var(--bad-line)}
 
 <script src="/admin-ui.js?v=2"></script>
 <script src="/app-nav.js?v=1"></script>
-<!-- المصدر الوحيد لشرط «بحاجة إلى متابعة»؛ الرئيسية تحمّل الملف نفسه -->
+<!-- «بحاجة إلى متابعة» = منتهي + عاجل في التذكيرات (reminders.js) — الدالّة
+     نفسها التي تعطي بطاقة الرئيسية رقمها. doc-status.js قبلها (F وfmtDate). -->
 <script src="/doc-status.js?v=1"></script>
+<script src="/reminders.js?v=2"></script>
 <script>
 /* صفحة عرض الوثائق بحاجة إلى متابعة.
    ==========================================================================
-   لا تحسب هذه الصفحة شيئًا بنفسها: تجلب الموظفين والتصاريح ثم تسلّمهما إلى
-   DocStatus.collectFollowUpDocs() — الدالّة نفسها التي يشتقّ منها رقمُ بطاقة
-   «وثائق بحاجة إلى متابعة» في الصفحة الرئيسية. العتبة (SOON) وشرط الاحتساب
-   (needsFollowUp) وقائمة أنواع الوثائق (empDocs) كلها معرَّفة مرّة واحدة في
-   /doc-status.js، فلا يمكن للرقم أن يخالف هذه القائمة.
-
-   ما يظهر: المنتهية فعلًا (تبقى حتى يُحدَّث تاريخها)، وما انتهى اليوم، وما
-   بقي له من يوم إلى SOON يومًا. وما لا يظهر: البعيدة (ok) ورخصة «جاري
-   السداد» (pending) والوثيقة بلا تاريخ مسجَّل (na).
-
-   التصاريح تُجلب من مسار محروس بصلاحية ajeer:view بينما الصفحة محروسة
-   بـemployees:view، فمن يملك الثانية دون الأولى يرى وثائق الموظفين وحدها
-   مع ملاحظة صريحة — لا رسالة خطأ ولا قائمة ناقصة بصمت. */
+   لا تحسب هذه الصفحة شيئًا بنفسها: تجلب المصادر نفسها التي يجلبها قسم
+   «التذكيرات» في الرئيسية (الموظفون، تصاريح أجير، البطاقات البلدية،
+   تأشيرات السفر)، تبنيها بـReminders.build وتأخذ Reminders.followUp —
+   الدالّة نفسها التي يشتقّ منها رقمُ بطاقة «وثائق بحاجة إلى متابعة».
+   ما يظهر: حالتا «منتهي» و«عاجل» (0–10 أيام) بتوقيت الرياض. وما لا يظهر:
+   البعيدة، ورخصة «جاري السداد»، والوثيقة بلا تاريخ.
+   كل مصدر غير الموظفين محروس بصلاحية قسمه؛ ما لا يملكه المستخدم يُذكر في
+   ملاحظة صريحة — لا رسالة خطأ ولا قائمة ناقصة بصمت. */
 
 function esc(s){return String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
 
@@ -139,17 +136,23 @@ function daysChip(st){
 
 /* ملاحظة تُعرض فقط حين تعذّر جلب التصاريح لنقص صلاحية ajeer:view، حتى لا
    يظنّ القارئ أن القائمة شاملة وهي ليست كذلك. */
-function partialNote(permitsOk){
-  return permitsOk?"":`<div class="note-partial">تصاريح أجير غير مشمولة في هذه القائمة — تتطلّب صلاحية عرض قسم تصاريح أجير.</div>`;
+function partialNote(missing){
+  return missing.length?`<div class="note-partial">${esc(missing.join(" و"))} غير مشمولة في هذه القائمة — تتطلّب صلاحية عرض أقسامها.</div>`:"";
+}
+const TK={iqama:"iq",work_license:"lic",passport:"pass",ajeer:"ajeer",municipal:"lic",visa:"pass"};
+/* صفّ التذكير بالشكل الذي يرسمه هذا الجدول: الحالة بمفاتيح doc-status. */
+function toRow(it){
+  return {name:it.name,number:it.number,type:it.typeLabel,tk:TK[it.type],day:it.day,
+    st:{key:it.n<0?"bad":it.n===0?"today":"warn",n:it.n}};
 }
 
-function renderRows(rows,permitsOk){
+function renderRows(rows,missing){
   const content=document.getElementById("content");
   if(!rows.length){
-    content.innerHTML=partialNote(permitsOk)+`<div class="panel"><div class="empty-note">
+    content.innerHTML=partialNote(missing)+`<div class="panel"><div class="empty-note">
       <span class="big">لا توجد وثائق بحاجة إلى متابعة</span>
-      كل الإقامات ورخص العمل والجوازات وتصاريح أجير المسجَّلة سارية لمدة
-      تتجاوز ${DocStatus.SOON} أيام، ولا توجد وثيقة منتهية بانتظار التجديد.</div></div>`;
+      كل الوثائق المسجَّلة سارية لمدة تتجاوز ${Reminders.URGENT_DAYS} أيام،
+      ولا توجد وثيقة منتهية بانتظار التجديد.</div></div>`;
     return;
   }
   /* جدول على الشاشات العريضة، وبطاقات على الجوال — نفس النمط المعتمد في
@@ -161,10 +164,10 @@ function renderRows(rows,permitsOk){
         <th>تاريخ الانتهاء</th><th>المتبقّي</th>
       </tr></thead>
       <tbody>${rows.map(d=>`<tr class="${d.st.key==="bad"?"row-expired":""}">
-        <td class="emp-name">${esc(d.emp[DocStatus.F.name])}</td>
-        <td class="num">${esc(d.emp[DocStatus.F.eid])}</td>
+        <td class="emp-name">${esc(d.name||"—")}</td>
+        <td class="num">${esc(d.number||"—")}</td>
         <td><span class="doc-type">${docIcon(d.tk)}${esc(d.type)}</span></td>
-        <td class="num">${esc(DocStatus.fmtDate(d.exp))}</td>
+        <td class="num">${esc(DocStatus.fmtDate(d.day))}</td>
         <td>${daysChip(d.st)}</td>
       </tr>`).join("")}</tbody>
     </table></div></div>`;
@@ -174,34 +177,34 @@ function renderRows(rows,permitsOk){
       <div class="u-datacard${d.st.key==="bad"?" card-expired":""}">
         <div class="u-dc-top">
           <div>
-            <div class="u-dc-title">${esc(d.emp[DocStatus.F.name])}</div>
+            <div class="u-dc-title">${esc(d.name||"—")}</div>
             <div class="u-dc-sub"><span class="doc-type">${docIcon(d.tk)}${esc(d.type)}</span></div>
           </div>
           ${daysChip(d.st)}
         </div>
         <div class="u-dc-rows">
-          <div class="u-dc-row"><span class="k">رقم ضمان</span><span class="v num">${esc(d.emp[DocStatus.F.eid])}</span></div>
-          <div class="u-dc-row"><span class="k">تاريخ الانتهاء</span><span class="v num">${esc(DocStatus.fmtDate(d.exp))}</span></div>
+          <div class="u-dc-row"><span class="k">رقم ضمان</span><span class="v num">${esc(d.number||"—")}</span></div>
+          <div class="u-dc-row"><span class="k">تاريخ الانتهاء</span><span class="v num">${esc(DocStatus.fmtDate(d.day))}</span></div>
         </div>
       </div>`).join("")}</div>`;
 
-  content.innerHTML=partialNote(permitsOk)+table+cards;
+  content.innerHTML=partialNote(missing)+table+cards;
 }
 
-function renderSummary(rows){
+function renderSummary(rows,items){
   const el=document.getElementById("summary");
   if(!rows.length){
-    el.innerHTML=`لا توجد وثائق منتهية ولا وثائق تنتهي خلال ${DocStatus.SOON} أيام`;
+    el.innerHTML=`لا توجد وثائق منتهية ولا وثائق تنتهي خلال ${Reminders.URGENT_DAYS} أيام`;
     return;
   }
   /* المنتهية تُذكر على حدة: هي جزء من القائمة لكنها ليست «قادمة»، وخلطها
      بالباقي في جملة واحدة يجعل الرقم غامضًا. */
-  const expired=rows.filter(d=>DocStatus.isExpired(d.st)).length;
+  const expired=rows.filter(d=>d.st.key==="bad").length;
   const head=`<b class="num">${rows.length}</b> وثيقة بحاجة إلى متابعة`;
   const split=expired
-    ? ` — منها <b class="num">${expired}</b> منتهية بالفعل، والبقية تنتهي خلال <b class="num">${DocStatus.SOON}</b> أيام`
-    : ` تنتهي خلال <b class="num">${DocStatus.SOON}</b> أيام`;
-  el.innerHTML=`${head}${split} · ${esc(DocStatus.summarizeDocs(rows))} — المنتهية أولًا ثم الأقرب انتهاءً`;
+    ? ` — منها <b class="num">${expired}</b> منتهية بالفعل، والبقية تنتهي خلال <b class="num">${Reminders.URGENT_DAYS}</b> أيام`
+    : ` تنتهي خلال <b class="num">${Reminders.URGENT_DAYS}</b> أيام`;
+  el.innerHTML=`${head}${split} · ${esc(Reminders.summarize(items))} — المنتهية أولًا ثم الأقرب انتهاءً`;
 }
 
 async function initAuthGate(){
@@ -225,30 +228,34 @@ async function initAuthGate(){
   }
 }
 
-/* التصاريح مطلبٌ ثانوي: فشلُها لا يُسقط الصفحة. من لا يملك ajeer:view
-   يأخذ 403 هنا فيرى وثائق الموظفين مع ملاحظة، بدل أن يفقد القائمة كلها. */
-async function loadPermits(){
-  try{
-    const j=await AdminUI.api("GET","/api/data/permits");
-    return {items:j.items||[],ok:true};
-  }catch(err){
-    return {items:[],ok:false};
-  }
+/* المصادر الثانوية: فشلُ أيٍّ منها لا يُسقط الصفحة. ما لا يملك المستخدم
+   صلاحية عرضه لا يُطلب أصلًا ويُذكر في الملاحظة. */
+async function loadOptional(perm,url){
+  if(!AdminUI.can(perm,"view")) return {data:null,ok:false};
+  try{ return {data:await AdminUI.api("GET",url),ok:true}; }
+  catch(err){ return {data:null,ok:false}; }
 }
-
 (async function boot(){
   if(!(await initAuthGate())) return;
   try{
-    const [emp,permits]=await Promise.all([
+    const [emp,permits,municipal,travel]=await Promise.all([
       AdminUI.api("GET","/api/data/employees"),
-      loadPermits(),
+      loadOptional("ajeer","/api/data/permits"),
+      loadOptional("municipal","/api/data/municipal-cards"),
+      loadOptional("staff_travel","/api/data/staff-travel"),
     ]);
-    /* الاشتقاق كله يجري هنا من أحدث التواريخ المجلوبة للتوّ — لا سجلّ
-       محفوظ ولا عدّاد مخزَّن، فتجديدُ وثيقةٍ في المنصّة يُخرجها من هذه
-       القائمة عند أول تحميل بلا أي إدخال إضافي. */
-    const rows=DocStatus.collectFollowUpDocs(emp.items,permits.items);
-    renderSummary(rows);
-    renderRows(rows,permits.ok);
+    /* الاشتقاق كله من أحدث التواريخ المجلوبة للتوّ — لا عدّاد مخزَّن،
+       فتجديدُ وثيقةٍ يُخرجها من هذه القائمة عند أول تحميل. */
+    const items=Reminders.followUp(Reminders.build({
+      employees:emp.items,
+      permits:permits.ok?permits.data.items||[]:[],
+      municipal:municipal.ok?municipal.data.items||[]:[],
+      travel:travel.ok?{items:travel.data.items||[],people:travel.data.people||[]}:null,
+    },{can:(s,a)=>AdminUI.can(s,a)}));
+    const missing=[[permits,"تصاريح أجير"],[municipal,"البطاقات البلدية"],[travel,"تأشيرات السفر"]].filter(([r])=>!r.ok).map(([,l])=>l);
+    const rows=items.map(toRow);
+    renderSummary(rows,items);
+    renderRows(rows,missing);
   }catch(err){
     document.getElementById("summary").textContent="";
     document.getElementById("content").innerHTML=

@@ -87,6 +87,7 @@
     S.items[i] = item;
     fillDepartments();
     render();
+    notify();
     const el = S.opts.grid.querySelector(`[data-card="${item.cardId}"]`);
     if (el && root.DocRenewal) root.DocRenewal.flash(el);
   }
@@ -213,6 +214,13 @@
     }
     fillDepartments();
     render();
+    notify();
+  }
+
+  /* opts.onItems: من يشارك هذه البطاقات (قسم التذكيرات) يتسلّمها بعد كل
+     تحميل وبعد كل تجديد ناجح — نسخة واحدة من البيانات لا نسختان. */
+  function notify() {
+    if (S.opts && typeof S.opts.onItems === "function") S.opts.onItems(S.items.slice());
   }
 
   /* حدث error لا يصعد: بطاقة لم تُحمَّل تُستبدل برسالة هادئة، ورمزٌ لم
@@ -252,5 +260,6 @@
     return reload();
   }
 
-  root.MunicipalCards = { mount, statusOf, applyRenewed, _state: S };
+  /* openRenew/openQr عامّتان لقسم التذكيرات: النافذتان نفسهما بلا نسخة ثانية. */
+  root.MunicipalCards = { mount, statusOf, applyRenewed, openRenew, openQr, _state: S };
 })(window);
