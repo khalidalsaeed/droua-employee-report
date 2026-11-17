@@ -39,14 +39,7 @@ const UpdateTour = (function () {
 
   /* تجهيزات آمنة قبل الخطوة، بالاسم الذي يرسله الخادم في step.prepare.
      كل تجهيز لا يفعل شيئًا إن لم يجد عنصره، ولا يغيّر بيانات. */
-  const PREPARE = {
-    /* الدمج في صفّ واحد ظاهر في «عرض حسب المدة» (الافتراضي)؛ إن كان
-       المستخدم قد بدّل إلى «حسب الموظف» نعيده إلى التبويب الذي نشرحه. */
-    "doc-expiry-duration-view": function () {
-      const tab = document.querySelector('#docExpiry [role="tab"][data-view="dur"]');
-      if (tab && tab.getAttribute("aria-selected") !== "true") tab.click();
-    },
-  };
+  const PREPARE = {};
 
   /* ───────── منطق خالص (مُختبَر في test/update-tour.test.js) ───────── */
 

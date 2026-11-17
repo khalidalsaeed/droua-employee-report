@@ -3,7 +3,7 @@ const assert = require("node:assert/strict");
 
 const DashFx = require("../dashboard-fx.js");
 
-/* صياغات التلميح. قسم الوثائق القادمة على الانتهاء في doc-expiry.test.js. */
+/* صياغات التلميح. قسم التذكيرات في reminders.test.js. */
 test("صياغات العدد العربية", () => {
   assert.equal(DashFx.employeesPhrase(1), "موظف واحد");
   assert.equal(DashFx.employeesPhrase(2), "موظفان");

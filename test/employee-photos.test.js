@@ -500,22 +500,21 @@ test("الهيكل: الصورة في العقدة واللوحة وقائمة �
   assert.doesNotMatch(js, /\/api\/files\/employee-photo|EmployeePhotos/, "الهيكل لا يجلب الصور بنفسه");
 });
 
-test("أكثر الوثائق إلحاحًا: الصورة فوق الأحرف الأولى في العرضين، من المُضيف", () => {
-  const js = read("doc-expiry.js");
-  /* العرضان صفّ لكل موظف (g) — الصورة في كليهما. */
-  const av = js.match(/<span class="dx-av">\$\{esc\(initials\(g\.emp\[F\.name\]\)\)\}\$\{photo\(g\.emp\)\}<\/span>/g) || [];
-  assert.equal(av.length, 2, "حسب المدة و حسب الموظف");
-  assert.match(read("app-shell.html"), /photoImg:e=>EmployeePhotos\.img\(photoRef\(e\)\)\}\);/);
+test("التذكيرات: الصورة فوق الأحرف الأولى، من المُضيف", () => {
+  const js = read("reminders.js");
+  assert.match(js, /<span class="rm-av ep-av" aria-hidden="true">\$\{esc\(initials\(it\.name\)\)\}\$\{img\}<\/span>/);
+  assert.match(js, /const img = it\.photo && S\.opts\.photoImg \? S\.opts\.photoImg\(it\.photo\) \|\| "" : "";/);
+  assert.match(read("app-shell.html"), /photoImg:ref=>EmployeePhotos\.img\(ref\),/);
 });
 
-test("أكثر الوثائق إلحاحًا: بلا photoImg تبقى الأحرف كما كانت", () => {
-  const DocExpiry = require("../doc-expiry.js");
-  assert.equal(typeof DocExpiry.render, "function");
-  assert.doesNotMatch(read("doc-expiry.js"), /EmployeePhotos|\/api\/files/, "الملف لا يجلب الصور بنفسه");
+test("التذكيرات: بلا photoImg تبقى الأحرف، والملف لا يجلب الصور بنفسه", () => {
+  const Reminders = require("../reminders.js");
+  assert.equal(typeof Reminders.mount, "function");
+  assert.doesNotMatch(read("reminders.js"), /EmployeePhotos|\/api\/files/, "الملف لا يجلب الصور بنفسه");
 });
 
 test("العرض: قصّ بصري فقط مع حفظ النسبة", () => {
   const css = read("employee-photos.css");
   assert.match(css, /\.ep-img\{[^}]*object-fit:cover/);
-  assert.match(css, /\.avatar,\.oc-av,\.ep-av,\.dx-av\{position:relative;overflow:hidden\}/);
+  assert.match(css, /\.avatar,\.oc-av,\.ep-av\{position:relative;overflow:hidden\}/);
 });

@@ -61,7 +61,7 @@ test("محتوى الجولة الحالية: ثلاث ميزات بنصوصها
   const r = tour.RELEASES[tour.CURRENT_VERSION];
   assert.equal(r.title, "قمنا بإضافة مزايا جديدة");
   assert.equal(r.intro, "أضفنا مجموعة من التحسينات والمزايا الجديدة لتسهيل استخدام المنصة.");
-  assert.deepEqual(r.steps.map((s) => s.title), ["تصاريح أجير", "الوثائق القادمة على انتهاء الصلاحية", "البطاقات البلدية"]);
+  assert.deepEqual(r.steps.map((s) => s.title), ["تصاريح أجير", "التذكيرات", "البطاقات البلدية"]);
   for (const s of r.steps) {
     assert.ok(s.body.length > 20, `${s.id}: وصف`);
     assert.ok(s.requires.length, `${s.id}: صلاحية واحدة على الأقل`);
@@ -83,22 +83,22 @@ test("كل محدِّد قسم في الجولة موجود فعلًا في app-
 });
 
 test("الخطوات مُرشَّحة بالصلاحيات: المالك يرى الثلاث", () => {
-  assert.deepEqual(ids(tour.stepsFor(OWNER)), ["ajeer-cards", "doc-expiry-grouped", "municipal-cards"]);
+  assert.deepEqual(ids(tour.stepsFor(OWNER)), ["ajeer-cards", "reminders", "municipal-cards"]);
 });
 
 test("الموارد البشرية بصلاحيات الدور الافتراضية: الثلاث", () => {
-  assert.deepEqual(ids(tour.stepsFor(HR)), ["ajeer-cards", "doc-expiry-grouped", "municipal-cards"]);
+  assert.deepEqual(ids(tour.stepsFor(HR)), ["ajeer-cards", "reminders", "municipal-cards"]);
 });
 
 test("مستخدم بلا صلاحية أجير: لا خطوة أجير", () => {
   const u = custom(["kpi:view", "employees:view", "municipal:view", "settings:view"]);
-  assert.deepEqual(ids(tour.stepsFor(u)), ["doc-expiry-grouped", "municipal-cards"]);
+  assert.deepEqual(ids(tour.stepsFor(u)), ["reminders", "municipal-cards"]);
 });
 
-test("صلاحيات جزئية: ميزتان من ثلاث، وخطوة الوثائق تحتاج kpi و employees معًا", () => {
+test("صلاحيات جزئية: ميزتان من ثلاث، وخطوة التذكيرات تحتاج employees:view", () => {
   assert.deepEqual(ids(tour.stepsFor(custom(["ajeer:view", "municipal:view"]))), ["ajeer-cards", "municipal-cards"]);
   assert.deepEqual(ids(tour.stepsFor(custom(["kpi:view", "ajeer:view"]))), ["ajeer-cards"], "kpi بلا employees لا يكفي");
-  assert.deepEqual(ids(tour.stepsFor(custom(["employees:view"]))), [], "employees بلا kpi لا يكفي");
+  assert.deepEqual(ids(tour.stepsFor(custom(["employees:view"]))), ["reminders"], "قسم التذكيرات مستقلّ عن المؤشّرات");
 });
 
 test("مستخدم المالية الافتراضي: لا شيء يُشرح له، فلا جولة", () => {
@@ -281,7 +281,7 @@ test("المسار: دورة كاملة — يظهر، يُكمل، لا يظه�
   let out = await call(sql, HR, "GET");
   assert.equal(out.statusCode, 200);
   assert.equal(out.body.show, true);
-  assert.deepEqual(ids(out.body.tour.steps), ["ajeer-cards", "doc-expiry-grouped", "municipal-cards"]);
+  assert.deepEqual(ids(out.body.tour.steps), ["ajeer-cards", "reminders", "municipal-cards"]);
 
   out = await call(sql, HR, "POST", { version: tour.CURRENT_VERSION, action: "started", steps: 3 });
   assert.equal(out.statusCode, 200);
@@ -337,7 +337,7 @@ test("المسار: فشل القاعدة 503 في القراءة والكتاب
 test("المسار: مستخدم بلا صلاحية أجير يتلقّى خطواته المسموحة فقط", async () => {
   const u = custom(["kpi:view", "employees:view", "municipal:view"], "u-noajeer");
   const out = await call(appDb([u]), u, "GET");
-  assert.deepEqual(ids(out.body.tour.steps), ["doc-expiry-grouped", "municipal-cards"]);
+  assert.deepEqual(ids(out.body.tour.steps), ["reminders", "municipal-cards"]);
   assert.ok(!JSON.stringify(out.body).includes("أجير"), "لا ذكر لأجير في الردّ إطلاقًا");
 });
 
