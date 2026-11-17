@@ -58,7 +58,7 @@ function serve() {
   const types = { ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml", ".ttf": "font/ttf", ".png": "image/png", ".webmanifest": "application/json" };
   const srv = http.createServer((req, res) => {
     const u = new URL(req.url, "http://x");
-    const rel = u.pathname === "/" ? "app-shell.html" : decodeURIComponent(u.pathname.slice(1));
+    const rel = u.pathname === "/" ? "app-shell.html" : u.pathname === "/expiring.html" ? "expiring-shell.html" : decodeURIComponent(u.pathname.slice(1));
     const file = path.join(ROOT, rel);
     if (!file.startsWith(ROOT) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) { res.writeHead(404); return res.end(); }
     res.writeHead(200, { "Content-Type": types[path.extname(file)] || "application/octet-stream" });
@@ -277,6 +277,26 @@ test("التذكيرات في المتصفّح", { skip: SKIP, timeout: 120000 }
       await page.fill("#rmQ", "TQ7000001");
       await page.waitForSelector('.rm-row[data-key="ajeer:TQ7000001"]');
       assert.match(await page.$eval('.rm-row[data-key="ajeer:TQ7000001"] .rm-st', (e) => e.textContent), /تحت المتابعة.*باقي 75 يومًا/s);
+      assert.equal(errors.length, 0, errors.join("\n"));
+      await ctx.close();
+    });
+    await t.test("الرقم نفسه: بطاقة «بحاجة إلى متابعة» = منتهي + عاجل في التذكيرات = قائمة /expiring.html", async () => {
+      const { ctx, page, errors } = await openPage(browser, base, OWNER);
+      /* بعد وصول البطاقات البلدية (openPage ينتظرها) يُعاد رسم البطاقة */
+      const card = async () => Number(await page.$eval('#kpiRow .kpi.warn .big', (e) => e.dataset.count));
+      const remFollow = await page.evaluate(() => Reminders.followUp(Reminders._state.items).length);
+      const statuses = await page.evaluate(() => Reminders._state.items.filter((x) => x.status === "expired" || x.status === "urgent").length);
+      assert.equal(remFollow, statuses);
+      assert.equal(await card(), remFollow);
+      assert.ok(remFollow > 0);
+      assert.ok(await page.evaluate(() => Reminders.followUp(Reminders._state.items).some((x) => x.type === "municipal")), "البلدية داخل العدّاد");
+      assert.equal(Number(await page.$eval('#kpiRow .kpi.bad .big', (e) => e.dataset.count)),
+        await page.evaluate(() => Reminders._state.items.filter((x) => x.status === "expired").length));
+      await page.goto(`${base}/expiring.html`);
+      await page.waitForSelector("#content table, #content .empty-note");
+      const listed = await page.$$eval("#content table tbody tr", (r) => r.length);
+      assert.equal(listed, remFollow);
+      assert.match(await page.textContent("#summary"), new RegExp(`^${remFollow} وثيقة بحاجة إلى متابعة`));
       assert.equal(errors.length, 0, errors.join("\n"));
       await ctx.close();
     });

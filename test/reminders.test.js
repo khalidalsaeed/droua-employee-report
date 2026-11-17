@@ -320,7 +320,8 @@ test("الصفحة الرئيسية: النظام القديم أُزيل وال
   /* كل رسم للمؤشّرات (بعد refreshEmployees / refreshPermits) يحدّث التذكيرات */
   assert.match(shell, /function renderDashboardTop\(\)\{[\s\S]*Reminders\.update\(\{employees:DATA,permits:AJEER\}\)/);
   /* البلدية: كل تحميل وتجديد يمرّ إلى التذكيرات */
-  assert.match(shell, /onItems:items=>Reminders\.update\(\{municipal:items\}\)/);
+  assert.match(shell, /onItems:items=>syncLateSource\(\{municipal:items\}\)/);
+  assert.match(shell, /function syncLateSource\(partial\)\{\s*Object\.assign\(REM_SRC,partial\);\s*Reminders\.update\(partial\);\s*if\(redrawFollowUp\) redrawFollowUp\(\);/);
   /* تجديد أجير من التذكيرات يمرّ بالمسار القائم الذي يعيد قراءة التصاريح */
   assert.match(shell, /renewAjeer:permit=>openAjeerRenew\(permit\)/);
   assert.match(shell, /function openAjeerRenew[\s\S]*?onSuccess:async item=>\{\s*await refreshPermits\(\);/);
@@ -349,4 +350,35 @@ test("CSS: الجوال بطاقات مكدّسة بلا تمرير أفقي و�
   assert.match(css, /@media\(max-width:760px\)\{[\s\S]*\.rm-table thead\{display:none\}/);
   assert.doesNotMatch(css, /overflow(-x|-y)?:(auto|scroll)/);
   assert.doesNotMatch(css, /max-height/);
+});
+
+/* ── «بحاجة إلى متابعة»: بطاقة الرئيسية و/expiring.html من التذكيرات نفسها ── */
+test("followUp = منتهي + عاجل (0–10) من التذكيرات نفسها، بكل الأنواع", () => {
+  const items = build();
+  const fu = R.followUp(items);
+  assert.deepEqual(fu, items.filter((x) => x.n <= 10));
+  assert.ok(fu.some((x) => x.type === "municipal") && fu.some((x) => x.type === "visa"));
+  /* يطابق ما يعرضه قسم التذكيرات بحالتيه */
+  const shown = R.filter(items, { period: "all" }, TODAY).rows.filter((x) => x.status === "expired" || x.status === "urgent");
+  assert.deepEqual(fu.map((x) => x.key), shown.map((x) => x.key));
+  assert.equal(R.URGENT_DAYS, 10);
+  assert.equal(R.summarize(fu), "إقامات 2 · تصاريح أجير 1 · بطاقات بلدية 1 · تأشيرات 1");
+  assert.equal(R.summarize([]), "");
+});
+
+test("بطاقة «وثائق بحاجة إلى متابعة» وتنبيهها من Reminders.followUp بكل المصادر", () => {
+  const shell = read("app-shell.html");
+  assert.doesNotMatch(shell, /DocStatus\.(collectFollowUpDocs|collectExpiredDocs|summarizeDocs)/);
+  assert.match(shell, /const followUpDocs=Reminders\.followUp\(Reminders\.build\(\s*\{employees:DATA,permits:AJEER,municipal:REM_SRC\.municipal,travel:REM_SRC\.travel\}/);
+  assert.match(shell, /lbl:"وثائق بحاجة إلى متابعة",big:followUpDocs\.length/);
+  assert.match(shell, /renderSoonCallout\(followUpDocs\);\s*\}\s*drawFollowUp\(\);\s*redrawFollowUp=drawFollowUp;/);
+});
+
+test("/expiring.html يبني قائمته بـReminders.followUp من المصادر نفسها", () => {
+  const page = read("expiring-shell.html");
+  assert.match(page, /<script src="\/doc-status\.js\?v=\d+"><\/script>\s*<script src="\/reminders\.js\?v=\d+"><\/script>/);
+  assert.doesNotMatch(page, /collectFollowUpDocs|summarizeDocs/);
+  for (const u of ["/api/data/employees", "/api/data/permits", "/api/data/municipal-cards", "/api/data/staff-travel"]) assert.ok(page.includes(u), u);
+  assert.match(page, /const items=Reminders\.followUp\(Reminders\.build\(/);
+  assert.match(page, /loadOptional\("municipal","\/api\/data\/municipal-cards"\)/);
 });

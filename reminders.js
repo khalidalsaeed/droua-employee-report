@@ -293,6 +293,18 @@
     return a.n - b.n || TYPE[a.type].order - TYPE[b.type].order || String(a.name).localeCompare(String(b.name), "ar");
   }
 
+  /* ── «بحاجة إلى متابعة» = منتهي + عاجل (0–10 أيام) ──
+     التعريف الوحيد لعدّاد بطاقة المؤشّرات وتنبيهها وصفحة /expiring.html —
+     جزء من التذكيرات نفسها لا حساب موازٍ، فلا يختلف الرقم عن القسم. */
+  const URGENT_DAYS = 10;
+  function followUp(items) { return (items || []).filter((it) => it.status === "expired" || it.status === "urgent"); }
+  const SUMMARY = [["iqama", "إقامات"], ["work_license", "رخص عمل"], ["passport", "جوازات"], ["ajeer", "تصاريح أجير"], ["municipal", "بطاقات بلدية"], ["visa", "تأشيرات"]];
+  /* «إقامات 3 · بطاقات بلدية 1» — الأنواع الصفرية تُحذف. */
+  function summarize(items) {
+    return SUMMARY.map(([k, label]) => [label, (items || []).filter((it) => it.type === k).length])
+      .filter(([, n]) => n).map(([label, n]) => `${label} ${n}`).join(" · ");
+  }
+
   /* ── التصفية والعدّ ──
      state: { q, types:Set|Array, period, custom:{from,to} }
      العدّ بجانب كل نوع يتبع البحث والمدة الحاليين (وما يسمح به الدور)،
@@ -595,7 +607,7 @@
   }
 
   const Reminders = {
-    WINDOW, PREVIEW, PAGE, TYPES, STATUSES, PERIODS,
+    WINDOW, PREVIEW, PAGE, TYPES, STATUSES, PERIODS, URGENT_DAYS, followUp, summarize,
     dayKey, todayKey, daysBetween, statusKey, statusDetail, daysPhrase, fmtDay, periodRange, norm,
     build, compare, filter, availableTypes, actionsFor, remindersPhrase,
     mount, update, flash, _state: S,
