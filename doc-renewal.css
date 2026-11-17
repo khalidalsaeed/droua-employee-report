@@ -1,0 +1,144 @@
+/* «تجديد المستند» (doc-renewal.js) — زرّ البطاقة ونافذة التجديد.
+   رموز المنصّة نفسها (ui.css): الكحلي للفعل، والبرونزي للتركيز، وألوان
+   الحالة. الحركة هادئة: خطوات تتتابع، وعلامة ✓ تظهر بتكبير خفيف وتوهّج
+   قصير، وشريط تقدّم رفيع. prefers-reduced-motion يلغيها كلها. */
+
+.ltr{direction:ltr;unicode-bidi:isolate}
+
+/* ── زرّ البطاقة ── */
+.rn-btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;width:100%;min-height:44px;padding:0 14px;
+  border-radius:10px;border:1px solid var(--hair);background:var(--paper-2);color:var(--slate);
+  font-family:var(--sans);font-size:14px;font-weight:600;cursor:pointer;transition:background .2s,border-color .2s,transform .15s}
+@media(hover:hover){.rn-btn:hover{background:#fff;border-color:var(--slate)}}
+.rn-btn:active{transform:scale(.98)}
+.rn-btn:focus-visible{outline:2px solid var(--brass);outline-offset:2px}
+.rn-btn svg{flex:none}
+
+/* وميض البطاقة بعد التجديد */
+.rn-renewed{animation:drRenewed 2.4s var(--ease) both}
+@keyframes drRenewed{
+  0%{box-shadow:0 0 0 0 rgba(46,140,100,0),var(--shadow)}
+  18%{box-shadow:0 0 0 4px rgba(46,140,100,.35),0 0 26px rgba(46,140,100,.25)}
+  100%{box-shadow:0 0 0 0 rgba(46,140,100,0),0 1px 2px rgba(25,24,21,.04)}
+}
+
+/* ── النافذة ── */
+.rn-scrim{position:fixed;inset:0;z-index:130;background:rgba(22,40,59,.32);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);
+  display:flex;align-items:center;justify-content:center;padding:16px;opacity:0;transition:opacity .24s ease}
+.rn-scrim.show{opacity:1}
+.rn-modal{width:min(460px,100%);max-height:calc(100dvh - 32px);overflow:auto;overscroll-behavior:contain;background:#fff;
+  border-radius:18px;box-shadow:var(--shadow-lg);transform:translateY(12px) scale(.985);transition:transform .32s var(--ease)}
+.rn-scrim.show .rn-modal{transform:none}
+@media(max-width:560px){
+  .rn-scrim{align-items:flex-end;padding:0}
+  .rn-modal{width:100%;max-height:calc(100dvh - 24px - var(--safe-t));border-radius:var(--sheet-r) var(--sheet-r) 0 0;
+    padding-bottom:var(--safe-b);transform:translateY(40px)}
+}
+.rn-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:18px 20px 6px}
+.rn-head-txt{min-width:0}
+.rn-head h3{margin:0;font-family:var(--sans);font-weight:700;font-size:18px;line-height:1.4}
+.rn-head p{margin:2px 0 0;font-size:13px;color:var(--ink-soft);overflow-wrap:anywhere}
+.rn-x{flex:none;width:40px;height:40px;border-radius:10px;border:none;background:transparent;color:var(--ink-soft);cursor:pointer;
+  display:flex;align-items:center;justify-content:center}
+.rn-x:hover{background:var(--paper)}
+.rn-x:disabled{opacity:.35;cursor:not-allowed}
+.rn-x:focus-visible{outline:2px solid var(--brass)}
+.rn-body{padding:10px 20px 20px;display:flex;flex-direction:column;gap:14px;min-width:0}
+
+/* ① الرفع */
+.rn-current{display:flex;flex-wrap:wrap;justify-content:space-between;gap:6px 14px;padding:10px 14px;border-radius:12px;
+  background:var(--paper);font-size:13px;color:var(--ink-soft)}
+.rn-current b{color:var(--ink);font-weight:700}
+.rn-drop{display:flex;flex-direction:column;align-items:center;gap:6px;padding:26px 16px;border:1.5px dashed #CFC6B5;border-radius:14px;
+  background:var(--paper-2);text-align:center;cursor:pointer;transition:border-color .2s,background .2s,transform .2s}
+.rn-drop:hover,.rn-drop.is-over{border-color:var(--slate);background:#F4F7FA}
+.rn-drop.is-over{transform:scale(1.01)}
+.rn-drop:focus-visible{outline:2px solid var(--brass);outline-offset:2px}
+.rn-drop-ico{width:52px;height:52px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+  background:#fff;color:var(--slate);border:1px solid var(--hair);margin-bottom:4px}
+.rn-drop b{font-size:15px}
+.rn-drop span{font-size:13px;color:var(--ink-soft);line-height:1.6}
+.rn-drop-hint{margin-top:4px;font-size:12.5px!important}
+.rn-drop-hint u{color:var(--slate);text-underline-offset:3px}
+.rn-note{margin:0;font-size:12.5px;color:var(--ink-soft);text-align:center;line-height:1.7}
+.rn-inline-err{margin:0;padding:8px 12px;border-radius:10px;background:var(--bad-bg);color:var(--bad);font-size:13px;text-align:center}
+.rn-history{border:1px solid var(--hair-2);border-radius:12px;padding:0 12px}
+.rn-history summary{display:flex;align-items:center;gap:8px;min-height:42px;cursor:pointer;font-size:13px;color:var(--ink-soft);list-style:none}
+.rn-history summary::-webkit-details-marker{display:none}
+.rn-history ol{margin:0 0 10px;padding:0;list-style:none;display:flex;flex-direction:column;gap:6px}
+.rn-history li{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:12.5px;padding:8px 10px;border-radius:8px;background:var(--paper)}
+.rn-history li span:first-child{font-weight:700}
+
+/* ② التقدّم */
+.rn-file-chip{display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:10px;background:var(--paper);font-size:13px;color:var(--ink-soft);min-width:0}
+.rn-file-chip span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.rn-file-chip svg{flex:none}
+.rn-bar{position:relative;height:4px;border-radius:4px;background:var(--hair-2);overflow:hidden;--p:0}
+.rn-bar i{position:absolute;inset-block:0;inset-inline-start:0;width:calc(var(--p) * 100%);border-radius:inherit;
+  background:linear-gradient(90deg,var(--slate-2),var(--ok-line));transition:width .5s var(--ease)}
+.rn-bar i::after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,.55),transparent);
+  animation:drShimmer 1.4s linear infinite}
+.rn-bar.is-fail i{background:var(--bad-line)}
+.rn-bar.is-fail i::after{display:none}
+@keyframes drShimmer{from{transform:translateX(100%)}to{transform:translateX(-100%)}}
+.rn-steps{margin:0;padding:4px 0;list-style:none;display:flex;flex-direction:column;gap:4px}
+.rn-step{display:flex;align-items:center;gap:12px;min-height:44px;padding:6px 10px;border-radius:12px;color:#A39C8F;
+  transition:color .3s,background .3s,opacity .3s;opacity:.7}
+.rn-step.is-active{color:var(--ink);opacity:1;background:var(--paper-2)}
+.rn-step.is-done{color:var(--ink);opacity:1}
+.rn-step.is-fail{color:var(--bad);opacity:1;background:var(--bad-bg)}
+.rn-step-txt{font-size:14px;font-weight:600}
+.rn-dot{position:relative;flex:none;width:26px;height:26px;border-radius:50%;border:1.5px solid #D8D1C3;display:flex;align-items:center;justify-content:center;
+  transition:background .3s,border-color .3s,box-shadow .5s}
+.rn-dot svg{position:absolute;opacity:0;transform:scale(.4);transition:opacity .25s,transform .35s cubic-bezier(.3,1.6,.5,1)}
+.rn-ring{position:absolute;inset:-1.5px;border-radius:50%;border:2px solid transparent;opacity:0}
+.rn-step.is-active .rn-dot{border-color:var(--slate-2)}
+.rn-step.is-active .rn-ring{opacity:1;border-top-color:var(--slate-2);animation:drSpin .9s linear infinite}
+.rn-step.is-done .rn-dot{background:var(--ok-line);border-color:var(--ok-line);color:#fff;box-shadow:0 0 0 5px rgba(46,140,100,.14),0 0 16px rgba(46,140,100,.35);
+  animation:drGlow .9s ease-out forwards}
+.rn-step.is-done .rn-dot svg:first-of-type{opacity:1;transform:none}
+.rn-step.is-fail .rn-dot{background:var(--bad-line);border-color:var(--bad-line);color:#fff}
+.rn-step.is-fail .rn-dot svg:last-of-type{opacity:1;transform:none}
+@keyframes drSpin{to{transform:rotate(360deg)}}
+@keyframes drGlow{to{box-shadow:0 0 0 0 rgba(46,140,100,0),0 0 0 rgba(46,140,100,0)}}
+
+/* ③ النتيجة */
+.rn-result{display:flex;flex-direction:column;align-items:center;gap:10px;text-align:center;animation:drIn .4s var(--ease) both}
+.rn-result h4{margin:4px 0 0;font-size:18px;font-weight:700;line-height:1.5}
+.rn-result-sub,.rn-reason{margin:0;font-size:14px;color:var(--ink-soft);line-height:1.7;overflow-wrap:anywhere}
+.rn-reason{color:var(--ink);font-weight:600}
+.rn-badge{width:64px;height:64px;border-radius:50%;display:flex;align-items:center;justify-content:center;animation:drPop .5s cubic-bezier(.3,1.5,.5,1) both}
+.rn-badge svg{width:46px;height:46px;fill:none;stroke-width:3.2;stroke-linecap:round;stroke-linejoin:round}
+.rn-badge.ok{background:var(--ok-bg);color:var(--ok);box-shadow:0 0 0 8px rgba(46,140,100,.08)}
+.rn-badge.ok svg{stroke:var(--ok-line)}
+.rn-badge.ok circle{stroke-dasharray:145;stroke-dashoffset:145;animation:drDraw .6s .1s ease-out forwards}
+.rn-badge.ok path{stroke-dasharray:36;stroke-dashoffset:36;animation:drDraw .4s .55s ease-out forwards}
+.rn-badge.bad{background:var(--bad-bg)}
+.rn-badge.bad svg{stroke:var(--bad-line)}
+.rn-badge.warn{background:var(--warn-bg);color:var(--warn)}
+@keyframes drDraw{to{stroke-dashoffset:0}}
+@keyframes drPop{from{transform:scale(.6);opacity:0}to{transform:none;opacity:1}}
+@keyframes drIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+.rn-summary{width:100%;margin:6px 0 0;display:flex;flex-direction:column;border:1px solid var(--hair-2);border-radius:12px;overflow:hidden;text-align:start}
+.rn-summary div{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:10px 14px;font-size:13.5px;min-width:0}
+.rn-summary div+div{border-top:1px solid var(--hair-2)}
+.rn-summary dt{color:var(--ink-soft);flex:none}
+.rn-summary dd{margin:0;font-weight:700;text-align:end;min-width:0;overflow-wrap:anywhere}
+.rn-status{display:inline-block;padding:2px 10px;border-radius:7px;font-size:12.5px}
+.rn-status.ok{background:var(--ok-bg);color:var(--ok)}
+.rn-status.warn{background:var(--warn-bg);color:var(--warn)}
+.rn-status.bad{background:var(--bad-bg);color:var(--bad)}
+.rn-actions{width:100%;display:flex;gap:10px;margin-top:6px}
+.rn-actions button{flex:1;min-height:46px;border-radius:10px;font-family:var(--sans);font-size:14px;font-weight:600;cursor:pointer}
+.rn-primary{background:var(--slate);color:#fff;border:1px solid var(--slate)}
+.rn-primary:hover{background:var(--slate-2)}
+.rn-ghost{background:#fff;color:var(--ink);border:1px solid var(--hair)}
+.rn-ghost:hover{background:var(--paper)}
+.rn-actions button:focus-visible{outline:2px solid var(--brass);outline-offset:2px}
+
+@media(prefers-reduced-motion:reduce){
+  .rn-scrim,.rn-modal,.rn-bar i,.rn-dot,.rn-dot svg,.rn-step{transition:none}
+  .rn-bar i::after,.rn-ring,.rn-result,.rn-badge,.rn-renewed{animation:none!important}
+  .rn-step.is-done .rn-dot{animation:none}
+  .rn-badge.ok circle,.rn-badge.ok path{animation:none;stroke-dashoffset:0}
+}
